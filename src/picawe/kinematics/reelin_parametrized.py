@@ -49,7 +49,7 @@ def make_B_spline(T):
     scale_start = 1/3
     scale_end = 1/3
     c1 = p0 + scale_start * v0
-    c4 = pf - scale_end * vf
+    c4 = pf + scale_end * vf
     C = ca.horzcat(p0, c1, c2, c3, c4, pf)
 
     S = ca.SX.zeros(3,1)
@@ -67,14 +67,24 @@ if __name__ == "__main__":
     T = 10.0
     B_spline = make_B_spline(T)
 
-    # Parameters
-    p0 = np.array([0,0,0])
-    v0 = np.array([1,0,0])
-    pf = np.array([1,1,1])
-    vf = np.array([0,1,0])
-    c2 = np.array([0.3,0.2,0.5])
-    c3 = np.array([0.6,0.5,0.8])
+    # Parameters in azimuth (deg), elevation (deg), radial (m)
+    p0 = np.array([0, 0, 150])
+    v0 = np.array([10, 10, 5])
+    pf = np.array([90, 5, 300])
+    vf = np.array([5, 5, 5])
+    c2 = np.array([30, 20, 200])
+    c3 = np.array([60, 40, 250])
+
     s_vals = np.linspace(0, T, 100)
+
+    # --- Convert spherical to Cartesian ---
+    def sph2cart(az, el, r):
+        az = np.deg2rad(az)
+        el = np.deg2rad(el)
+        x = r * np.cos(el) * np.cos(az)
+        y = r * np.cos(el) * np.sin(az)
+        z = r * np.sin(el)
+        return np.array([x, y, z])
 
     # --- Setup figure ---
     fig = plt.figure(figsize=(9,6))
@@ -82,88 +92,89 @@ if __name__ == "__main__":
     plt.subplots_adjust(bottom=0.35)
 
     # Initial spline points
-    S_vals = np.array([B_spline(s, c2, c3, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
+    S_vals_sph = np.array([B_spline(s, c2, c3, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
+    S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
     line, = ax.plot(S_vals[:,0], S_vals[:,1], S_vals[:,2], 'b', lw=2)
 
     # Initial control points
-    C_vals = B_spline(0, c2, c3, p0, v0, pf, vf)[2].full().T
+    C_vals_sph = B_spline(0, c2, c3, p0, v0, pf, vf)[2].full().T
+    C_vals = np.array([sph2cart(*c) for c in C_vals_sph])
     ctrl_points = ax.scatter(C_vals[:,0], C_vals[:,1], C_vals[:,2], color='red', s=50)
 
-    ax.set_xlim(-0.5,1.5); ax.set_ylim(-0.5,1.5); ax.set_zlim(-0.5,1.5)
     ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
-    ax.set_title('3D B-spline with adjustable c2, c3, p0, pf')
+    ax.set_title('3D B-spline in Cartesian (from az/el/r)')
 
     # --- Slider axes positions ---
     axcolor = 'lightgoldenrodyellow'
-    slider_width = 0.22
+    slider_width = 0.2
     slider_height = 0.03
     vspace = 0.01
     start_y = 0.25
-
-    # Columns x-positions
-    col_pos = [0.1, 0.4, 0.7]  # left, middle, right
+    col_pos = [0.05, 0.4, 0.7]  # left, middle, right
 
     slider_axes = {}
 
     # --- Column 1: c2, c3 ---
-    for i, name in enumerate(['c2x','c2y','c2z','c3x','c3y','c3z']):
+    for i, name in enumerate(['c2a','c2e','c2r','c3a','c3e','c3r']):
         y = start_y - i*(slider_height+vspace)
         slider_axes[name] = plt.axes([col_pos[0], y, slider_width, slider_height], facecolor=axcolor)
 
     # --- Column 2: p0, pf ---
-    for i, name in enumerate(['p0x','p0y','p0z','pfx','pfy','pfz']):
+    for i, name in enumerate(['p0a','p0e','p0r','pfa','pfe','pfr']):
         y = start_y - i*(slider_height+vspace)
         slider_axes[name] = plt.axes([col_pos[1], y, slider_width, slider_height], facecolor=axcolor)
 
     # --- Column 3: v0, vf ---
-    for i, name in enumerate(['v0x','v0y','v0z','vfx','vfy','vfz']):
+    for i, name in enumerate(['v0a','v0e','v0r','vfa','vfe','vfr']):
         y = start_y - i*(slider_height+vspace)
         slider_axes[name] = plt.axes([col_pos[2], y, slider_width, slider_height], facecolor=axcolor)
 
     # --- Create sliders ---
     sliders = {}
+    # Column 1: c2/c3
+    sliders['c2a'] = Slider(slider_axes['c2a'], 'c2_az', -180, 180, valinit=c2[0])
+    sliders['c2e'] = Slider(slider_axes['c2e'], 'c2_el', 0, 90, valinit=c2[1])
+    sliders['c2r'] = Slider(slider_axes['c2r'], 'c2_r', 120, 350, valinit=c2[2])
+    sliders['c3a'] = Slider(slider_axes['c3a'], 'c3_az', -180, 180, valinit=c3[0])
+    sliders['c3e'] = Slider(slider_axes['c3e'], 'c3_el', 0, 90, valinit=c3[1])
+    sliders['c3r'] = Slider(slider_axes['c3r'], 'c3_r', 120, 350, valinit=c3[2])
 
-    # Column 1
-    sliders['c2x'] = Slider(slider_axes['c2x'], 'c2_x', -1, 2, valinit=c2[0])
-    sliders['c2y'] = Slider(slider_axes['c2y'], 'c2_y', -1, 2, valinit=c2[1])
-    sliders['c2z'] = Slider(slider_axes['c2z'], 'c2_z', -1, 2, valinit=c2[2])
-    sliders['c3x'] = Slider(slider_axes['c3x'], 'c3_x', -1, 2, valinit=c3[0])
-    sliders['c3y'] = Slider(slider_axes['c3y'], 'c3_y', -1, 2, valinit=c3[1])
-    sliders['c3z'] = Slider(slider_axes['c3z'], 'c3_z', -1, 2, valinit=c3[2])
+    # Column 2: p0/pf
+    sliders['p0a'] = Slider(slider_axes['p0a'], 'p0_az', -180, 180, valinit=p0[0])
+    sliders['p0e'] = Slider(slider_axes['p0e'], 'p0_el', 0, 90, valinit=p0[1])
+    sliders['p0r'] = Slider(slider_axes['p0r'], 'p0_r', 120, 350, valinit=p0[2])
+    sliders['pfa'] = Slider(slider_axes['pfa'], 'pf_az', -180, 180, valinit=pf[0])
+    sliders['pfe'] = Slider(slider_axes['pfe'], 'pf_el', 0, 90, valinit=pf[1])
+    sliders['pfr'] = Slider(slider_axes['pfr'], 'pf_r', 120, 350, valinit=pf[2])
 
-    # Column 2
-    sliders['p0x'] = Slider(slider_axes['p0x'], 'p0_x', -1, 2, valinit=p0[0])
-    sliders['p0y'] = Slider(slider_axes['p0y'], 'p0_y', -1, 2, valinit=p0[1])
-    sliders['p0z'] = Slider(slider_axes['p0z'], 'p0_z', -1, 2, valinit=p0[2])
-    sliders['pfx'] = Slider(slider_axes['pfx'], 'pf_x', -1, 2, valinit=pf[0])
-    sliders['pfy'] = Slider(slider_axes['pfy'], 'pf_y', -1, 2, valinit=pf[1])
-    sliders['pfz'] = Slider(slider_axes['pfz'], 'pf_z', -1, 2, valinit=pf[2])
-
-    # Column 3
-    sliders['v0x'] = Slider(slider_axes['v0x'], 'v0_x', -2, 2, valinit=v0[0])
-    sliders['v0y'] = Slider(slider_axes['v0y'], 'v0_y', -2, 2, valinit=v0[1])
-    sliders['v0z'] = Slider(slider_axes['v0z'], 'v0_z', -2, 2, valinit=v0[2])
-    sliders['vfx'] = Slider(slider_axes['vfx'], 'vf_x', -2, 2, valinit=vf[0])
-    sliders['vfy'] = Slider(slider_axes['vfy'], 'vf_y', -2, 2, valinit=vf[1])
-    sliders['vfz'] = Slider(slider_axes['vfz'], 'vf_z', -2, 2, valinit=vf[2])
+    # Column 3: v0/vf
+    sliders['v0a'] = Slider(slider_axes['v0a'], 'v0_az', -180, 180, valinit=v0[0])
+    sliders['v0e'] = Slider(slider_axes['v0e'], 'v0_el', 0, 90, valinit=v0[1])
+    sliders['v0r'] = Slider(slider_axes['v0r'], 'v0_r', 120, 350, valinit=v0[2])
+    sliders['vfa'] = Slider(slider_axes['vfa'], 'vf_az', -180, 180, valinit=vf[0])
+    sliders['vfe'] = Slider(slider_axes['vfe'], 'vf_el', 0, 90, valinit=vf[1])
+    sliders['vfr'] = Slider(slider_axes['vfr'], 'vf_r', 120, 350, valinit=vf[2])
 
     # --- Update function ---
     def update(val):
-        c2_new = np.array([sliders['c2x'].val, sliders['c2y'].val, sliders['c2z'].val])
-        c3_new = np.array([sliders['c3x'].val, sliders['c3y'].val, sliders['c3z'].val])
-        p0_new = np.array([sliders['p0x'].val, sliders['p0y'].val, sliders['p0z'].val])
-        pf_new = np.array([sliders['pfx'].val, sliders['pfy'].val, sliders['pfz'].val])
-        v0_new = np.array([sliders['v0x'].val, sliders['v0y'].val, sliders['v0z'].val])
-        vf_new = np.array([sliders['vfx'].val, sliders['vfy'].val, sliders['vfz'].val])
-        
-        S_vals = np.array([B_spline(s, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[0].full().flatten() for s in s_vals])
-        C_vals = B_spline(0, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[2].full().T
+        c2_new = np.array([sliders['c2a'].val, sliders['c2e'].val, sliders['c2r'].val])
+        c3_new = np.array([sliders['c3a'].val, sliders['c3e'].val, sliders['c3r'].val])
+        p0_new = np.array([sliders['p0a'].val, sliders['p0e'].val, sliders['p0r'].val])
+        pf_new = np.array([sliders['pfa'].val, sliders['pfe'].val, sliders['pfr'].val])
+        v0_new = np.array([sliders['v0a'].val, sliders['v0e'].val, sliders['v0r'].val])
+        vf_new = np.array([sliders['vfa'].val, sliders['vfe'].val, sliders['vfr'].val])
 
-        # Update line
+        # Evaluate spline in spherical coordinates
+        S_vals_sph = np.array([B_spline(s, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[0].full().flatten() for s in s_vals])
+        C_vals_sph = B_spline(0, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[2].full().T
+
+        # Convert to Cartesian for plotting
+        S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
+        C_vals = np.array([sph2cart(*c) for c in C_vals_sph])
+
+        # Update line and control points
         line.set_data(S_vals[:,0], S_vals[:,1])
         line.set_3d_properties(S_vals[:,2])
-
-        # Update control points
         ctrl_points._offsets3d = (C_vals[:,0], C_vals[:,1], C_vals[:,2])
 
         # Auto axes scaling
@@ -179,5 +190,3 @@ if __name__ == "__main__":
         slider.on_changed(update)
 
     plt.show()
-
-# --- End of file ---
