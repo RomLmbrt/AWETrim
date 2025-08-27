@@ -6,7 +6,14 @@ import numpy as np
 # --- B-spline setup ---
 p = 3
 n_ctrl = 6
-U = [0.0,0.0,0.0,0.0, 1.0/3.0, 2.0/3.0, 1.0,1.0,1.0,1.0]
+U = [0.0,0.0,0.0,0.0, 1.0/3.0, 2.0/3.0, 1.0,1.0,1.0,1.0] 
+#length of vector U = p + n_ctrl + 1
+# 0 and 1 are repeated to clamp the initial and final position of the spline, repeat p + 1 times
+# 0 and 1 represent the start and end of the spline, u = 0 is the start and u = 1 is the end
+# u is an arbitrary variable 
+# s is used in the rest of the codes but they are the same
+
+# --- This code computes the B-spline basis function and the derivatives ---
 
 def N_ip(u, i, k, U):
     if k == 0:
@@ -36,7 +43,15 @@ def dN_ip(u, i, k, U):
     return left - right
 
 # --- B-spline factory ---
+# first we normalize the variable s, such that it is compatible with the U vector [0,1]
+# n_ctrl = 6 which means we have 6 control points to play with
+# the first and last (c0 and c5) are used to clamp start and end position
+# c1 and c4 are used to attempt to match the start and end velocity
+# c2 and c3 are left symbolic
+# for elevation, azimuth and radial distance we then create a spline with c2 and c3 as the final controllable points
+
 def make_B_spline(T):
+
     s = ca.SX.sym('s')
     u = s / T
     c2 = ca.SX.sym('c2', 3)
@@ -63,6 +78,12 @@ def make_B_spline(T):
     return ca.Function('B_spline', [s, c2, c3, p0, v0, pf, vf], [S, dS, C])
 
 # --- Interactive example ---
+# T is the same as the max value of the s variable
+# we make the spline
+# the rest is for the purpose of visualization, plotting with sliders to adjust p0, pf, v0, vf, c2, and c3
+# as the splines describe elevation, azimuth and radial distance, we also have to convert that into x y and z to plot 
+# the trajectory in 3D
+
 if __name__ == "__main__":
     T = 10.0
     B_spline = make_B_spline(T)
