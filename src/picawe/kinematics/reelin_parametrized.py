@@ -9,8 +9,8 @@ from mpl_toolkits.mplot3d import Axes3D
 
 # --- B-spline setup ---
 p = 3
-n_ctrl = 6
-U = [0.0,0.0,0.0,0.0, 1.0/3.0, 2.0/3.0, 1.0,1.0,1.0,1.0] 
+n_ctrl = 7
+U = [0.0,0.0,0.0,0.0, 1.0/4.0, 2.0/4.0, 3.0/4.0, 1.0,1.0,1.0,1.0] 
 #length of vector U = p + n_ctrl + 1
 # 0 and 1 are repeated to clamp the initial and final position of the spline, repeat p + 1 times
 # 0 and 1 represent the start and end of the spline, u = 0 is the start and u = 1 is the end
@@ -60,6 +60,7 @@ def make_B_spline(T):
     u = s / T
     c2 = ca.SX.sym('c2', 3)
     c3 = ca.SX.sym('c3', 3)
+    c4 = ca.SX.sym('c4', 3)
     p0 = ca.SX.sym('p0', 3)
     v0 = ca.SX.sym('v0', 3)
     pf = ca.SX.sym('pf', 3)
@@ -68,8 +69,8 @@ def make_B_spline(T):
     scale_start = 1/3
     scale_end = 1/3
     c1 = p0 + scale_start * v0
-    c4 = pf + scale_end * vf
-    C = ca.horzcat(p0, c1, c2, c3, c4, pf)
+    c5 = pf + scale_end * vf
+    C = ca.horzcat(p0, c1, c2, c3, c4, c5, pf)
 
     S = ca.SX.zeros(3,1)
     dS = ca.SX.zeros(3,1)
@@ -79,7 +80,7 @@ def make_B_spline(T):
         S += ca.reshape(Ni,1,1)*C[:,i]
         dS += ca.reshape(dNi,1,1)*C[:,i]
 
-    return ca.Function('B_spline', [s, c2, c3, p0, v0, pf, vf], [S, dS, C])
+    return ca.Function('B_spline', [s, c2, c3, c4, p0, v0, pf, vf], [S, dS, C])
 
 # --- Interactive example ---
 # T is the same as the max value of the s variable
@@ -99,6 +100,7 @@ if __name__ == "__main__":
     vf = np.array([5, 5, 5])
     c2 = np.array([30, 20, 200])
     c3 = np.array([60, 40, 250])
+    c4 = np.array([80, 60, 125])
 
     s_vals = np.linspace(0, T, 100)
 
@@ -117,12 +119,12 @@ if __name__ == "__main__":
     plt.subplots_adjust(bottom=0.35)
 
     # Initial spline points
-    S_vals_sph = np.array([B_spline(s, c2, c3, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
+    S_vals_sph = np.array([B_spline(s, c2, c3, c4, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
     S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
     line, = ax.plot(S_vals[:,0], S_vals[:,1], S_vals[:,2], 'b', lw=2)
 
     # Initial control points
-    C_vals_sph = B_spline(0, c2, c3, p0, v0, pf, vf)[2].full().T
+    C_vals_sph = B_spline(0, c2, c3, c4, p0, v0, pf, vf)[2].full().T
     C_vals = np.array([sph2cart(*c) for c in C_vals_sph])
     ctrl_points = ax.scatter(C_vals[:,0], C_vals[:,1], C_vals[:,2], color='red', s=50)
 
@@ -139,8 +141,8 @@ if __name__ == "__main__":
 
     slider_axes = {}
 
-    # --- Column 1: c2, c3 ---
-    for i, name in enumerate(['c2a','c2e','c2r','c3a','c3e','c3r']):
+    # --- Column 1: c2, c3, c4 ---
+    for i, name in enumerate(['c2a','c2e','c2r','c3a','c3e','c3r','c4a','c4e','c4r']):
         y = start_y - i*(slider_height+vspace)
         slider_axes[name] = plt.axes([col_pos[0], y, slider_width, slider_height], facecolor=axcolor)
 
@@ -163,6 +165,9 @@ if __name__ == "__main__":
     sliders['c3a'] = Slider(slider_axes['c3a'], 'c3_az', -180, 180, valinit=c3[0])
     sliders['c3e'] = Slider(slider_axes['c3e'], 'c3_el', 0, 90, valinit=c3[1])
     sliders['c3r'] = Slider(slider_axes['c3r'], 'c3_r', 120, 350, valinit=c3[2])
+    sliders['c4a'] = Slider(slider_axes['c4a'], 'c4_az', -180, 180, valinit=c4[0])
+    sliders['c4e'] = Slider(slider_axes['c4e'], 'c4_el', 0, 90, valinit=c4[1])
+    sliders['c4r'] = Slider(slider_axes['c4r'], 'c4_r', 120, 350, valinit=c4[2])
 
     # Column 2: p0/pf
     sliders['p0a'] = Slider(slider_axes['p0a'], 'p0_az', -180, 180, valinit=p0[0])
@@ -184,14 +189,15 @@ if __name__ == "__main__":
     def update(val):
         c2_new = np.array([sliders['c2a'].val, sliders['c2e'].val, sliders['c2r'].val])
         c3_new = np.array([sliders['c3a'].val, sliders['c3e'].val, sliders['c3r'].val])
+        c4_new = np.array([sliders['c4a'].val, sliders['c4e'].val, sliders['c4r'].val])
         p0_new = np.array([sliders['p0a'].val, sliders['p0e'].val, sliders['p0r'].val])
         pf_new = np.array([sliders['pfa'].val, sliders['pfe'].val, sliders['pfr'].val])
         v0_new = np.array([sliders['v0a'].val, sliders['v0e'].val, sliders['v0r'].val])
         vf_new = np.array([sliders['vfa'].val, sliders['vfe'].val, sliders['vfr'].val])
 
         # Evaluate spline in spherical coordinates
-        S_vals_sph = np.array([B_spline(s, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[0].full().flatten() for s in s_vals])
-        C_vals_sph = B_spline(0, c2_new, c3_new, p0_new, v0_new, pf_new, vf_new)[2].full().T
+        S_vals_sph = np.array([B_spline(s, c2_new, c3_new, c4_new, p0_new, v0_new, pf_new, vf_new)[0].full().flatten() for s in s_vals])
+        C_vals_sph = B_spline(0, c2_new, c3_new, c4_new, p0_new, v0_new, pf_new, vf_new)[2].full().T
 
         # Convert to Cartesian for plotting
         S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
