@@ -120,6 +120,7 @@ if __name__ == "__main__":
 
     # Initial spline points
     S_vals_sph = np.array([B_spline(s, c2, c3, c4, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
+    # print(np.shape(S_vals_sph))
     S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
     line, = ax.plot(S_vals[:,0], S_vals[:,1], S_vals[:,2], 'b', lw=2)
 
