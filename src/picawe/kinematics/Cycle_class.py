@@ -1,187 +1,280 @@
-import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ----------------- Helpers -----------------
+# -------------------------------
+# Helper Functions
+# -------------------------------
 def convert_time_to_seconds(time_array):
-    """Convert time in HH:MM:SS.sss format to total seconds."""
+    """Convert HH:MM:SS.sss to seconds (float)."""
     seconds_array = []
     for time_str in time_array:
-        parts = re.split(r"[:.]", str(time_str))
-        h = int(parts[0])
-        m = int(parts[1])
-        s = float(parts[2]) + float("0." + parts[3]) if len(parts) > 3 else float(parts[2])
-        seconds = h * 3600 + m * 60 + s
-        seconds_array.append(seconds)
+        h, m, s = map(float, str(time_str).split(":"))
+        seconds_array.append(h * 3600 + m * 60 + s)
     return np.array(seconds_array)
 
-def bspline_basis_matrix(u_vals, p, U, n_ctrl):
-    """Numeric B-spline basis matrix using Cox-de Boor recursion."""
-    u_vals = np.asarray(u_vals)
-    N = np.zeros((len(u_vals), n_ctrl))
-    for i in range(n_ctrl):
-        left, right = U[i], U[i+1]
-        if left <= right:
-            N[:, i] = np.where((u_vals >= left) & (u_vals < right), 1.0, 0.0)
-    N[np.isclose(u_vals, 1.0), -1] = 1.0
+def sph2cart(az, el, r):
+    x = r * np.cos(el) * np.cos(az)
+    y = r * np.cos(el) * np.sin(az)
+    z = r * np.sin(el)
+    return x, y, z
 
-    for k in range(1, p+1):
-        N_k = np.zeros_like(N)
+def cart2sph(x, y, z):
+    r = np.sqrt(x**2 + y**2 + z**2)
+    az = np.arctan2(y, x)
+    el = np.arcsin(z / r)
+    return az, el, r
+
+def evaluate_bspline(C, p, U, u, return_basis=False, return_derivative=False):
+    """
+    Evaluate B-spline at u (scalar or array).
+    If return_basis=True, returns basis matrix Nmat.
+    If return_derivative=True, also returns derivative basis matrix dNmat.
+    """
+    u = np.atleast_1d(u)
+    n_ctrl = C.shape[0]
+    Nmat = np.zeros((len(u), n_ctrl))
+    dNmat = np.zeros((len(u), n_ctrl))
+
+    def N(i, k, u_val):
+        if k == 0:
+            return 1.0 if (U[i] <= u_val < U[i+1]) else 0.0
+        left = 0.0
+        right = 0.0
+        if U[i+k] > U[i]:
+            left = (u_val - U[i])/(U[i+k]-U[i]) * N(i, k-1, u_val)
+        if U[i+k+1] > U[i+1]:
+            right = (U[i+k+1]-u_val)/(U[i+k+1]-U[i+1]) * N(i+1, k-1, u_val)
+        return left + right
+
+    def dN(i, k, u_val):
+        if k == 0:
+            return 0.0
+        left = 0.0
+        right = 0.0
+        if U[i+k] > U[i]:
+            left = k/(U[i+k]-U[i]) * N(i, k-1, u_val)
+        if U[i+k+1] > U[i+1]:
+            right = k/(U[i+k+1]-U[i+1]) * N(i+1, k-1, u_val)
+        return left - right
+
+    for ui, u_val in enumerate(u):
         for i in range(n_ctrl):
-            left_den = U[i+k] - U[i]
-            right_den = U[i+k+1] - U[i+1]
-            left = (u_vals - U[i]) / left_den * N[:, i] if left_den != 0 else 0
-            right = (U[i+k+1] - u_vals) / right_den * N[:, i+1] if (right_den != 0 and i+1 < n_ctrl) else 0
-            N_k[:, i] = left + right
-        N = N_k
-    return N
+            Nmat[ui, i] = N(i, p, u_val)
+            if return_derivative:
+                dNmat[ui, i] = dN(i, p, u_val)
 
-# B-spline parameters
-p = 3
-n_ctrl = 7
-U = [0.0, 0.0, 0.0, 0.0, 1/4, 2/4, 3/4, 1.0, 1.0, 1.0, 1.0]
+    S = Nmat @ C
+    if return_basis and return_derivative:
+        return S, Nmat, dNmat
+    elif return_basis:
+        return S, Nmat
+    elif return_derivative:
+        return S, dNmat
+    else:
+        return S
 
-# ----------------- Cycle Class -----------------
+
+# -------------------------------
+# Cycle Class
+# -------------------------------
 class Cycle:
-    def __init__(self, full_df, cycle_df, cycle_idx=1):
-        self.full_df = full_df.copy()
-        self.cycle_df = cycle_df.copy()
+    def __init__(self, file_path_full, file_path_cycle, cycle_idx=0):
+        """Initialize Cycle object from CSV files and cycle index."""
+        # Load CSVs
+        self.full_df = pd.read_csv(file_path_full)
+        self.cycle_df = pd.read_csv(file_path_cycle)
         self.cycle_idx = cycle_idx
-        self._prepare_time_and_columns()
-        self._compute_useful_cycles_idx()
-        self.x, self.y, self.z, self.time = self.get_cycle_cartesian(cycle_idx)
 
-    @staticmethod
-    def from_files(file_path_full, file_path_cycle, cycle_idx=1):
-        full_data = pd.read_csv(file_path_full, header=0, sep=r"\s+")
-        cycle_data = pd.read_csv(file_path_cycle, header=0)
-        return Cycle(full_data, cycle_data, cycle_idx)
-
-    def _prepare_time_and_columns(self):
+        # Preprocess times
         self.full_df['time_s'] = np.round(convert_time_to_seconds(self.full_df['time_of_day'].to_numpy()), 1)
         self.cycle_df['start_time_s'] = np.round(convert_time_to_seconds(self.cycle_df['start_time_cycle_LT'].to_numpy()), 1)
-        self.az = self.full_df['kite_azimuth'].to_numpy()      # radians
-        self.el = self.full_df['kite_elevation'].to_numpy()    # radians
-        self.r = self.full_df['kite_distance'].to_numpy()
+
+        # Extract variables
         self.time_full = self.full_df['time_s'].to_numpy()
         self.time_cycle = self.cycle_df['start_time_s'].to_numpy()
+        self.az = self.full_df['kite_azimuth'].to_numpy()
+        self.el = self.full_df['kite_elevation'].to_numpy()
+        self.r = self.full_df['kite_distance'].to_numpy()
         self.phase = self.full_df['flight_phase'].to_numpy()
 
-    def _compute_useful_cycles_idx(self):
-        idx_start_cycle = np.array([i for i, t in enumerate(self.time_full) for tc in self.time_cycle if t == tc])
-        if len(idx_start_cycle) < 3:
-            raise ValueError("Not enough cycle indices found in full and cycle files")
-        self.useful_cycles_idx = idx_start_cycle[1:-1]
+        # Compute cycle boundaries
+        self._compute_cycle_indices()
+        self._extract_cycle_data()
 
-    def sph2cart_cycle(self, az, el, r):
-        x = r * np.cos(el) * np.cos(az)
-        y = r * np.cos(el) * np.sin(az)
-        z = r * np.sin(el)
-        return x, y, z
+        # B-spline variables
+        self.C_cart, self.C_sph, self.p, self.U = None, None, None, None
+        self.u_vals = None
 
-    def get_cycle_cartesian(self, cycle_idx):
-        start_idx, end_idx = self.useful_cycles_idx[cycle_idx], self.useful_cycles_idx[cycle_idx+1]
-        az_cyc, el_cyc, r_cyc = self.az[start_idx:end_idx], self.el[start_idx:end_idx], self.r[start_idx:end_idx]
-        time_cyc = self.time_full[start_idx:end_idx] - self.time_full[start_idx]
-        x, y, z = self.sph2cart_cycle(az_cyc, el_cyc, r_cyc)
-        return np.array(x), np.array(y), np.array(z), time_cyc
+        # Reel-In points and velocities
+        self.ri_start_point, self.ri_end_point = None, None
+        self.ri_start_velocity, self.ri_end_velocity = None, None
+        self.az_RI, self.el_RI, self.r_RI = None, None, None
+        self.x_RI, self.y_RI, self.z_RI = None, None, None
 
-    def find_start_end_RI(self, cycle_idx):
-        """Find start/end of RI in spherical coords, plus gradients (numerical)."""
-        start_idx, end_idx = self.useful_cycles_idx[cycle_idx], self.useful_cycles_idx[cycle_idx+1]
-        az_cyc, el_cyc, r_cyc = self.az[start_idx:end_idx], self.el[start_idx:end_idx], self.r[start_idx:end_idx]
-        phase_cyc = self.phase[start_idx:end_idx]
-        start_RI = end_RI = None
-        i_start, i_end = None, None
+    # -------------------------------
+    # Internal methods
+    # -------------------------------
+    def _compute_cycle_indices(self):
+        """Find start/end indices of the selected cycle."""
+        self.start_indices = np.array([
+            i for i, t in enumerate(self.time_full) 
+            for tc in self.time_cycle if t == tc
+        ])
+        if self.cycle_idx >= len(self.start_indices)-1:
+            raise IndexError("cycle_idx out of range")
+        self.cycle_start_idx = self.start_indices[self.cycle_idx]
+        self.cycle_end_idx   = self.start_indices[self.cycle_idx + 1] - 1 if self.cycle_idx + 1 < len(self.start_indices) else len(self.time_full)-1
 
-        def is_RI(tag):
-            if tag in ["pp-ri", "pp-rori", "pp-riro"]:
-                return True
-            return False
+    def _extract_cycle_data(self):
+        """Extract only the selected cycle data (spherical and cartesian)."""
+        self.az_cyc = self.az[self.cycle_start_idx:self.cycle_end_idx+1]
+        self.el_cyc = self.el[self.cycle_start_idx:self.cycle_end_idx+1]
+        self.r_cyc  = self.r[self.cycle_start_idx:self.cycle_end_idx+1]
+        self.phase_cyc = self.phase[self.cycle_start_idx:self.cycle_end_idx+1]
 
-        def is_RO(tag):
-            if tag == "pp-ro":
-                return True
-            return False
+        self.x_cyc, self.y_cyc, self.z_cyc = sph2cart(self.az_cyc, self.el_cyc, self.r_cyc)
+        self.dx_cyc, self.dy_cyc, self.dz_cyc = np.gradient(self.x_cyc), np.gradient(self.y_cyc), np.gradient(self.z_cyc)
+        self.num_points = len(self.x_cyc)
 
-        for i in range(1, len(phase_cyc)):
-            prev_phase, curr_phase = (phase_cyc[i-1]).lower(), (phase_cyc[i]).lower()
+    # -------------------------------
+    # Reel-In/Out boundaries
+    # -------------------------------
+    def get_RI_RO_boundaries(self):
+        """Compute start/end points and velocities of Reel-In."""
+        # Find start of Reel-In
+        RI_start_idx = None
+        for i, tag in enumerate(self.phase_cyc):
+            if tag.lower() in ["pp-ri", "pp-rori", "pp-riro"]:
+                RI_start_idx = i
+                break
+        if RI_start_idx is None:
+            raise ValueError("Reel-In start not found in this cycle")
 
-            if is_RO(prev_phase) and is_RI(curr_phase) and start_RI is None:
-                i_start, start_RI = i, (az_cyc[i], el_cyc[i], r_cyc[i])
+        RI_end_idx = len(self.phase_cyc) - 1  # Last point of cycle
 
-            i_end, end_RI = len(phase_cyc)-1, (az_cyc[-1], el_cyc[-1], r_cyc[-1])
+        self.RI_start_idx, self.RI_end_idx = RI_start_idx, RI_end_idx
 
-        if i_start is None or i_end is None:
-            raise ValueError("RI phase not found in this cycle")
+        # Store points and velocities
+        self.ri_start_point = np.array([self.x_cyc[RI_start_idx], self.y_cyc[RI_start_idx], self.z_cyc[RI_start_idx]])
+        self.ri_end_point   = np.array([self.x_cyc[RI_end_idx], self.y_cyc[RI_end_idx], self.z_cyc[RI_end_idx]])
+        self.ri_start_velocity = np.array([self.dx_cyc[RI_start_idx], self.dy_cyc[RI_start_idx], self.dz_cyc[RI_start_idx]])
+        self.ri_end_velocity   = np.array([self.dx_cyc[RI_end_idx], self.dy_cyc[RI_end_idx], self.dz_cyc[RI_end_idx]])
 
-        # gradients in spherical coords
-        az_grad, el_grad, r_grad = np.gradient(az_cyc), np.gradient(el_cyc), np.gradient(r_cyc)
+        # Spherical RI segment
+        self.az_RI = self.az_cyc[RI_start_idx:RI_end_idx+1]
+        self.el_RI = self.el_cyc[RI_start_idx:RI_end_idx+1]
+        self.r_RI  = self.r_cyc[RI_start_idx:RI_end_idx+1]
 
-        v0 = np.array([az_grad[i_start],
-              el_grad[i_start],
-              r_grad[i_start]])
-        vf = np.array([az_grad[i_end],
-              el_grad[i_end],
-              r_grad[i_end]])
-        
-        # Return clean tuple for spline fitting
-        return start_RI, v0, end_RI, vf, az_cyc[i_start:i_end+1], el_cyc[i_start:i_end+1], r_cyc[i_start:i_end+1], i_start, i_end
+        # Cartesian RI segment
+        self.x_RI, self.y_RI, self.z_RI = self.x_cyc[RI_start_idx:RI_end_idx+1], self.y_cyc[RI_start_idx:RI_end_idx+1], self.z_cyc[RI_start_idx:RI_end_idx+1]
+
+        return (self.ri_start_point, self.ri_end_point,
+                self.ri_start_velocity, self.ri_end_velocity,
+                self.az_RI, self.el_RI, self.r_RI,
+                self.RI_start_idx, self.RI_end_idx)
+
+    # -------------------------------
+    # B-spline fitting (Cartesian)
+    # -------------------------------
+    def fit_cartesian_spline(self, p=3, n_ctrl=7, U=None, vel_penalty=10.0):
+        if U is None:
+            # len_knot_vector = n_ctrl + p + 1
+            # U = np.linspace(0, 1, len_knot_vector).tolist()
+            # # [0.0, 0.1, 0.2, ..., 1.0]
+
+            U = [0, 0, 0, 0, 0.25, 0.5, 0.75, 1, 1, 1, 1]  # Clamped uniform knot vector
+
+        self.p, self.U = p, U
+        self.S_cart = np.vstack([self.x_RI, self.y_RI, self.z_RI]).T
+
+        # Parametric variable u_vals based on distance
+        dist = np.cumsum(np.linalg.norm(np.diff(self.S_cart, axis=0), axis=1))
+        dist = np.insert(dist, 0, 0.0)
+        self.u_vals = dist / dist[-1]
+
+        # Build basis matrices
+        _, Nmat = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, self.u_vals, return_basis=True)
+        _, _, dNmat0 = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, np.array([0.0]), return_basis=True, return_derivative=True)
+        _, _, dNmat1 = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, np.array([1.0]), return_basis=True, return_derivative=True)
+
+        # Stack data term and velocity penalty term
+        A = np.vstack([
+            Nmat,
+            vel_penalty * dNmat0,
+            vel_penalty * dNmat1
+        ])
+        B = np.vstack([
+            self.S_cart,
+            vel_penalty * self.ri_start_velocity.reshape(1,-1),
+            vel_penalty * self.ri_end_velocity.reshape(1,-1)
+        ])
+
+        # Solve LSQ for control points
+        C, _, _, _ = np.linalg.lstsq(A, B, rcond=None)
+        C[0] = self.ri_start_point
+        C[-1] = self.ri_end_point
+        self.C_cart = C
+        self.C_sph = np.array([cart2sph(*pt) for pt in C])
+
+        return self.C_cart, self.u_vals
 
 
-    def fit_RI_spline(self, T=1.0):
-        """Fit B-spline in spherical coords only over RI."""
-        start_RI, v0, end_RI, vf, az_cyc, el_cyc, r_cyc, i_start, i_end = self.find_start_end_RI(self.cycle_idx)
-        # print(start_RI, end_RI)
-        if not (i_start and i_end):
-            raise ValueError("RI phase not found in cycle")
+    # -------------------------------
+    # Spline evaluation
+    # -------------------------------
+    def eval_cartesian_spline(self, u):
+        result = evaluate_bspline(self.C_cart, self.p, self.U, u)
+        return result
 
-        S_sph = np.vstack([az_cyc, el_cyc, r_cyc]).T
+    def eval_spherical_spline(self, u):
+        xyz = self.eval_cartesian_spline(u)
+        if xyz.ndim == 1:
+            return cart2sph(*xyz)
+        else:
+            return np.array([cart2sph(*pt) for pt in xyz])
 
-        s_vals = np.linspace(0, T, len(S_sph))
-        u_vals = s_vals / T
-        N = bspline_basis_matrix(u_vals, p, U, n_ctrl)
-
-        C_unknown, _, _, _ = np.linalg.lstsq(N[:, 2:5], S_sph, rcond=None)
-        self.c2, self.c3, self.c4 = C_unknown.T
-
-        # Build full control point array (7x3)
-        C = np.zeros((n_ctrl, 3))
-
-        C[0] = S_sph[0]        # fix first ctrl pt
-        C[1] = C[0] + (1/3) * v0     # maybe also fix second? depends on BC
-
-        C[2:5] = C_unknown     # fitted unknowns
-        
-        C[6] = S_sph[-1]       # fix last
-        C[5] = C[6]  + (1/3) * vf     # fix near end
-        # Evaluate fitted B-spline curve in spherical coords
-        S_fitted_sph = N @ C   # (n_samples × n_ctrl) @ (n_ctrl × 3) = (n_samples × 3)
-
-        # Convert to cartesian
-        S_fitted_cart = np.array([self.sph2cart_cycle(*sph) for sph in S_fitted_sph])
-
-        return start_RI, end_RI, S_fitted_sph, S_fitted_cart
-
-    def plot_RI_fit(self, start_RI, end_RI, S_fitted_cart):
+    # -------------------------------
+    # Plotting
+    # -------------------------------
+    def plot_spline_fit(self):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
-        ax.plot(self.x, self.y, self.z, label=f"Cycle {self.cycle_idx+1} Trajectory", alpha=0.6)
-        ax.plot(S_fitted_cart[:,0], S_fitted_cart[:,1], S_fitted_cart[:,2], "r--", label="RI B-spline fit")
-        ax.scatter(*self.sph2cart_cycle(*start_RI), color="green", s=50, label="Start RI")
-        ax.scatter(*self.sph2cart_cycle(*end_RI), color="red", s=50, label="End RI")
-        ax.set_xlabel("X (m)"); ax.set_ylabel("Y (m)"); ax.set_zlabel("Z (m)")
-        ax.set_title(f"Cycle {self.cycle_idx+1}: Reel-In Spline Fit")
+        ax.plot(self.x_cyc, self.y_cyc, self.z_cyc, label="Trajectory", alpha=0.6)
+        S_fit = np.vstack([self.eval_cartesian_spline(u) for u in self.u_vals])
+        ax.plot(S_fit[:,0], S_fit[:,1], S_fit[:,2], "r--", label="B-spline fit")
+        if self.C_cart is not None:
+            ax.scatter(self.C_cart[:,0], self.C_cart[:,1], self.C_cart[:,2],
+                       color="black", s=30, label="Control points")
+        # Plot RI start/end
+        if self.ri_start_point is not None and self.ri_end_point is not None:
+            ax.scatter(*self.ri_start_point, color="green", s=50, label="RI Start")
+            ax.scatter(*self.ri_end_point, color="red", s=50, label="RI End")
+        ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
         ax.legend(); ax.set_box_aspect([1,1,1])
         plt.show()
 
-# ----------------- Usage -----------------
+
 if __name__ == "__main__":
-    file_path_full = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv"
-    file_path_cycle = "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv"
+# --- File paths ---
+    full_df = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv"
+    cycle_df = "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv"
 
-    cycle = Cycle.from_files(file_path_full, file_path_cycle, cycle_idx=1)
+    # Create a Cycle object for the first cycle (cycle_idx=0)
+    cycle = Cycle(full_df, cycle_df, cycle_idx=1)
 
-    start_RI, end_RI, S_fitted_sph, S_fitted_cart = cycle.fit_RI_spline(T=10.0)
-    cycle.plot_RI_fit(start_RI, end_RI, S_fitted_cart)
+    # Compute Reel-In boundaries
+    ri_start, ri_end, ri_v0, ri_vf, az_RI, el_RI, r_RI, ri_start_idx, ri_end_idx = cycle.get_RI_RO_boundaries()
+
+    print("RI start point (x,y,z):", ri_start)
+    print("RI end point (x,y,z):", ri_end)
+    print("RI start velocity:", ri_v0)
+    print("RI end velocity:", ri_vf)
+
+    # Fit a B-spline to the full cycle (or later to RI only)
+    C_cart, u_vals = cycle.fit_cartesian_spline()
+    print("Control points (cartesian):", C_cart)
+
+    # Plot trajectory and spline
+    cycle.plot_spline_fit()
+
