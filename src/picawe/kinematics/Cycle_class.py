@@ -178,46 +178,106 @@ class Cycle:
     # -------------------------------
     # B-spline fitting (Cartesian)
     # -------------------------------
-    def fit_cartesian_spline(self, p=3, n_ctrl=7, U=None, vel_penalty=10.0):
-        if U is None:
-            # len_knot_vector = n_ctrl + p + 1
-            # U = np.linspace(0, 1, len_knot_vector).tolist()
-            # # [0.0, 0.1, 0.2, ..., 1.0]
-            U = [0, 0, 0, 0, 0.25, 0.5, 0.75, 1, 1, 1, 1]  # Clamped uniform knot vector
 
-        self.p, self.U = p, U
+    def fit_cartesian_spline(self, p=3, n_ctrl=10, vel_penalty=10.0, eps_knot=1e-3):
+        """
+        Fit a B-spline to the Reel-In segment, optimizing control points
+        and interior knots (via du increments), while keeping start/end
+        points fixed and optionally penalizing start/end velocities.
+        """
+        # -------------------
+        # Prepare data
+        # -------------------
         self.S_cart = np.vstack([self.x_RI, self.y_RI, self.z_RI]).T
-
-        # Parametric variable u_vals based on distance
         dist = np.cumsum(np.linalg.norm(np.diff(self.S_cart, axis=0), axis=1))
         dist = np.insert(dist, 0, 0.0)
         self.u_vals = dist / dist[-1]
 
-        # Build basis matrices
-        _, Nmat = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, self.u_vals, return_basis=True)
-        _, _, dNmat0 = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, np.array([0.0]), return_basis=True, return_derivative=True)
-        _, _, dNmat1 = evaluate_bspline(np.zeros((n_ctrl, 3)), p, U, np.array([1.0]), return_basis=True, return_derivative=True)
+        # -------------------
+        # Number of interior knots
+        # -------------------
+        n_interior_knots = n_ctrl - p - 1
+        if n_interior_knots <= 0:
+            raise ValueError("Too few control points for spline order")
 
-        # Stack data term and velocity penalty term
-        A = np.vstack([
-            Nmat,
-            vel_penalty * dNmat0,
-            vel_penalty * dNmat1
-        ])
-        B = np.vstack([
-            self.S_cart,
-            vel_penalty * self.ri_start_velocity.reshape(1,-1),
-            vel_penalty * self.ri_end_velocity.reshape(1,-1)
-        ])
+        # -------------------
+        # Initial guess
+        # -------------------
+        # LSQ ignoring velocities to get initial control points
+        U0 = np.linspace(0, 1, n_ctrl + p + 1)
+        _, Nmat = evaluate_bspline(np.zeros((n_ctrl,3)), p, U0, self.u_vals, return_basis=True)
+        C0, _, _, _ = np.linalg.lstsq(Nmat, self.S_cart, rcond=None)
+        C0[0] = self.ri_start_point
+        C0[-1] = self.ri_end_point
 
-        # Solve LSQ for control points
-        C, _, _, _ = np.linalg.lstsq(A, B, rcond=None)
-        C[0] = self.ri_start_point
-        C[-1] = self.ri_end_point
-        self.C_cart = C
-        self.C_sph = np.array([cart2sph(*pt) for pt in C])
+        # Interior knots as evenly spaced increments
+        du0 = np.ones(n_interior_knots) / (n_interior_knots + 1)
 
-        return self.C_cart, self.u_vals
+        # Flatten parameters: control points (interior only) + du increments
+        # Fix start/end control points
+        C_interior0 = C0[1:-1].ravel()
+        x0 = np.concatenate([C_interior0, du0])
+
+        # -------------------
+        # Bounds
+        # -------------------
+        lb_C = np.full_like(C_interior0, -np.inf)
+        ub_C = np.full_like(C_interior0, np.inf)
+
+        lb_du = np.full_like(du0, eps_knot)
+        ub_du = np.full_like(du0, 1.0)
+        lb = np.concatenate([lb_C, lb_du])
+        ub = np.concatenate([ub_C, ub_du])
+
+        # -------------------
+        # Residual function
+        # -------------------
+        def residuals(params):
+            # Unpack control points and du
+            C_interior = params[:C_interior0.size].reshape(n_ctrl-2,3)
+            du = params[C_interior0.size:]
+            # Reconstruct knots
+            U_interior = np.cumsum(du)
+            U = np.concatenate(([0]*(p+1), U_interior, [1]*(p+1)))
+            # Reconstruct full control points
+            C = np.vstack([self.ri_start_point, C_interior, self.ri_end_point])
+
+            # Evaluate spline and derivative matrices
+            S_fit, Nmat = evaluate_bspline(C, p, U, self.u_vals, return_basis=True)
+            _, _, dNmat0 = evaluate_bspline(C, p, U, np.array([0.0]), return_basis=True, return_derivative=True)
+            _, _, dNmat1 = evaluate_bspline(C, p, U, np.array([1.0]), return_basis=True, return_derivative=True)
+
+            # Data residual
+            res_data = (S_fit - self.S_cart).ravel()
+
+            # Velocity residual (start/end)
+            S0_vel = dNmat0[0,:] @ C
+            S1_vel = dNmat1[0,:] @ C
+            res_vel = vel_penalty * np.concatenate([S0_vel - self.ri_start_velocity,
+                                                S1_vel - self.ri_end_velocity])
+            return np.concatenate([res_data, res_vel])
+
+        # -------------------
+        # Solve least squares
+        # -------------------
+        res = least_squares(residuals, x0, bounds=(lb, ub), ftol=1e-8, xtol=1e-8, gtol=1e-8, verbose=2)
+
+        # -------------------
+        # Extract optimized control points and knots
+        # -------------------
+        C_opt = res.x[:C_interior0.size].reshape(n_ctrl-2,3)
+        du_opt = res.x[C_interior0.size:]
+        C_opt_full = np.vstack([self.ri_start_point, C_opt, self.ri_end_point])
+        U_opt = np.concatenate(([0]*(p+1), np.cumsum(du_opt), [1]*(p+1)))
+
+        # Save
+        self.C_cart = C_opt_full
+        self.U = U_opt
+        self.p = p
+        self.C_sph = np.array([cart2sph(*pt) for pt in C_opt_full])
+
+        return self.C_cart, self.u_vals, self.U
+
 
 
     # -------------------------------
@@ -272,8 +332,9 @@ if __name__ == "__main__":
     print("RI end velocity:", ri_vf)
 
     # Fit a B-spline to the full cycle (or later to RI only)
-    C_cart, u_vals = cycle.fit_cartesian_spline()
-    print("Control points (cartesian):", C_cart)
+    C_cart, u_vals, U = cycle.fit_cartesian_spline()
+    print("Control points (cartesian): \n", C_cart)
+    print("Knot vector (U): \n", U)
 
     # Plot trajectory and spline
     cycle.plot_spline_fit()
