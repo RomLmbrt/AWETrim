@@ -39,7 +39,7 @@ def evaluate_bspline(C, p, U, u, return_basis=False, return_derivative=False):
 
     def N(i, k, u_val):
         if k == 0:
-            return 1.0 if (U[i] <= u_val <= U[i+1]) else 0.0
+            return 1.0 if (U[i] <= u_val < U[i+1]) else 0.0
         left = 0.0
         right = 0.0
         if U[i+k] > U[i]:
@@ -179,7 +179,7 @@ class Cycle:
     # B-spline fitting (Cartesian)
     # -------------------------------
 
-    def fit_cartesian_spline(self, p=3, n_ctrl=7, vel_penalty=15.0, eps_knot=1e-3):
+    def fit_cartesian_spline(self, p=3, n_ctrl=6, vel_penalty=15.0, eps_knot=1e-3):
         """
         Fit a B-spline to the Reel-In segment, optimizing control points
         and interior knots (via du increments), while keeping start/end
@@ -235,9 +235,6 @@ class Cycle:
         # Residual function
         # -------------------
         def residuals(params):
-            times = 0
-            # Unpack control points and du
-            
             C = params[:C_0.size].reshape(n_ctrl,3)
             du = params[C_0.size:]
             
@@ -308,7 +305,6 @@ class Cycle:
         ax = fig.add_subplot(111, projection="3d")
         ax.plot(self.x_cyc, self.y_cyc, self.z_cyc, label="Trajectory", alpha=0.6)
         S_fit = np.vstack([self.eval_cartesian_spline(u) for u in self.u_vals])
-        print(S_fit[0,:], S_fit[-1,:])
         ax.plot(S_fit[:,0], S_fit[:,1], S_fit[:,2], "r--", label="B-spline fit")
         if self.C_cart is not None:
             ax.scatter(self.C_cart[:,0], self.C_cart[:,1], self.C_cart[:,2],
