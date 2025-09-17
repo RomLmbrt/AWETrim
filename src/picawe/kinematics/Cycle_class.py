@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
 
 # -------------------------------
 # Helper Functions
@@ -38,7 +39,7 @@ def evaluate_bspline(C, p, U, u, return_basis=False, return_derivative=False):
 
     def N(i, k, u_val):
         if k == 0:
-            return 1.0 if (U[i] <= u_val < U[i+1]) else 0.0
+            return 1.0 if (U[i] <= u_val <= U[i+1]) else 0.0
         left = 0.0
         right = 0.0
         if U[i+k] > U[i]:
@@ -182,7 +183,6 @@ class Cycle:
             # len_knot_vector = n_ctrl + p + 1
             # U = np.linspace(0, 1, len_knot_vector).tolist()
             # # [0.0, 0.1, 0.2, ..., 1.0]
-
             U = [0, 0, 0, 0, 0.25, 0.5, 0.75, 1, 1, 1, 1]  # Clamped uniform knot vector
 
         self.p, self.U = p, U
