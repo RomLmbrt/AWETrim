@@ -83,7 +83,6 @@ def evaluate_bspline(C, p, U, u, return_basis=False, return_derivative=False):
     else:
         return S
 
-
 # -------------------------------
 # Cycle Class
 # -------------------------------
@@ -106,13 +105,15 @@ class Cycle:
         self.el = self.full_df['kite_elevation'].to_numpy()
         self.r = self.full_df['kite_distance'].to_numpy()
         self.phase = self.full_df['flight_phase'].to_numpy()
+        self.course = self.full_df['kite_course'].to_numpy()
 
         # Compute cycle boundaries
         self._compute_cycle_indices()
         self._extract_cycle_data()
 
         # B-spline variables
-        self.C_cart, self.C_sph, self.p, self.U = None, None, None, None
+        self.C_cart, self.p, self.U_cart = None, None, None
+        self.C_sph, self.U_sph = None, None
         self.u_vals = None
 
         # Reel-In points and velocities
@@ -120,6 +121,8 @@ class Cycle:
         self.ri_start_velocity, self.ri_end_velocity = None, None
         self.az_RI, self.el_RI, self.r_RI = None, None, None
         self.x_RI, self.y_RI, self.z_RI = None, None, None
+        self.ri_start_course, self.ri_end_course = None, None
+        self.RI_start_idx, self.RI_end_idx = None, None
 
     # -------------------------------
     # Internal methods
@@ -141,10 +144,26 @@ class Cycle:
         self.el_cyc = self.el[self.cycle_start_idx:self.cycle_end_idx+1]
         self.r_cyc  = self.r[self.cycle_start_idx:self.cycle_end_idx+1]
         self.phase_cyc = self.phase[self.cycle_start_idx:self.cycle_end_idx+1]
+        self.course_cyc = self.course[self.cycle_start_idx:self.cycle_end_idx+1]
 
         self.x_cyc, self.y_cyc, self.z_cyc = sph2cart(self.az_cyc, self.el_cyc, self.r_cyc)
         self.dx_cyc, self.dy_cyc, self.dz_cyc = np.gradient(self.x_cyc), np.gradient(self.y_cyc), np.gradient(self.z_cyc)
         self.num_points = len(self.x_cyc)
+
+
+    def compute_course(self):
+        S_sph, dS_sph = evaluate_bspline(self.C_sph, p=3, U=self.U_sph, u=self.u_vals, return_derivative=True)
+        course = np.arctan2(dS_sph[0]*np.cos(S_sph[1]), dS_sph[1])
+        return course
+    
+    def course_average(self, k):
+        u_k = self.u_vals[:k+1]
+
+        course_k = [self.compute_course() for u in u_k]
+        course_avg = np.mean(course_k)
+
+        return course_avg
+
 
     # -------------------------------
     # Reel-In/Out boundaries
@@ -165,10 +184,14 @@ class Cycle:
         self.RI_start_idx, self.RI_end_idx = RI_start_idx, RI_end_idx
 
         # Store points and velocities
+        self.ri_start_point_sph = np.array([self.az_cyc[RI_start_idx], self.el_cyc[RI_start_idx]])
+        self.ri_end_point_sph = np.array([self.az_cyc[RI_end_idx], self.el_cyc[RI_end_idx]])
         self.ri_start_point = np.array([self.x_cyc[RI_start_idx], self.y_cyc[RI_start_idx], self.z_cyc[RI_start_idx]])
         self.ri_end_point   = np.array([self.x_cyc[RI_end_idx], self.y_cyc[RI_end_idx], self.z_cyc[RI_end_idx]])
         self.ri_start_velocity = np.array([self.dx_cyc[RI_start_idx], self.dy_cyc[RI_start_idx], self.dz_cyc[RI_start_idx]])
         self.ri_end_velocity   = np.array([self.dx_cyc[RI_end_idx], self.dy_cyc[RI_end_idx], self.dz_cyc[RI_end_idx]])
+        self.ri_start_course = self.course_cyc[RI_start_idx]
+        self.ri_end_course   = self.course_cyc[RI_end_idx]
 
         # Spherical RI segment
         self.az_RI = self.az_cyc[RI_start_idx:RI_end_idx+1]
@@ -182,6 +205,123 @@ class Cycle:
                 self.ri_start_velocity, self.ri_end_velocity,
                 self.az_RI, self.el_RI, self.r_RI,
                 self.RI_start_idx, self.RI_end_idx)
+
+    # -------------------------------
+    # B-spline fitting (Spherical)
+    # -------------------------------
+
+    def fit_spherical_spline(self, p=3, n_ctrl=8, course_penalty=0.0, eps_knot=1e-3):
+        """
+        Fit a B-spline to azimuth/elevation (spherical) over the RI segment.
+        - Fits 2D control points (az, el)
+        - Clamped at endpoints (first/last control pts fixed to RI start/end)
+        - Optimizes interior control points and interior knot locations (via du increments)
+        """
+
+        # -------------------
+        # Prepare data (azimuth, elevation)
+        # -------------------
+        self.S_sph = np.vstack([self.az_RI, self.el_RI]).T
+
+        S_cart_for_param = np.vstack([self.x_RI, self.y_RI, self.z_RI]).T
+        dist = np.cumsum(np.linalg.norm(np.diff(S_cart_for_param, axis=0), axis=1))
+        dist = np.insert(dist, 0, 0.0)
+        self.u_vals = dist / dist[-1]
+
+        # -------------------
+        # Number of interior knots (clamped knots)
+        # -------------------
+        number_of_knots = n_ctrl + p + 1
+        n_interior_knots = number_of_knots - 2*(p+1)
+
+        if n_interior_knots <= 0:
+            raise ValueError("Too few control points for spline order")
+
+        # -------------------
+        # Initial guess
+        # -------------------
+        U_interior_0 = np.linspace(0.15, 0.85, n_interior_knots + 2)[1:-1]
+        U0 = np.concatenate(([0]*(p+1), U_interior_0, [1]*(p+1)))
+
+        ri_start_sph = np.array([self.az_RI[0], self.el_RI[0]])
+        ri_end_sph   = np.array([self.az_RI[-1], self.el_RI[-1]])
+
+        C_inner_0 = np.zeros((n_ctrl-2, 2))
+        C0 = np.vstack([ri_start_sph, C_inner_0, ri_end_sph])
+        _, Nmat_sph = evaluate_bspline(C0, p, U0, self.u_vals, return_basis=True)
+
+        rhs = self.S_sph - (Nmat_sph[:, [0, -1]] @ np.vstack([ri_start_sph, ri_end_sph]))
+        C_inner_0, _, _, _ = np.linalg.lstsq(Nmat_sph[:, 1:-1], rhs, rcond=None)
+
+        C0 = np.vstack([ri_start_sph, C_inner_0, ri_end_sph])
+        C_0 = C0.ravel()
+
+        # Interior knots as evenly spaced increments
+        du0 = np.ones(n_interior_knots) * 0.3
+
+        x0 = np.concatenate([C_0[2:-2], du0])
+
+        # -------------------
+        # Bounds
+        # -------------------
+        lb_C = np.full_like(C_0[2:-2], -3 * np.pi)
+        ub_C = np.full_like(C_0[2:-2],  3 * np.pi)
+
+        lb_du = np.full_like(du0, eps_knot)
+        ub_du = np.full_like(du0, 1-eps_knot)
+
+        lb = np.concatenate([lb_C, lb_du])
+        ub = np.concatenate([ub_C, ub_du])
+
+        # -------------------
+        # Residual function
+        # -------------------
+        def residuals(params):
+            # Reconstruct control points
+            C = params[:(n_ctrl-2)*2].reshape(n_ctrl-2,2)
+            C = np.vstack([ri_start_sph, C, ri_end_sph])
+
+            # Reconstruct knot vector
+            du = params[(n_ctrl-2)*2:]
+            U_interior = np.cumsum(du)
+            U_interior = U_interior / (U_interior[-1]+0.1)
+            U = np.concatenate(([0]*(p+1), U_interior, [1]*(p+1)))
+
+            # Evaluate spline
+            S_fit_sph, Nmat = evaluate_bspline(C, p, U, self.u_vals, return_basis=True)
+
+            # Data residual
+            res_data = (S_fit_sph - self.S_sph).ravel()
+
+            # Course penalty placeholder
+            res_course = course_penalty * np.zeros_like(res_data[:2])
+
+            return np.concatenate([res_data, res_course])
+
+        # -------------------
+        # Solve least squares
+        # -------------------
+        res = least_squares(residuals, x0, bounds=(lb, ub),
+                            ftol=1e-8, xtol=1e-8, gtol=1e-8, verbose=2)
+
+        # -------------------
+        # Extract optimized control points and knots
+        # -------------------
+        C_opt_sph = res.x[:(n_ctrl-2)*2].reshape(n_ctrl-2,2)
+        C_opt_sph = np.vstack([ri_start_sph, C_opt_sph, ri_end_sph])
+
+        du_opt = res.x[(n_ctrl-2)*2:]
+        U_interior_opt = np.cumsum(du_opt)
+        U_interior_opt = U_interior_opt / (U_interior_opt[-1]+0.1)
+        U_opt_sph = np.concatenate(([0]*(p+1), U_interior_opt, [1]*(p+1)))
+
+        # Save
+        self.C_sph = C_opt_sph
+        self.U_sph = U_opt_sph
+        self.p = p
+
+        return self.C_sph, self.u_vals, self.U_sph
+
 
     # -------------------------------
     # B-spline fitting (Cartesian)
@@ -270,12 +410,12 @@ class Cycle:
             U = np.concatenate(([0]*(p+1), U_interior, [1]*(p+1)))
 
             # Evaluate spline and derivative matrices
-            S_fit, Nmat = evaluate_bspline(C, p, U, self.u_vals, return_basis=True)
+            S_fit_cart, Nmat = evaluate_bspline(C, p, U, self.u_vals, return_basis=True)
             _, _, dNmat0 = evaluate_bspline(C, p, U, np.array([0.0]), return_basis=True, return_derivative=True)
             _, _, dNmat1 = evaluate_bspline(C, p, U, np.array([1.0]), return_basis=True, return_derivative=True)
 
             # Data residual
-            res_data = (S_fit - self.S_cart).ravel()
+            res_data = (S_fit_cart - self.S_cart).ravel()
 
             # Velocity residual (start/end)
             S0_vel = dNmat0[0,:] @ C
@@ -302,17 +442,16 @@ class Cycle:
 
         # Save
         self.C_cart = C_opt
-        self.U = U_opt
+        self.U_cart = U_opt
         self.p = p
-        self.C_sph = np.array([cart2sph(*pt) for pt in C_opt])
 
-        return self.C_cart, self.u_vals, self.U
+        return self.C_cart, self.u_vals, self.U_cart
 
     # -------------------------------
     # Spline evaluation
     # -------------------------------
     def eval_cartesian_spline(self, u):
-        result = evaluate_bspline(self.C_cart, self.p, self.U, u)
+        result = evaluate_bspline(self.C_cart, self.p, self.U_cart, u)
         return result
 
     def eval_spherical_spline(self, u):
@@ -325,21 +464,80 @@ class Cycle:
     # -------------------------------
     # Plotting
     # -------------------------------
-    def plot_spline_fit(self):
+    def plot_spline_fit_cart(self):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         ax.plot(self.x_cyc, self.y_cyc, self.z_cyc, label="Trajectory", alpha=0.6)
-        S_fit = np.vstack([self.eval_cartesian_spline(u) for u in self.u_vals])
-        ax.plot(S_fit[:,0], S_fit[:,1], S_fit[:,2], "r--", label="B-spline fit")
+        S_fit_cart = np.vstack([self.eval_cartesian_spline(u) for u in self.u_vals])
+        ax.plot(S_fit_cart[:,0], S_fit_cart[:,1], S_fit_cart[:,2], "r--", label="B-spline fit")
         if self.C_cart is not None:
             ax.scatter(self.C_cart[:,0], self.C_cart[:,1], self.C_cart[:,2],
                        color="black", s=30, label="Control points")
         # Plot RI start/end
         if self.ri_start_point is not None and self.ri_end_point is not None:
-            ax.scatter(*self.ri_start_point, color="green", s=50, label="RI Start")
-            ax.scatter(*self.ri_end_point, color="red", s=50, label="RI End")
+            ax.scatter(*self.ri_start_point, color="green", s=30, label="RI Start")
+            ax.scatter(*self.ri_end_point, color="red", s=30, label="RI End")
         ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
         ax.legend(); ax.set_box_aspect([1,1,1])
+        plt.show()
+
+    def plot_spline_fit_sph(self):
+        if self.C_sph is None or self.U_sph is None or self.u_vals is None:
+            raise ValueError("Run fit_spherical_spline() before plotting spherical fit.")
+        if self.az_RI is None or self.el_RI is None:
+            raise ValueError("Run get_RI_RO_boundaries() before plotting spherical fit.")
+
+        # Evaluate spherical spline
+        S_fit_sph = np.vstack([
+            evaluate_bspline(self.C_sph, self.p, self.U_sph, u) for u in self.u_vals
+        ])
+
+        # Create subplots (single fig only!)
+        fig, (ax_az, ax_el) = plt.subplots(1, 2, figsize=(10, 4), sharex=True)
+
+        # Azimuth plot
+        ax_az.plot(self.u_vals, self.az_RI, label="Azimuth (data)", color="C0")
+        ax_az.plot(self.u_vals, S_fit_sph[:, 0], "--", label="Azimuth (spline)", color="C1")
+        
+        # Add control points
+        if self.C_sph is not None:
+            ax_az.scatter(
+                np.linspace(self.u_vals[0], self.u_vals[-1], len(self.C_sph)),
+                self.C_sph[:, 0], color="black", s=30, label="Control points"
+            )
+
+        # Add RI endpoints
+        if self.ri_start_point is not None and self.ri_end_point is not None:
+            ax_az.scatter(self.u_vals[0], self.ri_start_point_sph[0], color="green", s=30, label="RI Start")
+            ax_az.scatter(self.u_vals[-1], self.ri_end_point_sph[0], color="red", s=30, label="RI End")
+
+        ax_az.set_xlabel("u")
+        ax_az.set_ylabel("Azimuth [rad]")
+        ax_az.grid(True, alpha=0.3)
+        ax_az.legend()
+
+        # Elevation plot
+        ax_el.plot(self.u_vals, self.el_RI, label="Elevation (data)", color="C0")
+        ax_el.plot(self.u_vals, S_fit_sph[:, 1], "--", label="Elevation (spline)", color="C1")
+        
+        # Add control points
+        if self.C_sph is not None:
+            ax_el.scatter(
+                np.linspace(self.u_vals[0], self.u_vals[-1], len(self.C_sph)),
+                self.C_sph[:, 1], color="black", s=30, label="Control points"
+            )
+
+        # Add RI endpoints
+        if self.ri_start_point is not None and self.ri_end_point is not None:
+            ax_el.scatter(self.u_vals[0], self.ri_start_point_sph[1], color="green", s=30, label="RI Start")
+            ax_el.scatter(self.u_vals[-1], self.ri_end_point_sph[1], color="red", s=30, label="RI End")
+
+        ax_el.set_xlabel("u")
+        ax_el.set_ylabel("Elevation [rad]")
+        ax_el.grid(True, alpha=0.3)
+        ax_el.legend()
+
+        fig.tight_layout()
         plt.show()
 
 
@@ -354,16 +552,12 @@ if __name__ == "__main__":
     # Compute Reel-In boundaries
     ri_start, ri_end, ri_v0, ri_vf, az_RI, el_RI, r_RI, ri_start_idx, ri_end_idx = cycle.get_RI_RO_boundaries()
 
-    print("RI start point (x,y,z):", ri_start)
-    print("RI end point (x,y,z):", ri_end)
-    print("RI start velocity:", ri_v0)
-    print("RI end velocity:", ri_vf)
-
     # Fit a B-spline to the full cycle (or later to RI only)
     C_cart, u_vals, U = cycle.fit_cartesian_spline()
-    print("Control points (cartesian): \n", C_cart)
-    print("Knot vector (U): \n", U)
+    C_sph, u_vals_sph, U_sph = cycle.fit_spherical_spline()
 
     # Plot trajectory and spline
-    cycle.plot_spline_fit()
+    cycle.plot_spline_fit_cart()
+
+    cycle.plot_spline_fit_sph()
 
