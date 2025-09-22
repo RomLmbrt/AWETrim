@@ -1,546 +1,234 @@
 import casadi as ca
-from abc import ABC, abstractmethod
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+matplotlib.use('TkAgg')
 import numpy as np
-
-
-class ParametrizedPatterns(ABC):
-
-    def __init__(self, **kwargs):
-        self.optimization_vars = (
-            {}
-        )  # Dictionary to store symbolic optimization variables
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-            if isinstance(value, ca.MX):  # If value is symbolic, store it separately
-                self.optimization_vars[key] = value
-
-    def x(self, t, s):
-        return self.xd(t, s) * ca.cos(self.beta(t)) - self.zd(t, s) * ca.sin(
-            self.beta(t)
-        )
-
-    def z(self, t, s):
-        return self.xd(t, s) * ca.sin(self.beta(t)) + self.zd(t, s) * ca.cos(
-            self.beta(t)
-        )
-
-    def y(self, t, s):
-        return self.yd(t, s)
-
-    def azimuth(self, t, s):
-        return ca.atan2(self.y(t, s), self.x(t, s))
-
-    def elevation(self, t, s):
-        return ca.atan2(self.z(t, s), ca.sqrt(self.x(t, s) ** 2 + self.y(t, s) ** 2))
-
-    def curvature(self, t_array, s_array):
-
-        # --- Get scalar fields as expressions of s (t is fixed here) ---
-        # If your methods are r(s,t), phi(s), beta(s), call accordingly.
-        # The user code showed self.r(t) and gradient(..., s), so we mimic that.
-        t = ca.MX.sym("t")
-        s = ca.MX.sym("s")
-        r = self.r(t)  # expression that depends on s
-        phi = self.azimuth(t, s)  # expression that depends on s
-        beta = self.elevation(t, s)  # expression that depends on s
-
-        # --- Cartesian curve r_vec(s) ---
-        x = r * ca.cos(beta) * ca.cos(phi)
-        y = r * ca.cos(beta) * ca.sin(phi)
-        z = r * ca.sin(beta)
-        r_vec = ca.vertcat(x, y, z)  # 3x1
-
-        # --- First and second derivatives wrt s ---
-        print(r_vec)
-        r_s = ca.jacobian(r_vec, s)  # 3x1
-        r_ss = ca.jacobian(r_s, s)  # 3x1
-
-        # --- Curvature and radius ---
-        # (use a tiny epsilon to avoid division by zero in degenerate cases)
-        eps = 1e-12
-        cross_rs_rss = ca.cross(r_s, r_ss)  # 3x1
-        num = ca.norm_2(cross_rs_rss)  # ||r_s x r_ss||
-        den = ca.power(ca.norm_2(r_s), 3) + eps  # ||r_s||^3
-        kappa = num / den
-        rho = 1.0 / (kappa + eps)
-
-        kappa_fun = ca.Function("kappa_fun", [t, s], [kappa])
-        kappa = kappa_fun(t_array, s_array)
-
-        return kappa
-
-    def radius_curvature(self, t, s):
-        return 1.0 / (self.curvature(t, s) + 1e-12)
-
-
-class Helix(ParametrizedPatterns):
-
-    def __init__(self, omega, r0, d0, vr, beta0, kappa=1, kbeta=0):
-        super().__init__(
-            omega=omega, r0=r0, d0=d0, vr=vr, beta0=beta0, kappa=kappa, kbeta=kbeta
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def d(self, t):
-        return self.d0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def yd(self, t, s):
-        return self.d(t) / 2 * ca.sin(self.omega * s)
-
-    def zd(self, t, s):
-        return self.d(t) / 2 * ca.cos(self.omega * s)
-
-    def xd(self, t, s):
-        r = self.r(t)
-        yd = self.yd(t, s)
-        zd = self.zd(t, s)
-        return ca.sqrt(r**2 - yd**2 - zd**2)
-
-
-class HelixAngles(ParametrizedPatterns):
-    def __init__(self, omega, r0, amp0, vr, beta0, kappa=1, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            amp0=amp0,
-            vr=vr,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def az_amp(self, t):
-        return self.az_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def beta_amp(self, t):
-        return self.beta_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def azimuth(self, t, s):
-        return self.az_amp(t) * ca.cos(self.omega * s)
-
-    def elevation(self, t, s):
-        return self.beta_amp(t) * ca.sin(self.omega * s)
-
-
-class LissajousAngles(ParametrizedPatterns):
-    def __init__(self, omega, r0, az_amp0, beta_amp0, vr, beta0, kappa=0, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            az_amp0=az_amp0,
-            beta_amp0=beta_amp0,
-            vr=vr,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def az_amp(self, t):
-        return self.az_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def beta_amp(self, t):
-        return self.beta_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def azimuth(self, t, s):
-        return self.az_amp(t) * ca.cos(self.omega * s)
-
-    def elevation(self, t, s):
-        return self.beta_amp(t) * ca.sin(self.omega * s) * ca.cos(
-            self.omega * s
-        ) + self.beta(t)
-
-
-class Lissajous(ParametrizedPatterns):
-
-    def __init__(self, omega, r0, a0, h0, vr, beta0, kappa=0, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            a0=a0,
-            h0=h0,
-            vr=vr,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def a(self, t):
-        return self.a0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def h(self, t):
-        return self.h0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def yd(self, t, s):
-        return self.a(t) * ca.cos(self.omega * s)
-
-    def zd(self, t, s):
-        return self.h(t) * ca.sin(2 * self.omega * s)
-
-    def xd(self, t, s):
-        r = self.r(t)
-        yd = self.yd(t, s)
-        zd = self.zd(t, s)
-        return ca.sqrt(r**2 - yd**2 - zd**2)
-
-
-class FigureEight(ParametrizedPatterns):
-
-    def __init__(self, omega, r0, ry, rz, vr, beta0, ky=1, kz=1, kappa=0, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            ry0=ry,
-            rz0=rz,
-            vr=vr,
-            ky=ky,
-            kz=kz,
-            kappa=kappa,
-            beta0=beta0,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def ry(self, t):
-        return self.ry0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def rz(self, t):
-        return self.rz0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def yd(self, t, s):
-        return (
-            self.ry(t)
-            * ca.cos(self.omega * s)
-            / (1 + self.ky * ca.sin(self.omega * s) ** 2)
-        )
-
-    def zd(self, t, s):
-        return (
-            self.rz(t)
-            * ca.sin(self.omega * s)
-            * ca.cos(self.omega * s)
-            / (1 + self.kz * ca.sin(self.omega * s) ** 2)
-        )
-
-    def xd(self, t, s):
-        r = self.r(t)
-        yd = self.yd(t, s)
-        zd = self.zd(t, s)
-        return ca.sqrt(r**2 - yd**2 - zd**2)
-
-
-class ParametrizedPatternsAngles(ParametrizedPatterns):
-    def __init__(self, **kwargs):
-        self.optimization_vars = {}  # Dictionary to store symbolic MX variables
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-            if isinstance(value, ca.MX):  # If value is symbolic, store it separately
-                self.optimization_vars[key] = value
-
-    def x(self, r, s):
-        return r * ca.cos(self.azimuth(r, s)) * ca.cos(self.elevation(r, s))
-
-    def y(self, r, s):
-        return r * ca.sin(self.azimuth(r, s)) * ca.cos(self.elevation(r, s))
-
-    def z(self, r, s):
-        return r * ca.sin(self.elevation(r, s))
-
-    def curvature(self, r_array, s_array):
-
-        # --- Get scalar fields as expressions of s (t is fixed here) ---
-        # If your methods are r(s,t), phi(s), beta(s), call accordingly.
-        # The user code showed self.r(t) and gradient(..., s), so we mimic that.
-
-        s = ca.MX.sym("s")
-        r = ca.MX.sym("r")  # expression that depends on s
-        phi = self.azimuth(r, s)  # expression that depends on s
-        beta = self.elevation(r, s)  # expression that depends on s
-
-        # --- Cartesian curve r_vec(s) ---
-        x = r * ca.cos(beta) * ca.cos(phi)
-        y = r * ca.cos(beta) * ca.sin(phi)
-        z = r * ca.sin(beta)
-        r_vec = ca.vertcat(x, y, z)  # 3x1
-
-        # --- First and second derivatives wrt s ---
-        print(r_vec)
-        r_s = ca.jacobian(r_vec, s)  # 3x1
-        r_ss = ca.jacobian(r_s, s)  # 3x1
-
-        # --- Curvature and radius ---
-        # (use a tiny epsilon to avoid division by zero in degenerate cases)
-        eps = 1e-12
-        cross_rs_rss = ca.cross(r_s, r_ss)  # 3x1
-        num = ca.norm_2(cross_rs_rss)  # ||r_s x r_ss||
-        den = ca.power(ca.norm_2(r_s), 3) + eps  # ||r_s||^3
-        kappa = num / den
-        rho = 1.0 / (kappa + eps)
-
-        kappa_fun = ca.Function("kappa_fun", [r, s], [kappa], {"allow_free": True})
-        kappa = kappa_fun(r_array, s_array)
-
-        return kappa
-
-    def radius_curvature(self, r, s):
-        return 1.0 / (self.curvature(r, s) + 1e-12)
-
-
-class FigureEightAngles(ParametrizedPatternsAngles):
-
-    def __init__(
-        self, omega, r0, az_amp0, beta_amp0, vr, beta0, ky=1, kz=1, kappa=0, kbeta=0
-    ):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            az_amp0=az_amp0,
-            beta_amp0=beta_amp0,
-            vr=vr,
-            ky=ky,
-            kz=kz,
-            kappa=kappa,
-            beta0=beta0,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def az_amp(self, t):
-        return self.az_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def beta_amp(self, t):
-        return self.beta_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def azimuth(self, t, s):
-        return (
-            self.az_amp(t)
-            * ca.cos(self.omega * s)
-            / (1 + self.ky * ca.sin(self.omega * s) ** 2)
-        )
-
-    def elevation(self, t, s):
-        return self.beta_amp(t) * ca.sin(self.omega * s) * ca.cos(self.omega * s) / (
-            1 + self.kz * ca.sin(self.omega * s) ** 2
-        ) + self.beta(t)
-
-
-from picawe.kinematics.reelin_parametrization import ReelInBezier
-
-
-def create_pattern_from_dict(
-    config: dict, optimize: bool = False
-) -> ParametrizedPatterns:
-    pattern_type = config.get("pattern_type").lower()
-    params = config.get("parameters", {})
-    optimization_params = config.get("optimization_parameters", {})
-
-    print(params)
-
-    required_params = {
-        "helix": ["omega", "r0", "d0", "vr", "beta0", "kappa"],
-        "lissajous": ["omega", "r0", "a0", "h0", "vr", "beta0", "kappa"],
-        "lissajous_angles": [
-            "omega",
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "vr",
-            "beta0",
-            "kappa",
-        ],
-        "figure_eight": ["omega", "r0", "ry", "rz", "vr", "beta0", "ky", "kz", "kappa"],
-        "figure_eight_angles": [
-            "omega",
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "vr",
-            "beta0",
-            "ky",
-            "kz",
-            "kappa",
-        ],
-        "cst_lissajous": [
-            "omega",
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "beta0",
-            "beta_coeffs",
-            "az_coeffs",
-        ],
-        "reel_in": [
-            "r0",
-            "r1",
-        ],
-    }
-
-    if pattern_type not in required_params:
-        raise ValueError(f"Unknown pattern type: {pattern_type}")
-
-    missing_params = [
-        param for param in required_params[pattern_type] if param not in params
-    ]
-    if missing_params:
-        raise ValueError(
-            f"Missing required parameters in 'parameters' for '{pattern_type}': {', '.join(missing_params)}"
-        )
-
-    # Replace optimized parameters with symbolic variables
-    final_params = params.copy()
-    if optimize:
-        for param in optimization_params:
-            if param in required_params[pattern_type]:
-
-                val = np.atleast_1d(params[param])  # guarantees array, even for scalar
-                if len(val) > 1:
-                    final_params[param] = ca.MX.sym(param, len(val))
-                else:
-                    final_params[param] = ca.MX.sym(param)
-
-    # Instantiate the appropriate pattern class
-    pattern_classes = {
-        "helix": Helix,
-        "lissajous": Lissajous,
-        "lissajous_angles": LissajousAngles,
-        "figure_eight": FigureEight,
-        "figure_eight_angles": FigureEightAngles,
-        "cst_lissajous": CST_Lissajous,
-        "reel_in": ReelInBezier,
-    }
-
-    return pattern_classes[pattern_type](**final_params)
-
-
-class CST_Lissajous(ParametrizedPatternsAngles):
-    def __init__(
-        self,
-        omega,
-        r0,
-        az_amp0,
-        beta_amp0,
-        beta0,
-        beta_coeffs,
-        az_coeffs,
-        kappa=0.0,
-        kbeta=0.0,
-        width_phi=0.5,
-        width_beta=0.5,
-        left_first=True,
-        normalize_bumps=False,
-        repeat_phi=False,
-        repeat_beta=False,
-        k_vr=6300,
-    ):  # <- only flags
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            az_amp0=az_amp0,
-            beta_amp0=beta_amp0,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-            beta_coeffs=beta_coeffs,
-            az_coeffs=az_coeffs,
-            width_phi=width_phi,
-            width_beta=width_beta,
-            left_first=left_first,
-            normalize_bumps=normalize_bumps,
-        )
-
-        # Base weight vectors
-        self.az_coeffs = ca.vertcat(az_coeffs)
-        self.beta_coeffs = ca.vertcat(beta_coeffs)
-        P_phi = int(self.az_coeffs.numel())
-        P_beta = int(self.beta_coeffs.numel())
-
-        # Total number of bumps = len(weights) or 2× if repeating
-        self.K_phi = 2 * P_phi if repeat_phi else P_phi
-        self.K_beta = 2 * P_beta if repeat_beta else P_beta
-
-        self.width_phi, self.width_beta = float(width_phi), float(width_beta)
-        self.normalize_bumps = bool(normalize_bumps)
-        self.sgn = -1.0 if left_first else +1.0
-
-    def beta_center(self, r):
-        return self.beta0 * (self.r0 / (self.r0 + (r - self.r0) * self.kbeta))
-
-    def az_amp(self, r):
-        return self.az_amp0 * (self.r0 / (self.r0 + (r - self.r0) * self.kappa))
-
-    def beta_amp(self, r):
-        return self.beta_amp0 * (self.r0 / (self.r0 + (r - self.r0) * self.kappa))
-
-    @staticmethod
-    def _mod1(x):
-        return x - ca.floor(x)
-
-    def _bump(self, u, a, width, normalize=False):
-        delta = self._mod1(u - a)
-        s = delta / width
-        val = 6.0 * (s**2) * ((1.0 - s) ** 2)
-        inside = ca.if_else(delta <= width, 1.0, 0.0)
-        bump = inside * val
-        return bump / width if normalize else bump
-
-    def _build_shape_repeat(self, u, K, width, base_vec):
-        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump(u; a=k/K, width)."""
-        P = int(base_vec.numel())
-        N = 1.0
-        for k in range(K):
-            wk = base_vec[k % P]
-            a = k / K
-            N = N + wk * self._bump(u, a=a, width=width, normalize=self.normalize_bumps)
-        return N
-
-    def _u(self, s):  # unit-phase for shaping
-        return self._mod1(self.omega * s / (2.0 * ca.pi))
-
-    def azimuth(self, r, s):
-        a_phi = self.az_amp(r)
-        phi_class = self.sgn * a_phi * ca.sin(self.omega * s)
-        u = self._u(s)
-        N_phi = self._build_shape_repeat(u, self.K_phi, self.width_phi, self.az_coeffs)
-        return phi_class * N_phi  # c_phi = 0
-
-    def elevation(self, r, s):
-        c_beta = self.beta_center(r)
-        b_beta = self.beta_amp(r)
-        beta_class = c_beta + b_beta * ca.sin(2.0 * self.omega * s)
-        u = self._u(s)
-        N_beta = self._build_shape_repeat(
-            u, self.K_beta, self.width_beta, self.beta_coeffs
-        )
-        return (beta_class) * N_beta
+import tkinter as tk
+from mpl_toolkits.mplot3d import Axes3D
+import pandas as pd
+import re
+
+# --- GOAL: TODO---
+''' Goal of the next step is to refactor this into a class that is called cycle, 
+which has methods to load data, extract cycles, fit splines, plot, etc. '''
+
+def convert_time_to_seconds(time_array):
+    """Convert time in HH:MM:SS.sss format to total seconds."""
+    seconds_array = []
+    for time_str in time_array:
+        parts = re.split(r"[:.]", time_str)
+        h = int(parts[0])
+        m = int(parts[1])
+        s = float(parts[2]) + float("0." + parts[3]) if len(parts) > 3 else float(parts[2])
+        seconds = h * 3600 + m * 60 + s
+        seconds_array.append(seconds)
+    return np.array(seconds_array)
+
+# Import simulated csv data
+file_path_full = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv"
+full_data = pd.read_csv(file_path_full, header=0, sep=r"\s+")
+column_titles_full = list(full_data.columns)
+
+# Index 122 corresponds to moment of take-off so we ignore data before that
+azimuth_data = full_data["kite_azimuth"].to_numpy()
+elevation_data = full_data["kite_elevation"].to_numpy()
+radial_distance_data = full_data["kite_distance"].to_numpy()
+time_data_full = np.round(convert_time_to_seconds(full_data["time_of_day"].to_numpy()), 1)
+# print("Full time data (seconds):", time_data_full)
+
+# print("Column titles:", column_titles_full)
+# print("Azimuth data:", azimuth_data)
+# print("Elevation data:", elevation_data)
+# print("Radial distance data:", radial_distance_data)
+
+file_path_cycle= "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv"
+full_data = pd.read_csv(file_path_cycle, header=0)
+column_titles_cycle = list(full_data.columns)
+# print("Column titles:", column_titles_cycle)
+
+time_data_cycle = np.round(convert_time_to_seconds(full_data["start_time_cycle_LT"].to_numpy()), 1)
+# print("Cycle time data (seconds):", time_data_cycle)
+
+idx_start_cycle = np.array([i for i, t in enumerate(time_data_full) for j, tc in enumerate(time_data_cycle) if t == tc])
+# print("Start of cycle indices:", idx_start_cycle)
+useful_cycles_idx = idx_start_cycle[1:-1]  # Ignore first and last cycle for safety
+# print("Useful cycle indices:", useful_cycles_idx)
+
+def sph2cart(az, el, r):
+    x = r * np.cos(el) * np.cos(az)
+    y = r * np.cos(el) * np.sin(az)
+    z = r * np.sin(el)
+    return x, y, z
+
+def cycle_trajectory_cartesian(cycle_idx, azimuth_data, elevation_data, radial_distance_data):
+
+    x, y, z = sph2cart(azimuth_data, elevation_data, radial_distance_data)
+
+    start_idx = useful_cycles_idx[cycle_idx]
+    end_idx = useful_cycles_idx[cycle_idx + 1]
+
+    x = x[start_idx:end_idx]
+    y = y[start_idx:end_idx]
+    z = z[start_idx:end_idx]
+
+    return x, y, z
+
+def plot_cycle_trajectory(cycle_idx, x, y, z, RI_start_true, RI_end_true):
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(x, y, z, label=f'Cycle {cycle_idx+1} Trajectory')
+    ax.scatter(*RI_start_true, color='red', label='Reel-In Start Point', s=25)  # Reel-In start point
+    ax.scatter(*RI_end_true, color='green', label='Reel-In End Point', s=25)  # Reel-In end point
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.set_title(f'Kite Trajectory for Cycle {cycle_idx+1}')
+    ax.legend()
+    ax.set_box_aspect([1,1,1])  # keep axes equal
+    plt.show() 
+
+def find_true_RI_start(x, y, z, RI_start_est):
+    # squared distances to avoid unnecessary sqrt
+    distances = np.sqrt((x - RI_start_est[0])**2 + (y - RI_start_est[1])**2 + (z - RI_start_est[2])**2)
+    print(distances.shape)
+    idx = np.argmin(distances)  # index of closest point
+    return idx, (x[idx], y[idx], z[idx])
+
+def find_true_RI_end(x, y, z, dx, dy, dz):
+
+    start_point = (x[0], y[0], z[0])
+    end_point = (x[-1], y[-1], z[-1])
+
+    RI_end_true = (np.mean([start_point[0], end_point[0]]),
+              np.mean([start_point[1], end_point[1]]),
+              np.mean([start_point[2], end_point[2]]))
+    
+    RI_end_gradient = (np.mean([dx[0], dx[-1]]),
+                       np.mean([dy[0], dy[-1]]),
+                       np.mean([dz[0], dz[-1]]))
+
+    return RI_end_true, RI_end_gradient
+
+cycle_idx = 0  # First useful cycle
+
+x_cyc, y_cyc, z_cyc = cycle_trajectory_cartesian(cycle_idx, azimuth_data, elevation_data, radial_distance_data)
+
+dx, dy, dz = np.gradient(x_cyc), np.gradient(y_cyc), np.gradient(z_cyc)
+gradient = np.column_stack((dx, dy, dz))
+
+pf, vf = find_true_RI_end(x_cyc, y_cyc, z_cyc, dx, dy, dz)
+idx, p0 = find_true_RI_start(x_cyc, y_cyc, z_cyc, (260, -130, 140))
+
+v0 = gradient[idx]
+
+plot_cycle_trajectory(cycle_idx, x_cyc, y_cyc, z_cyc, p0, pf)
+
+
+# --- B-spline setup ---
+p = 3
+n_ctrl = 7
+U = [0.0,0.0,0.0,0.0, 1.0/4.0, 2.0/4.0, 3.0/4.0, 1.0,1.0,1.0,1.0] 
+#length of vector U = p + n_ctrl + 1
+# 0 and 1 are repeated to clamp the initial and final position of the spline, repeat p + 1 times
+# 0 and 1 represent the start and end of the spline, u = 0 is the start and u = 1 is the end
+# u is an arbitrary variable 
+# s is used in the rest of the codes but they are the same
+
+# --- This code computes the B-spline basis function and the derivatives ---
+
+def N_ip(u, i, k, U):
+    if k == 0:
+        return ca.if_else(ca.logic_and(u >= U[i], u < U[i+1]), 1.0, 0.0)
+    else:
+        left_den = U[i+k] - U[i]
+        right_den = U[i+k+1] - U[i+1]
+        left = 0
+        right = 0
+        if left_den != 0:
+            left = (u - U[i]) / left_den * N_ip(u, i, k-1, U)
+        if right_den != 0:
+            right = (U[i+k+1] - u) / right_den * N_ip(u, i+1, k-1, U)
+        return left + right
+
+def dN_ip(u, i, k, U):
+    if k == 0:
+        return ca.DM.zeros(1)
+    left_den = U[i+k] - U[i]
+    right_den = U[i+k+1] - U[i+1]
+    left = 0
+    right = 0
+    if left_den != 0:
+        left = k / left_den * N_ip(u, i, k-1, U)
+    if right_den != 0:
+        right = k / right_den * N_ip(u, i+1, k-1, U)
+    return left - right
+
+# --- B-spline factory ---
+# first we normalize the variable s, such that it is compatible with the U vector [0,1]
+# n_ctrl = 6 which means we have 6 control points to play with
+# the first and last (c0 and c5) are used to clamp start and end position
+# c1 and c4 are used to attempt to match the start and end velocity
+# c2 and c3 are left symbolic
+# for elevation, azimuth and radial distance we then create a spline with c2 and c3 as the final controllable points
+
+def make_B_spline(T):
+
+    s = ca.SX.sym('s')
+    u = s / T
+    c2 = ca.SX.sym('c2', 3)
+    c3 = ca.SX.sym('c3', 3)
+    c4 = ca.SX.sym('c4', 3)
+    p0 = ca.SX.sym('p0', 3)
+    v0 = ca.SX.sym('v0', 3)
+    pf = ca.SX.sym('pf', 3)
+    vf = ca.SX.sym('vf', 3)
+
+    scale_start = 1/3
+    scale_end = 1/3
+    c1 = p0 + scale_start * v0
+    c5 = pf + scale_end * vf
+    C = ca.horzcat(p0, c1, c2, c3, c4, c5, pf)
+
+    S = ca.SX.zeros(3,1)
+    dS = ca.SX.zeros(3,1)
+    for i in range(n_ctrl):
+        Ni = N_ip(u, i, p, U)
+        dNi = dN_ip(u, i, p, U)
+        S += ca.reshape(Ni,1,1)*C[:,i]
+        dS += ca.reshape(dNi,1,1)*C[:,i]
+
+    return ca.Function('B_spline', [s, c2, c3, c4, p0, v0, pf, vf], [S, dS, C])
+
+# --- Interactive example ---
+# T is the same as the max value of the s variable
+# we make the spline
+# the rest is for the purpose of visualization, plotting with sliders to adjust p0, pf, v0, vf, c2, and c3
+# as the splines describe elevation, azimuth and radial distance, we also have to convert that into x y and z to plot 
+# the trajectory in 3D
+
+if __name__ == "__main__":
+    T = 10.0
+    B_spline = make_B_spline(T)
+    # print(B_spline)
+
+    # Parameters in azimuth (deg), elevation (deg), radial (m)
+    p0 = np.array([0, 0, 150])
+    v0 = np.array([10, 10, 5])
+    pf = np.array([90, 5, 300])
+    vf = np.array([5, 5, 5])
+    c2 = np.array([30, 20, 200])
+    c3 = np.array([60, 40, 250])
+    c4 = np.array([80, 60, 125])
+
+    s_vals = np.linspace(0, T, 100)
+
+    # Initial spline points
+    S_vals_sph = np.array([B_spline(s, c2, c3, c4, p0, v0, pf, vf)[0].full().flatten() for s in s_vals])
+    # print(np.shape(S_vals_sph))
+    S_vals = np.array([sph2cart(*s) for s in S_vals_sph])
+
+    # Initial control points
+    C_vals_sph = B_spline(0, c2, c3, c4, p0, v0, pf, vf)[2].full().T
+    C_vals = np.array([sph2cart(*c) for c in C_vals_sph])
