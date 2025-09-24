@@ -17,9 +17,8 @@ class ReelInBspline_build():
     # sph - spherical
     # cart - cartesian
 
-
     # -------------------------------
-    # Return CasADi function N_func(u)
+    # Return CasADi function N_func(u, U) that evaluates the B-spline basis vector
     # -------------------------------
     def Nvec_symbolic(self):
         """
@@ -47,9 +46,8 @@ class ReelInBspline_build():
         N_func = ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u", "U"], ["Nvec"])
         return N_func
 
-
     # -------------------------------
-    # Build symbolic spline function
+    # Build symbolic spline function S(u) = N(u, U)*C
     # -------------------------------
     def build_bspline_symbolic(self, return_derivative=True):
         C_sym = ca.MX.sym("C", self.n_ctrl, self.dim)
@@ -68,9 +66,8 @@ class ReelInBspline_build():
                                 ["S","dS"])
         return spline_func
 
-
     # -------------------------------
-    # Evaluate spline numerically
+    # Evaluate spline numerically for multiple u values
     # -------------------------------
     def eval_spline(self, spline_func=None, C_val=None, U_val=None):
         """
@@ -108,7 +105,6 @@ class ReelInBspline_build():
         S_eval = np.vstack(S_list)
         dS_eval = np.vstack(dS_list) if dS_list else None
         return S_eval, dS_eval
-
 
     # -------------------------------
     # Build full N matrix numerically
