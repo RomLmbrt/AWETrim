@@ -30,24 +30,24 @@ with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
 pattern_config_v9 = {
     "pattern_type": "cst_lissajous",
     "parameters": {
-        "omega": 1.0,
-        "r0": 200.0,
+        "omega": 1.0, #
+        "r0": 200.0,#
         "az_amp0": 0.34906584042834454,
         "beta_amp0": 0.08726645309582315,
-        "width_phi": 0.5,
-        "width_beta": 0.5,
-        "left_first": True,
-        "normalize_bumps": False,
+        "width_phi": 0.5,#
+        "width_beta": 0.5, #
+        "left_first": True,#
+        "normalize_bumps": False,#
         "repeat_phi": True,
         "repeat_beta": True,
         "beta_coeffs": np.array(
-            [0.04185004, -0.81050693, 0.01381474, -0.65846845, 0.11087447]
+            [0.04185004, -0.81050693, 0.01381474, -0.65846845, 0.11087447] # if repeat_beta/coeffs != true use 10 coeffs of a multiple of 2 greater than 5
         ),
         "az_coeffs": [0, 0, 0, 0, 0],
-        "kbeta": 0,
+        "kbeta": 0,#
         "beta0": 0.4878886429684,
-        "kappa": 0,
-        "k_vr": 2716,
+        "kappa": 0,#
+        "k_vr": 2716,#
     },
     "start_time": 0,
     "end_time": 35,
@@ -287,9 +287,9 @@ ax3.legend()
 set_plot_style()
 plt.tight_layout()
 # Save the figure as pdf
-plt.savefig(
-    "./results/figures/translational_paper/comparison_v3_v9.pdf", bbox_inches="tight"
-)
+# plt.savefig(
+#     "./results/figures/translational_paper/comparison_v3_v9.pdf", bbox_inches="tight"
+# )
 # plt.show()
 
 

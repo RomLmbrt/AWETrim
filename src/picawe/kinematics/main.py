@@ -6,8 +6,8 @@ from picawe.kinematics.ReelInBspline_plotting import ReelInBspline_plotting as r
 
 if __name__ == "__main__":
     # --- File paths ---
-    full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv"
-    cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv"
+    full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
+    cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
     cyc_idx = 0       # index of the cycle you want to process
     p = 3             # spline degree

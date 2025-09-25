@@ -68,7 +68,7 @@ class ParametrizedPatternsAngles:
 # -------------------------------
 # B-spline class compatible with ParametrizedPatternsAngles
 # -------------------------------
-class ReelInBspline(ParametrizedPatternsAngles):
+class ReelInBspline_v2(ParametrizedPatternsAngles):
     """
     B-spline in φ(u), β(u) (spherical) or x(u),y(u),z(u) (cartesian),
     compatible with ParametrizedPatternsAngles interface.
@@ -78,7 +78,7 @@ class ReelInBspline(ParametrizedPatternsAngles):
                  p=3, 
                  n_ctrl=8, 
                  r0=300, 
-                 rf=None, 
+                 r1=None, 
                  crs0=(11/6)*np.pi, 
                  crsf=np.pi/2, 
                  phi0=0, 
@@ -95,7 +95,7 @@ class ReelInBspline(ParametrizedPatternsAngles):
         self.n_ctrl = n_ctrl
 
         self.r0 = r0
-        self.rf = rf if rf is not None else 0.0
+        self.r1 = r1 if r1 is not None else 0.0
         self.crs0 = crs0
         self.crsf = crsf
         self.phi0 = phi0
@@ -222,11 +222,11 @@ if __name__ == "__main__":
 
     mode = "spherical"  # "spherical" or "cartesian"
 
-    pat = ReelInBspline(
+    pat = ReelInBspline_v2(
         p=fitted.p,
         n_ctrl=fitted.n_ctrl,
         r0=300.0,
-        rf=150.0,
+        r1=150.0,
         crs0=fitted.ri_crs0,
         crsf=fitted.ri_crsf,
         phi0=fitted.ri_p0_sph[0],

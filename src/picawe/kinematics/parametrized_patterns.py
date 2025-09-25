@@ -356,7 +356,7 @@ class FigureEightAngles(ParametrizedPatternsAngles):
         ) + self.beta(t)
 
 
-from picawe.kinematics.reelin_parametrization import ReelInBezier
+from picawe.kinematics.theo_reelin_parametrization import ReelInBspline_v2 as RIBspline
 
 
 def create_pattern_from_dict(
@@ -438,7 +438,7 @@ def create_pattern_from_dict(
         "figure_eight": FigureEight,
         "figure_eight_angles": FigureEightAngles,
         "cst_lissajous": CST_Lissajous,
-        "reel_in": ReelInBezier,
+        "reel_in": RIBspline,
     }
 
     return pattern_classes[pattern_type](**final_params)

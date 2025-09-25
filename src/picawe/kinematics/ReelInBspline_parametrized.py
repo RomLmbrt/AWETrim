@@ -19,7 +19,7 @@ from picawe.kinematics.theo_reelin_parametrization import ParametrizedPatternsAn
 # -------------------------------
 # B-spline class compatible with ParametrizedPatternsAngles
 # -------------------------------
-class ReelInBspline(ParametrizedPatternsAngles):
+class ReelInBspline_v1(ParametrizedPatternsAngles):
     """
     B-spline in φ(u), β(u) (spherical) or x(u),y(u),z(u) (cartesian),
     compatible with ParametrizedPatternsAngles interface.
@@ -140,11 +140,11 @@ class ReelInBspline(ParametrizedPatternsAngles):
         dS_eval = np.vstack(dS_list) if dS_list else None
         return S_eval, dS_eval
 
-    def azimuth(self, s):
+    def azimuth(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
         return res["S"][0]   # φ is first column of spline output
 
-    def elevation(self, s):
+    def elevation(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
         return res["S"][1]   # β is second column of spline output
 
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     
     mode = "spherical"  # "spherical" or "cartesian"
 
-    Spline = ReelInBspline(
+    Spline = ReelInBspline_v1(
         p=fitted.p,
         n_ctrl=fitted.n_ctrl,
         crs0=fitted.ri_crs0,
