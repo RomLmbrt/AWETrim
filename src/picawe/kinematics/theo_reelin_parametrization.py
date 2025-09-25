@@ -10,6 +10,14 @@ from picawe.kinematics.ReelInBspline_fitting import ReelInBspline_fitting as rib
 # Base class: angles-only pattern (radians) + numeric eval
 # =========================================================
 class ParametrizedPatternsAngles:
+    """
+    Subclasses implement:
+      - azimuth(s):  φ(u) in radians (CasADi expression)
+      - elevation(s): β(u) in radians (CasADi expression)
+
+    Use eval_xyz(u_vec, r_vec) to get numeric arrays for plotting.
+    """
+
     def azimuth(self, s):  # radians, CasADi MX/SX
         raise NotImplementedError
 
@@ -17,19 +25,28 @@ class ParametrizedPatternsAngles:
         raise NotImplementedError
 
     def eval_angles(self, u_vec):
+        """
+        Evaluate φ(u), β(u) numerically on u_vec (1D np array).
+        Returns (phi, beta) as NumPy arrays, both radians.
+        """
         u_vec = np.asarray(u_vec).reshape(-1)
         N = u_vec.size
         s = ca.MX.sym("s")
-        phi_s, beta_s = self.azimuth(s), self.elevation(s)
-        f_ab = ca.Function("f_ab", [s], [phi_s, beta_s]).map(N)
-        phi_row, beta_row = f_ab(ca.DM(u_vec).T)
+        r = ca.MX.sym("r")
+        phi_s, beta_s = self.azimuth(r, s), self.elevation(r, s)  # scalar MX
+        f_ab = ca.Function("f_ab", [s], [phi_s, beta_s]).map(N)  # vectorized
+        phi_row, beta_row = f_ab(ca.DM(u_vec).T)  # (1xN) DM
         return np.array(phi_row).ravel(), np.array(beta_row).ravel()
 
     def eval_xyz(self, u_vec, r_vec):
+        """
+        Numeric evaluation for plotting.
+        u_vec, r_vec: 1D numpy arrays of same length.
+        """
         u_vec = np.asarray(u_vec).reshape(-1)
         r_vec = np.asarray(r_vec).reshape(-1)
         assert u_vec.shape == r_vec.shape, "u_vec and r_vec must have same length"
-        phi, beta = self.eval_angles(u_vec)
+        phi, beta = self.eval_angles(u_vec)  # NumPy arrays (rad)
         x = r_vec * np.cos(beta) * np.cos(phi)
         y = r_vec * np.cos(beta) * np.sin(phi)
         z = r_vec * np.sin(beta)
@@ -151,11 +168,11 @@ class ReelInBspline(ParametrizedPatternsAngles):
                            ["C","u","U"],
                            ["S","dS"])
 
-    def azimuth(self, s):
+    def azimuth(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
         return res["S"][0]   # φ is first column of spline output
 
-    def elevation(self, s):
+    def elevation(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
         return res["S"][1]   # β is second column of spline output
 
