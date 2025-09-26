@@ -92,7 +92,6 @@ class ReelInBspline_fitting(ribdata, ribbuild):
 
         builder.U = U0
         builder.C = C0
-        builder.u_vals = self.u_vals
 
         S, dS = builder.eval_spline(spline_func, C0, U0)
 
