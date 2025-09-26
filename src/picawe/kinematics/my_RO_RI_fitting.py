@@ -1,5 +1,5 @@
 from picawe.kinematics.ReelInBspline_build import ReelInBspline_build
-from picawe.kinematics.RO_RI_data_processing import RO_RI_data_processing
+from picawe.kinematics.my_RO_RI_data_processing import RO_RI_data_processing
 import numpy as np
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
