@@ -390,7 +390,7 @@ scatter = ax2.scatter(
 
 # plt.tight_layout()
 # Save figure as pdf
-plt.savefig(save_folder + "parametrized_circle_results.pdf", bbox_inches="tight")
+# plt.savefig(save_folder + "parametrized_circle_results.pdf", bbox_inches="tight")
 # plt.show()
 
 

@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from picawe.timeseries.timeseries import TimeSeries
+from picawe.timeseries.reelin_phase import smooth_gate_interval
 from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
 from picawe import SystemModel
 from picawe.kinematics.Kinematics import ParametrizedKinematics
@@ -10,7 +11,6 @@ import copy
 from picawe.system.tether import RigidLinkTether
 from picawe import State
 from picawe.system.kite import Kite
-
 import logging
 
 
