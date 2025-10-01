@@ -355,10 +355,6 @@ class FigureEightAngles(ParametrizedPatternsAngles):
             1 + self.kz * ca.sin(self.omega * s) ** 2
         ) + self.beta(t)
 
-
-from picawe.kinematics.theo_reelin_parametrization import ReelInBspline_v2 as RIBspline
-
-
 def create_pattern_from_dict(
     config: dict, optimize: bool = False
 ) -> ParametrizedPatterns:
@@ -401,9 +397,20 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
-        "reel_in": [
-            "r0",
-            "r1",
+        "spline": [
+            "p",
+            "n_ctrl", 
+            "r0", 
+            "r1", 
+            "crs0", 
+            "crsf", 
+            "phi0", 
+            "phif", 
+            "beta0", 
+            "betaf", 
+            "C_interior", 
+            "u_vals", 
+            "U_interior",
         ],
     }
 
@@ -438,7 +445,7 @@ def create_pattern_from_dict(
         "figure_eight": FigureEight,
         "figure_eight_angles": FigureEightAngles,
         "cst_lissajous": CST_Lissajous,
-        "reel_in": RIBspline,
+        "spline": ReelInBspline_v2,
     }
 
     return pattern_classes[pattern_type](**final_params)
@@ -544,3 +551,106 @@ class CST_Lissajous(ParametrizedPatternsAngles):
             u, self.K_beta, self.width_beta, self.beta_coeffs
         )
         return (beta_class) * N_beta
+
+class ReelInBspline_v2(ParametrizedPatternsAngles):
+    """
+    B-spline in φ(u), β(u) (spherical) or x(u),y(u),z(u) (cartesian),
+    compatible with ParametrizedPatternsAngles interface.
+    """
+
+    def __init__(self, 
+                 p=3, 
+                 n_ctrl=8, 
+                 r0=300, 
+                 r1=150, 
+                 crs0=(11/6)*np.pi, 
+                 crsf=np.pi/2, 
+                 phi0=0, 
+                 phif=0, 
+                 beta0=0, 
+                 betaf=0, 
+                 C_interior=None, 
+                 u_vals=None, 
+                 U_interior=None):
+
+        # Fixed attributes
+        self.p = p
+        self.n_ctrl = n_ctrl
+        self.r0 = r0
+        self.r1 = r1
+        self.crs0 = crs0
+        self.crsf = crsf
+        self.phi0 = phi0
+        self.phif = phif
+        self.beta0 = beta0
+        self.betaf = betaf
+        self.dim = 2  # azimuth, elevation
+
+        # Knot vector
+        self.n_knots = self.n_ctrl + self.p + 1
+        self.n_interior_knots = self.n_knots - 2*(self.p+1)
+        if self.n_interior_knots < 0:
+            raise ValueError("Too few control points for spline order")
+
+        self.U_interior = np.linspace(0.15, 0.85, self.n_interior_knots+2)[1:-1] if U_interior is None else U_interior
+        self.U = np.concatenate(([0]*(self.p+1), self.U_interior, [1]*(self.p+1)))
+
+        self.C_interior = np.ones((self.n_ctrl-2, self.dim)) if C_interior is None else C_interior
+        # Full control points (first & last fixed, interior symbolic)
+        self.C = np.vstack([np.array([self.phi0, self.beta0]),
+                            self.C_interior,
+                            np.array([self.phif, self.betaf])])
+
+        # Sampling
+        self.u_vals = np.linspace(0, 1, 100) if u_vals is None else u_vals
+
+        self.spline_func = self.build_bspline_symbolic()
+
+    # -------------------------------
+    # B-spline basis symbolic function
+    # -------------------------------
+    def Nvec_symbolic(self):
+        u_sym = ca.MX.sym("u")
+        U_sym = ca.MX.sym("U", self.n_ctrl + self.p + 1)
+        n_ctrl = self.n_ctrl
+        p = self.p
+
+        def N(i, k, u):
+            if k == 0:
+                return ca.if_else(ca.logic_and(U_sym[i] <= u, u <= U_sym[i+1]), 1.0, 0.0)
+            left = ca.if_else(U_sym[i+k] > U_sym[i],
+                              (u - U_sym[i]) / (U_sym[i+k]-U_sym[i]) * N(i, k-1, u),
+                              0)
+            right = ca.if_else(U_sym[i+k+1] > U_sym[i+1],
+                               (U_sym[i+k+1]-u)/(U_sym[i+k+1]-U_sym[i+1]) * N(i+1, k-1, u),
+                               0)
+            return left + right
+
+        Nvec_sym = ca.vertcat(*[N(i, p, u_sym) for i in range(n_ctrl)]).T
+        return ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u","U"], ["Nvec"])
+
+    # -------------------------------
+    # Build symbolic spline S(u) = N(u,U)*C
+    # -------------------------------
+    def build_bspline_symbolic(self, return_derivative=True):
+        C_sym = ca.MX.sym("C", self.n_ctrl, self.dim)
+        u_sym = ca.MX.sym("u")
+        U_sym = ca.MX.sym("U", self.n_ctrl + self.p + 1)
+
+        N_func = self.Nvec_symbolic()
+        S_sym = ca.mtimes(N_func(u_sym, U_sym), C_sym)
+        dS_sym = ca.jacobian(S_sym, u_sym) if return_derivative else None
+
+        return ca.Function("spline_func",
+                           [C_sym, u_sym, U_sym],
+                           [S_sym, dS_sym],
+                           ["C","u","U"],
+                           ["S","dS"])
+
+    def azimuth(self, r, s):
+        res = self.spline_func(C=self.C, u=s, U=self.U)
+        return res["S"][:, 0]   # φ is first column of spline output
+
+    def elevation(self, r, s):
+        res = self.spline_func(C=self.C, u=s, U=self.U)
+        return res["S"][:, 1]   # β is second column of spline output
