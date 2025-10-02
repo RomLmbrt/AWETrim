@@ -70,10 +70,10 @@ class ParametrizedPatternsAngles:
 # B-spline class compatible with ParametrizedPatternsAngles
 # -------------------------------
 class Bspline(ParametrizedPatternsAngles, Bspline_build):
-    """
-    B-spline in φ(u), β(u) (spherical) or x(u),y(u),z(u) (cartesian),
-    compatible with ParametrizedPatternsAngles interface.
-    """
+    
+    # =======================================
+    """ NO COURSE ANGLE ENFORCEMENT YET """
+    # =======================================
 
     def __init__(self, 
                  p=3, 

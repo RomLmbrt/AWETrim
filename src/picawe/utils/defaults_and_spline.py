@@ -97,7 +97,7 @@ DEFAULT_SPLINE_PATTERN_CONFIG = {
         "betaf": 0,
         "C_interior": np.ones((6, 2)),  # n_ctrl-2 x dim
         "u_vals": np.linspace(0, 1, 100),
-        "U_interior": np.linspace(0.15, 0.85, 6),
+        "U_interior": np.linspace(0.15, 0.85, 6)[1:-1],
     },
     "optimization_parameters": {
         "C_interior",  # Only the interior control points

@@ -444,9 +444,9 @@ class State:
 
     # Optional outputs
     angle_of_attack: Optional[float] = None
-
     lift_coefficient: Optional[float] = None
     drag_coefficient: Optional[float] = None
+    speed_apparent_wind: Optional[float] = None  # Add this line
 
     # Parametrization
     s: Optional[float] = None

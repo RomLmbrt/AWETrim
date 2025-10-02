@@ -33,32 +33,43 @@ cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cy
 
 Lisajous_fitting_obj = Lisajous_fitting(file_path_cycle=cycle_path, file_path_full=full_path, cyc_idx=0)
 results, best_params = Lisajous_fitting_obj.LSQ()
+az_amp0 = float(best_params["az_amp0"])
+beta_amp0 = float(best_params["beta_amp0"])
+beta_coeffs = best_params["beta_coeffs"]
+az_coeffs = best_params["az_coeffs"]
+beta0 = float(best_params["beta0"])
+
 # Lisajous_fitting_obj.plot_fitted_path(best_params)
+
+# Recreating the starting and ending point of the path used to validate the model
+start_angle = 1.34 * np.pi
+range = 1.45 * np.pi
+cycles = 0
 
 pattern_config_v9 = {
     "pattern_type": "cst_lissajous",
     "parameters": {
         "omega": 1.0,#
         "r0": 200.0,#
-        "az_amp0": float(best_params["az_amp0"]),
-        "beta_amp0": float(best_params["beta_amp0"]),
+        "az_amp0": az_amp0,
+        "beta_amp0": beta_amp0,
         "width_phi": 0.5,#
         "width_beta": 0.5, #
         "left_first": True,#
         "normalize_bumps": False,#
         "repeat_phi": False,
         "repeat_beta": False,#
-        "beta_coeffs":best_params["beta_coeffs"],
-        "az_coeffs": best_params["az_coeffs"],
+        "beta_coeffs": beta_coeffs,
+        "az_coeffs": az_coeffs,
         "kbeta": 0,#
-        "beta0": float(best_params["beta0"]),
+        "beta0": beta0,
         "kappa": 0,#
         "k_vr": 2716,#
     },
     "start_time": 0,
     "end_time": 35,
-    "start_angle": np.pi / 2,
-    "end_angle": 4 * np.pi + np.pi / 2,
+    "start_angle": start_angle,
+    "end_angle": start_angle + range + cycles * 2 * np.pi,
     "n_points": 600,
     "optimization_parameters": [],
 }
@@ -66,7 +77,7 @@ pattern_config_v9 = {
 # ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=np.pi / 2,
+    s=start_angle,
     s_dot=2,
     s_ddot=0,
     length_tether=199.6,
@@ -210,11 +221,11 @@ def run_sim(
             linestyle=linestyle,
             color=color,
         )
-        # plt.show()
+        plt.show()
     # Calculate locations of maximum and minimum speed
     for sim_type in ["quasi_steady", "dynamic"]:
         s = result[sim_type]["s"]
-        mask = (s > 0) & (s < 180)
+        mask = (s > 0) & (s < 360)
         vtau = result[sim_type]["vtau"][mask]
         max_speed_idx = np.argmax(vtau)
         min_speed_idx = np.argmin(vtau)

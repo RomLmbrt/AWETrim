@@ -445,7 +445,7 @@ def create_pattern_from_dict(
         "figure_eight": FigureEight,
         "figure_eight_angles": FigureEightAngles,
         "cst_lissajous": CST_Lissajous,
-        "spline": ReelInBspline_v2,
+        "spline": Bspline,
     }
 
     return pattern_classes[pattern_type](**final_params)
@@ -552,11 +552,11 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         )
         return (beta_class) * N_beta
 
-class ReelInBspline_v2(ParametrizedPatternsAngles):
-    """
-    B-spline in φ(u), β(u) (spherical) or x(u),y(u),z(u) (cartesian),
-    compatible with ParametrizedPatternsAngles interface.
-    """
+class Bspline(ParametrizedPatternsAngles): 
+    
+    # =======================================
+    """ NO COURSE ANGLE ENFORCEMENT YET """
+    # =======================================
 
     def __init__(self, 
                  p=3, 
@@ -627,7 +627,8 @@ class ReelInBspline_v2(ParametrizedPatternsAngles):
             return left + right
 
         Nvec_sym = ca.vertcat(*[N(i, p, u_sym) for i in range(n_ctrl)]).T
-        return ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u","U"], ["Nvec"])
+        N_func = ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u","U"], ["Nvec"])
+        return N_func
 
     # -------------------------------
     # Build symbolic spline S(u) = N(u,U)*C
@@ -649,8 +650,8 @@ class ReelInBspline_v2(ParametrizedPatternsAngles):
 
     def azimuth(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
-        return res["S"][:, 0]   # φ is first column of spline output
+        return res["S"][0]   # φ is first column of spline output
 
     def elevation(self, r, s):
         res = self.spline_func(C=self.C, u=s, U=self.U)
-        return res["S"][:, 1]   # β is second column of spline output
+        return res["S"][1]   # β is second column of spline output

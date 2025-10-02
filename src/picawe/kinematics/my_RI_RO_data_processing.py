@@ -29,6 +29,12 @@ class RI_RO_data_processing(Lisajous_data_processing):
         self.RI_RO_p0_cart = (self.x_cyc[self.RI_RO_idx0], self.y_cyc[self.RI_RO_idx0], self.z_cyc[self.RI_RO_idx0])
         self.RI_RO_pf_cart = (self.x_cyc[self.RI_RO_idxf], self.y_cyc[self.RI_RO_idxf], self.z_cyc[self.RI_RO_idxf])
 
+        self.RI_RO_crs0 = self.crs_cyc[self.RI_RO_idx0]
+        self.RI_RO_crsf = self.crs_cyc[self.RI_RO_idxf]
+
+        self.RI_RO_v0 = (self.dx_cyc[self.RI_RO_idx0], self.dy_cyc[self.RI_RO_idx0], self.dz_cyc[self.RI_RO_idx0])
+        self.RI_RO_vf = (self.dx_cyc[self.RI_RO_idxf], self.dy_cyc[self.RI_RO_idxf], self.dz_cyc[self.RI_RO_idxf])
+
         self.RI_RO_sph = (self.az_cyc[self.RI_RO_idx0:self.RI_RO_idxf+1], self.el_cyc[self.RI_RO_idx0:self.RI_RO_idxf+1])
         self.RI_RO_cart = (self.x_cyc[self.RI_RO_idx0:self.RI_RO_idxf+1], self.y_cyc[self.RI_RO_idx0:self.RI_RO_idxf+1], self.z_cyc[self.RI_RO_idx0:self.RI_RO_idxf+1])
 

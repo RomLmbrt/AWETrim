@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 class RI_RO_fitting(RI_RO_data_processing, Bspline_build):
     def __init__(self, file_path_full=None, file_path_cycle=None, cyc_idx=0, p=3, n_ctrl=6,
-                 c_penalty=0.0, v_penalty=0.0, eps_knot=1e-3):
+                 c_penalty=1.0, v_penalty=0.0, eps_knot=1e-3):
         super().__init__(file_path_full, file_path_cycle, cyc_idx)
 
         self.p = p
@@ -110,20 +110,18 @@ class RI_RO_fitting(RI_RO_data_processing, Bspline_build):
 
             res_data = (S_fit - self.S_data).ravel()
 
-            # if mode == "spherical":
-            #     avg_start = self.compute_course_average_sph(dS_fit, S_fit, start=True)
-            #     avg_end = self.compute_course_average_sph(dS_fit, S_fit, start=False)
-            #     res_extra = np.array(
-            #         [self.ri_crs0 - avg_start, self.ri_crsf - avg_end]
-            #     ) * self.c_penalty
-            # else:
-            #     vel_start = self.compute_velocity_average_cart(dS_fit, start=True)
-            #     vel_end = self.compute_velocity_average_cart(dS_fit, start=False)
-            #     res_extra = np.ravel(
-            #         np.array([vel_start - self.ri_v0, vel_end - self.ri_vf])
-            #     ) * self.v_penalty
-
-            # For now I ignore res_extra because I need to recompute the crs and velocity at the start and end of RI_RO segment and I am too lazy
+            if mode == "spherical":
+                avg_start = self.compute_course_average_sph(dS_fit, S_fit, start=True)
+                avg_end = self.compute_course_average_sph(dS_fit, S_fit, start=False)
+                res_extra = np.array(
+                    [self.RI_RO_crs0 - avg_start, self.RI_RO_crsf - avg_end]
+                ) * self.c_penalty
+            else:
+                vel_start = self.compute_velocity_average_cart(dS_fit, start=True)
+                vel_end = self.compute_velocity_average_cart(dS_fit, start=False)
+                res_extra = np.ravel(
+                    np.array([vel_start - self.RI_RO_v0, vel_end - self.RI_RO_vf])
+                ) * self.v_penalty
 
             return res_data # np.concatenate([res_data, res_extra])
         

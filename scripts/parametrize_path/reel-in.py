@@ -11,6 +11,8 @@ from picawe.system.tether import RigidLumpedTether
 from picawe.utils.defaults import PLOT_LABELS
 from picawe.environment.Wind import Wind
 from mpl_toolkits.mplot3d import Axes3D
+from picawe.kinematics.RI_fitting import RI_fitting as ribfit
+
 
 # ---------- Config ----------
 speed_wind_at_100 = 10
@@ -28,22 +30,67 @@ colors = get_color_list()
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
 
+fitted = ribfit(
+    file_path_full = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv",
+    file_path_cycle = "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv",
+    cyc_idx=0,
+    p=3,
+    n_ctrl=8,
+    c_penalty=1.0,
+    v_penalty=0.0,
+    eps_knot=1e-3
+    )
+
+# Debug prints to understand the shapes
+print("fitted.C_sph shape:", fitted.C_sph.shape)
+print("fitted.C_sph:\n", fitted.C_sph)
+print("fitted.C_sph[1:-1] shape:", fitted.C_sph[1:-1].shape)
+print("fitted.C_sph[1:-1]:\n", fitted.C_sph[1:-1])
+
+crs0=fitted.ri_crs0
+crsf=fitted.ri_crsf
+phi0=fitted.ri_p0_sph[0]
+phif=fitted.ri_pf_sph[0]
+beta0=fitted.ri_p0_sph[1]
+betaf=fitted.ri_pf_sph[1]
+C_interior=fitted.C_sph[1:-1] # Remove the extra indexing
+u_vals = fitted.u_vals
+U_interior=fitted.U_sph[fitted.p+1:-(fitted.p+1)]
+
+print(f"crs0 shape: {np.array(crs0).shape}")
+print(f"phi0 shape: {np.array(phi0).shape}")
+print(f"C_interior shape: {np.array(C_interior).shape}")
+print(f"U_interior shape: {np.array(U_interior).shape}")
+
 pattern_config_v9 = {
-    "pattern_type": "reel_in",
+    "pattern_type": "spline",
     "parameters": {
-        "r0": 330.0,
-        "r1": 230.0,
+        "p": 3,
+        "n_ctrl": 8,
+        "r0": 300,
+        "r1": 150,
+        "crs0": crs0,
+        "crsf": crsf,
+        "phi0": phi0,
+        "phif": phif,
+        "beta0": beta0,
+        "betaf": betaf,
+        "C_interior": C_interior,
+        "u_vals": u_vals,
+        "U_interior": U_interior,
     },
     "start_time": 0,
-    "end_time": 30,
-    "n_points": 300,
+    "end_time": 50,
+    # "start_angle": 0,
+    # "end_angle": 1,
+    "n_points": 600,
     "optimization_parameters": [],
 }
 
 # ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=0.01,
+    s=0,
     s_dot=2,
     s_ddot=0,
     length_tether=199.6,
@@ -285,9 +332,9 @@ ax3.legend()
 set_plot_style()
 plt.tight_layout()
 # Save the figure as pdf
-plt.savefig(
-    "./results/figures/translational_paper/comparison_v3_v9.pdf", bbox_inches="tight"
-)
+# plt.savefig(
+#     "./results/figures/translational_paper/comparison_v3_v9.pdf", bbox_inches="tight"
+# )
 plt.show()
 
 
