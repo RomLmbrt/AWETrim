@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 from scipy.interpolate import interp1d
-from picawe.kinematics.parametrized_patterns import Helix
+# from picawe.kinematics.parametrized_patterns import Helix
 from picawe import SystemModel, State
 from picawe.utils.color_palette import set_plot_style, get_color_list, custom_cmap
 from picawe.timeseries.phase_parametrized import PhaseParameterized
@@ -221,9 +221,9 @@ def run_sim(
             linestyle=linestyle,
             color=color,
         )
-        plt.show()
+        # plt.show()
     # Calculate locations of maximum and minimum speed
-    for sim_type in ["quasi_steady", "dynamic"]:
+    for sim_type in simulation_types:
         s = result[sim_type]["s"]
         mask = (s > 0) & (s < 360)
         vtau = result[sim_type]["vtau"][mask]
