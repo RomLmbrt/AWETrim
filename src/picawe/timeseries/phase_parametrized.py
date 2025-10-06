@@ -3,7 +3,7 @@ from picawe.timeseries.timeseries import TimeSeries
 from picawe.timeseries.reelin_phase import smooth_gate_interval
 from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
 from picawe import SystemModel
-from picawe.kinematics.Kinematics import ParametrizedKinematics
+from picawe.kinematics.Kinematics_with_new_spline_based_code import ParametrizedKinematics
 import casadi as ca
 import numpy as np
 from picawe.utils.defaults import DEFAULT_PATTERN_CONFIG, DEFAULT_OPTI_LIMITS

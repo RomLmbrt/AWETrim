@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import json
-from scipy.interpolate import interp1d
-from picawe.kinematics.parametrized_patterns import Helix
+import casadi as ca
+# from scipy.interpolate import interp1d
+# from picawe.kinematics.parametrized_patterns import Helix
 from picawe import SystemModel, State
 from picawe.utils.color_palette import set_plot_style, get_color_list, custom_cmap
 from picawe.timeseries.reelin_phase import ReelinPhase
@@ -10,9 +11,25 @@ from picawe.system.kite import Kite
 from picawe.system.tether import RigidLumpedTether
 from picawe.utils.defaults import PLOT_LABELS
 from picawe.environment.Wind import Wind
-from mpl_toolkits.mplot3d import Axes3D
-from picawe.kinematics.RI_fitting import RI_fitting as ribfit
+# from mpl_toolkits.mplot3d import Axes3D
+from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
+import pickle
 
+# Load the precomputed fit
+with open("fit_results.pkl", "rb") as f:
+    fit_data = pickle.load(f)
+
+C_sph     = fit_data["C_sph"]
+crs0      = fit_data["crs0"]
+crsf      = fit_data["crsf"]
+phi0      = fit_data["phi0"]
+phif      = fit_data["phif"]
+beta0     = fit_data["beta0"]
+betaf     = fit_data["betaf"]
+C_interior = fit_data["C_interior"]
+u_vals    = fit_data["u_vals"]
+U_interior = fit_data["U_interior"]
+v0 = float(np.sqrt(fit_data["v0"][0]**2 + fit_data["v0"][1]**2 + fit_data["v0"][2]**2))    
 
 # ---------- Config ----------
 speed_wind_at_100 = 10
@@ -30,45 +47,13 @@ colors = get_color_list()
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
 
-fitted = ribfit(
-    file_path_full = "/home/theophile/src/Simulation_Results/trial_Uri_valid/ProtoLogger_csv/2025-09-10_11-31-10_ProtoLogger.csv",
-    file_path_cycle = "/home/theophile/src/Simulation_Results/trial_Uri_valid/cycles/cycle_data_sheet_lines.csv",
-    cyc_idx=0,
-    p=3,
-    n_ctrl=8,
-    c_penalty=1.0,
-    v_penalty=0.0,
-    eps_knot=1e-3
-    )
-
-# Debug prints to understand the shapes
-print("fitted.C_sph shape:", fitted.C_sph.shape)
-print("fitted.C_sph:\n", fitted.C_sph)
-print("fitted.C_sph[1:-1] shape:", fitted.C_sph[1:-1].shape)
-print("fitted.C_sph[1:-1]:\n", fitted.C_sph[1:-1])
-
-crs0=fitted.ri_crs0
-crsf=fitted.ri_crsf
-phi0=fitted.ri_p0_sph[0]
-phif=fitted.ri_pf_sph[0]
-beta0=fitted.ri_p0_sph[1]
-betaf=fitted.ri_pf_sph[1]
-C_interior=fitted.C_sph[1:-1] # Remove the extra indexing
-u_vals = fitted.u_vals
-U_interior=fitted.U_sph[fitted.p+1:-(fitted.p+1)]
-
-print(f"crs0 shape: {np.array(crs0).shape}")
-print(f"phi0 shape: {np.array(phi0).shape}")
-print(f"C_interior shape: {np.array(C_interior).shape}")
-print(f"U_interior shape: {np.array(U_interior).shape}")
-
 pattern_config_v9 = {
     "pattern_type": "spline",
     "parameters": {
         "p": 3,
         "n_ctrl": 8,
         "r0": 300,
-        "r1": 150,
+        "r1": 150,  # This might not be used correctly
         "crs0": crs0,
         "crsf": crsf,
         "phi0": phi0,
@@ -81,26 +66,74 @@ pattern_config_v9 = {
     },
     "start_time": 0,
     "end_time": 50,
-    # "start_angle": 0,
-    # "end_angle": 1,
+    "start_angle": 0,  # Add this
+    "end_angle": 1,    # Add this
     "n_points": 600,
     "optimization_parameters": [],
 }
 
 # ---------- Starting state ----------
+# First, create the pattern to get the correct angles
+test_pattern = create_pattern_from_dict(pattern_config_v9, optimize=False)
+
+# Choose starting point
+start_s_value = u_vals[10]  # or any other reasonable point
+start_r_value = 330
+
+# Get pattern angles at starting point
+start_s = ca.DM(start_s_value)
+start_r = ca.DM(start_r_value)
+
+phi_at_start = float(test_pattern.azimuth(start_r, start_s))
+beta_at_start = float(test_pattern.elevation(start_r, start_s))
+
+print(f"=== Initial State Setup ===")
+print(f"Starting at s={start_s_value:.6f}")
+print(f"Pattern angles at start: phi={phi_at_start:.6f}, beta={beta_at_start:.6f}")
+
+# Estimate reasonable course angle (you might need to adjust this)
+# Option 1: Use fitted initial course angle
+estimated_course = crs0
+
+# Option 2: Calculate from pattern derivatives if available
+if hasattr(test_pattern, 'azimuth_derivative') and hasattr(test_pattern, 'elevation_derivative'):
+    dphi_ds = float(test_pattern.azimuth_derivative(start_r, start_s))
+    dbeta_ds = float(test_pattern.elevation_derivative(start_r, start_s))
+    if abs(dbeta_ds) > 1e-6:
+        # Estimate course from arctan(dphi_ds * cos(beta) / dbeta_ds)
+        estimated_course = np.arctan2(dphi_ds * np.cos(beta_at_start), dbeta_ds)
+        print(f"Estimated course from derivatives: {estimated_course:.6f}")
+    else:
+        print("Using fitted course angle (dbeta_ds too small)")
+        estimated_course = crs0
+else:
+    print("Using fitted course angle (no derivatives available)")
+    estimated_course = crs0
+
 base_start_state = State(
     t=0,
-    s=0,
+    s=start_s_value,
     s_dot=2,
     s_ddot=0,
     length_tether=199.6,
     input_steering=0,
-    tension_tether_ground=1e8,
-    distance_radial=330,
+    tension_tether_ground=2e4,
+    distance_radial=start_r_value,
     speed_radial=2,
     timeder_speed_radial=0,
     input_depower=0,
+    angle_elevation=beta_at_start,   # Use pattern value at starting point
+    angle_azimuth=phi_at_start,      # Use pattern value at starting point
+    angle_course=estimated_course,    # Use estimated course
+    speed_tangential=v0,
+    timeder_angle_course=0.0,        # Start with zero
 )
+
+print(f"Final initial state:")
+print(f"  s={base_start_state.s:.6f}")
+print(f"  phi={base_start_state.angle_azimuth:.6f}")
+print(f"  beta={base_start_state.angle_elevation:.6f}")
+print(f"  course={base_start_state.angle_course:.6f}")
 
 # ---------- Plot layout ----------
 fig = plt.figure(figsize=(14, 8))
@@ -251,7 +284,7 @@ def run_sim(
         )
         # plt.show()
     # Calculate locations of maximum and minimum speed
-    for sim_type in ["quasi_steady", "dynamic"]:
+    for sim_type in simulation_types:
         s = result[sim_type]["s"]
         mask = (s > 0) & (s < 180)
         vtau = result[sim_type]["vtau"][mask]
@@ -275,7 +308,6 @@ def run_sim(
         )
 
     return result, scatter
-
 
 results_v9, scatter_v9 = run_sim(
     aero_input_v9, pattern_config_v9, "V9", 90, 47, 0.01, 2, marker="^"
@@ -331,112 +363,121 @@ ax3.legend()
 
 set_plot_style()
 plt.tight_layout()
-# Save the figure as pdf
-# plt.savefig(
-#     "./results/figures/translational_paper/comparison_v3_v9.pdf", bbox_inches="tight"
+plt.show()
+
+
+# # ---------- Energy, power and phase comparison ----------
+# def compute_energy_metrics(results, label=""):
+#     s_qs = results["quasi_steady"]["s"]
+#     s_dyn = results["dynamic"]["s"]
+#     print("Maximum s: ", max(s_qs), max(s_dyn))
+    
+#     # Add safety check
+#     if len(s_qs) < 2 or len(s_dyn) < 2:
+#         print(f"ERROR: Simulation failed for {label}. Not enough data points.")
+#         print(f"QS points: {len(s_qs)}, Dyn points: {len(s_dyn)}")
+#         return
+    
+#     mask_qs = (s_qs > s_qs[0]) & (s_qs < s_qs[0] + 360)
+#     mask_dyn = (s_dyn > s_dyn[0]) & (s_dyn < s_dyn[0] + 360)
+    
+#     # Check if masks have any True values
+#     if not np.any(mask_qs) or not np.any(mask_dyn):
+#         print(f"ERROR: No valid data in range for {label}")
+#         return
+    
+#     vtau_qs = results["quasi_steady"]["vtau"][mask_qs]
+#     vtau_dyn = results["dynamic"]["vtau"][mask_dyn]
+#     tension_qs = results["quasi_steady"]["tension"][mask_qs]
+#     tension_dyn = results["dynamic"]["tension"][mask_dyn]
+#     vr_qs = results["quasi_steady"]["vr"][mask_qs]
+#     vr_dyn = results["dynamic"]["vr"][mask_dyn]
+#     t_qs = results["quasi_steady"]["t"][mask_qs]
+#     t_dyn = results["dynamic"]["t"][mask_dyn]
+
+#     sum_energy_qs = np.sum(tension_qs * vr_qs * np.diff(t_qs, prepend=t_qs[0]))
+#     sum_energy_dyn = np.sum(tension_dyn * vr_dyn * np.diff(t_dyn, prepend=t_dyn[0]))
+#     sum_pow_qs = sum_energy_qs / (t_qs[-1] - t_qs[0])
+#     sum_pow_dyn = sum_energy_dyn / (t_dyn[-1] - t_dyn[0])
+#     power_diff = (sum_pow_qs - sum_pow_dyn) / sum_pow_dyn * 100
+
+#     pow_qs = results["quasi_steady"]["power_mechanical"][mask_qs]
+#     pow_dyn = results["dynamic"]["power_mechanical"][mask_dyn]
+
+#     print(f"\n--- {label} ---")
+#     print(f"Power QS: {sum_pow_qs:.2f}, Power Dyn: {sum_pow_dyn:.2f}.")
+#     print(
+#         f"Mean power QS: {np.mean(pow_qs):.2f}, Mean power Dyn: {np.mean(pow_dyn):.2f}"
+#     )
+#     print(f"Δ Power: {power_diff:.2f}%")
+
+#     # Cross-correlation
+#     t_common = np.linspace(max(t_qs[0], t_dyn[0]), min(t_qs[-1], t_dyn[-1]), 1000)
+#     v1 = interp1d(t_qs, vtau_qs, kind="linear")(t_common) - np.mean(vtau_qs)
+#     v2 = interp1d(t_dyn, vtau_dyn, kind="linear")(t_common) - np.mean(vtau_dyn)
+#     corr = np.correlate(v1, v2, mode="full")
+#     lags = np.arange(-len(v1) + 1, len(v1))
+#     time_lags = lags * (t_common[1] - t_common[0])
+#     best_lag = time_lags[np.argmax(corr)]
+#     print(f"Estimated time lag: {best_lag:.3f} s")
+
+#     # Mean and Max tension differences (%)
+#     mean_t_qs = np.mean(tension_qs)
+#     mean_t_dyn = np.mean(tension_dyn)
+#     delta_ft_mean = (mean_t_qs - mean_t_dyn) / mean_t_dyn * 100
+
+#     max_t_qs = np.max(tension_qs)
+#     max_t_dyn = np.max(tension_dyn)
+#     delta_ft_max = (max_t_qs - max_t_dyn) / max_t_dyn * 100
+
+#     # Max tangential speed difference (%)
+#     max_vtau_qs = np.max(vtau_qs)
+#     max_vtau_dyn = np.max(vtau_dyn)
+#     delta_vtau_max = (max_vtau_qs - max_vtau_dyn) / max_vtau_dyn * 100
+
+#     # --- TENSION MIN DIFFERENCE ---
+#     min_t_qs = np.min(tension_qs)
+#     min_t_dyn = np.min(tension_dyn)
+#     delta_ft_min = (min_t_qs - min_t_dyn) / min_t_dyn * 100
+
+#     # --- VTAU MIN DIFFERENCE ---
+#     min_vtau_qs = np.min(vtau_qs)
+#     min_vtau_dyn = np.min(vtau_dyn)
+#     delta_vtau_min = (min_vtau_qs - min_vtau_dyn) / min_vtau_dyn * 100
+
+#     # --- PHASE LAG AT MAX vtau ---
+#     s_dyn_vtau_max = s_dyn[np.argmax(vtau_dyn)]
+#     s_qs_vtau_max = s_qs[np.argmax(vtau_qs)]
+#     s_lag_max = s_qs_vtau_max - s_dyn_vtau_max
+
+#     # --- PHASE LAG AT MIN vtau ---
+#     s_dyn_vtau_min = s_dyn[np.argmin(vtau_dyn)]
+#     s_qs_vtau_min = s_qs[np.argmin(vtau_qs)]
+#     s_lag_min = s_qs_vtau_min - s_dyn_vtau_min
+
+#     print(f"ΔF_t,mean: {delta_ft_mean:.2f}%")
+#     print(f"ΔF_t,max: {delta_ft_max:.2f}%")
+#     print(f"ΔF_t,min: {delta_ft_min:.2f}%")
+#     print(f"Δv_tau,max: {delta_vtau_max:.2f}%")
+#     print(f"Δv_tau,min: {delta_vtau_min:.2f}%")
+#     print(f"ΔΦ_v_tau,max: {s_lag_max:.2f} deg")
+#     print(f"ΔΦ_v_tau,min: {s_lag_min:.2f} deg")
+
+
+# fig_3d = plt.figure()
+# ax_3d = fig_3d.add_subplot(111, projection="3d")
+# ax_3d.plot(
+#     results_v9["quasi_steady"]["x"],
+#     results_v9["quasi_steady"]["y"],
+#     results_v9["quasi_steady"]["z"],
+#     label="Quasi-Steady Trajectory",
 # )
-plt.show()
+# ax_3d.set_xlabel("X")
+# ax_3d.set_ylabel("Y")
+# ax_3d.set_zlabel("Z")
+# ax_3d.legend()
 
-
-# ---------- Energy, power and phase comparison ----------
-def compute_energy_metrics(results, label=""):
-    s_qs = results["quasi_steady"]["s"]
-    s_dyn = results["dynamic"]["s"]
-    print("Maximum s: ", max(s_qs), max(s_dyn))
-    mask_qs = (s_qs > s_qs[0]) & (s_qs < s_qs[0] + 360)
-    mask_dyn = (s_dyn > s_dyn[0]) & (s_dyn < s_dyn[0] + 360)
-    vtau_qs = results["quasi_steady"]["vtau"][mask_qs]
-    vtau_dyn = results["dynamic"]["vtau"][mask_dyn]
-    tension_qs = results["quasi_steady"]["tension"][mask_qs]
-    tension_dyn = results["dynamic"]["tension"][mask_dyn]
-    vr_qs = results["quasi_steady"]["vr"][mask_qs]
-    vr_dyn = results["dynamic"]["vr"][mask_dyn]
-    t_qs = results["quasi_steady"]["t"][mask_qs]
-    t_dyn = results["dynamic"]["t"][mask_dyn]
-
-    sum_energy_qs = np.sum(tension_qs * vr_qs * np.diff(t_qs, prepend=t_qs[0]))
-    sum_energy_dyn = np.sum(tension_dyn * vr_dyn * np.diff(t_dyn, prepend=t_dyn[0]))
-    sum_pow_qs = sum_energy_qs / (t_qs[-1] - t_qs[0])
-    sum_pow_dyn = sum_energy_dyn / (t_dyn[-1] - t_dyn[0])
-    power_diff = (sum_pow_qs - sum_pow_dyn) / sum_pow_dyn * 100
-
-    pow_qs = results["quasi_steady"]["power_mechanical"][mask_qs]
-    pow_dyn = results["dynamic"]["power_mechanical"][mask_dyn]
-
-    print(f"\n--- {label} ---")
-    print(f"Power QS: {sum_pow_qs:.2f}, Power Dyn: {sum_pow_dyn:.2f}.")
-    print(
-        f"Mean power QS: {np.mean(pow_qs):.2f}, Mean power Dyn: {np.mean(pow_dyn):.2f}"
-    )
-    print(f"Δ Power: {power_diff:.2f}%")
-
-    # Cross-correlation
-    t_common = np.linspace(max(t_qs[0], t_dyn[0]), min(t_qs[-1], t_dyn[-1]), 1000)
-    v1 = interp1d(t_qs, vtau_qs, kind="linear")(t_common) - np.mean(vtau_qs)
-    v2 = interp1d(t_dyn, vtau_dyn, kind="linear")(t_common) - np.mean(vtau_dyn)
-    corr = np.correlate(v1, v2, mode="full")
-    lags = np.arange(-len(v1) + 1, len(v1))
-    time_lags = lags * (t_common[1] - t_common[0])
-    best_lag = time_lags[np.argmax(corr)]
-    print(f"Estimated time lag: {best_lag:.3f} s")
-
-    # Mean and Max tension differences (%)
-    mean_t_qs = np.mean(tension_qs)
-    mean_t_dyn = np.mean(tension_dyn)
-    delta_ft_mean = (mean_t_qs - mean_t_dyn) / mean_t_dyn * 100
-
-    max_t_qs = np.max(tension_qs)
-    max_t_dyn = np.max(tension_dyn)
-    delta_ft_max = (max_t_qs - max_t_dyn) / max_t_dyn * 100
-
-    # Max tangential speed difference (%)
-    max_vtau_qs = np.max(vtau_qs)
-    max_vtau_dyn = np.max(vtau_dyn)
-    delta_vtau_max = (max_vtau_qs - max_vtau_dyn) / max_vtau_dyn * 100
-
-    # --- TENSION MIN DIFFERENCE ---
-    min_t_qs = np.min(tension_qs)
-    min_t_dyn = np.min(tension_dyn)
-    delta_ft_min = (min_t_qs - min_t_dyn) / min_t_dyn * 100
-
-    # --- VTAU MIN DIFFERENCE ---
-    min_vtau_qs = np.min(vtau_qs)
-    min_vtau_dyn = np.min(vtau_dyn)
-    delta_vtau_min = (min_vtau_qs - min_vtau_dyn) / min_vtau_dyn * 100
-
-    # --- PHASE LAG AT MAX vtau ---
-    s_dyn_vtau_max = s_dyn[np.argmax(vtau_dyn)]
-    s_qs_vtau_max = s_qs[np.argmax(vtau_qs)]
-    s_lag_max = s_qs_vtau_max - s_dyn_vtau_max
-
-    # --- PHASE LAG AT MIN vtau ---
-    s_dyn_vtau_min = s_dyn[np.argmin(vtau_dyn)]
-    s_qs_vtau_min = s_qs[np.argmin(vtau_qs)]
-    s_lag_min = s_qs_vtau_min - s_dyn_vtau_min
-
-    print(f"ΔF_t,mean: {delta_ft_mean:.2f}%")
-    print(f"ΔF_t,max: {delta_ft_max:.2f}%")
-    print(f"ΔF_t,min: {delta_ft_min:.2f}%")
-    print(f"Δv_tau,max: {delta_vtau_max:.2f}%")
-    print(f"Δv_tau,min: {delta_vtau_min:.2f}%")
-    print(f"ΔΦ_v_tau,max: {s_lag_max:.2f} deg")
-    print(f"ΔΦ_v_tau,min: {s_lag_min:.2f} deg")
-
-
-fig_3d = plt.figure()
-ax_3d = fig_3d.add_subplot(111, projection="3d")
-ax_3d.plot(
-    results_v9["quasi_steady"]["x"],
-    results_v9["quasi_steady"]["y"],
-    results_v9["quasi_steady"]["z"],
-    label="Quasi-Steady Trajectory",
-)
-ax_3d.set_xlabel("X")
-ax_3d.set_ylabel("Y")
-ax_3d.set_zlabel("Z")
-ax_3d.legend()
-
-plt.figure()
-plt.plot(results_v9["quasi_steady"]["t"], results_v9["quasi_steady"]["course_rate"])
-plt.show()
-compute_energy_metrics(results_v9, "V9")
+# plt.figure()
+# plt.plot(results_v9["quasi_steady"]["t"], results_v9["quasi_steady"]["course_rate"])
+# plt.show()
+# compute_energy_metrics(results_v9, "V9")

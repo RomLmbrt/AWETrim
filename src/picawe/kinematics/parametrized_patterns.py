@@ -362,7 +362,7 @@ def create_pattern_from_dict(
     params = config.get("parameters", {})
     optimization_params = config.get("optimization_parameters", {})
 
-    print(params)
+    # print(params)
 
     required_params = {
         "helix": ["omega", "r0", "d0", "vr", "beta0", "kappa"],
@@ -648,10 +648,64 @@ class Bspline(ParametrizedPatternsAngles):
                            ["C","u","U"],
                            ["S","dS"])
 
+    def evaluate_spline(self, r, s):
+        """Evaluate spline and derivatives simultaneously for efficiency"""
+        return self.spline_func(C=self.C, u=s, U=self.U)
+
     def azimuth(self, r, s):
-        res = self.spline_func(C=self.C, u=s, U=self.U)
-        return res["S"][0]   # φ is first column of spline output
+        res = self.evaluate_spline(r, s)
+        return res["S"][0]
 
     def elevation(self, r, s):
-        res = self.spline_func(C=self.C, u=s, U=self.U)
-        return res["S"][1]   # β is second column of spline output
+        res = self.evaluate_spline(r, s)
+        return res["S"][1]
+
+    def azimuth_derivative(self, r, s):
+        res = self.evaluate_spline(r, s)
+        return res["dS"][0]
+
+    def elevation_derivative(self, r, s):
+        res = self.evaluate_spline(r, s)
+        return res["dS"][1]
+    
+    def curvature_using_bspline_derivatives(self, r_array, s_array):
+        """Compute curvature using B-spline derivatives directly"""
+        import casadi as ca
+        
+        s = ca.MX.sym("s")
+        r = ca.MX.sym("r")
+        
+        # Get spline values and derivatives
+        spline_result = self.spline_func(C=self.C, u=s, U=self.U)
+        phi = spline_result["S"][0]      # azimuth
+        beta = spline_result["S"][1]     # elevation
+        dphi_ds = spline_result["dS"][0] # azimuth derivative  
+        dbeta_ds = spline_result["dS"][1] # elevation derivative
+        
+        # Cartesian position
+        x = r * ca.cos(beta) * ca.cos(phi)
+        y = r * ca.cos(beta) * ca.sin(phi)
+        z = r * ca.sin(beta)
+        
+        # First derivatives using chain rule (more stable than jacobian)
+        dx_ds = r * (-ca.sin(beta) * dbeta_ds * ca.cos(phi) - ca.cos(beta) * ca.sin(phi) * dphi_ds)
+        dy_ds = r * (-ca.sin(beta) * dbeta_ds * ca.sin(phi) + ca.cos(beta) * ca.cos(phi) * dphi_ds)
+        dz_ds = r * ca.cos(beta) * dbeta_ds
+        
+        # Second derivatives (still need jacobian, but only once)
+        d2x_ds2 = ca.jacobian(dx_ds, s)
+        d2y_ds2 = ca.jacobian(dy_ds, s)  
+        d2z_ds2 = ca.jacobian(dz_ds, s)
+        
+        # Curvature calculation
+        r_s = ca.vertcat(dx_ds, dy_ds, dz_ds)
+        r_ss = ca.vertcat(d2x_ds2, d2y_ds2, d2z_ds2)
+        
+        eps = 1e-12
+        cross_rs_rss = ca.cross(r_s, r_ss)
+        num = ca.norm_2(cross_rs_rss)
+        den = ca.power(ca.norm_2(r_s), 3) + eps
+        kappa = num / den
+        
+        kappa_fun = ca.Function("kappa_stable", [r, s], [kappa])
+        return kappa_fun(r_array, s_array)

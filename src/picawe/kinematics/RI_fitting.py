@@ -162,5 +162,5 @@ if __name__ == "__main__":
     v_penalty = 0
     eps_knot = 0.001
 
-    fitter = ReelInBspline_fitting(full_path, cycle_path, cyc_idx,
+    fitter = RI_fitting(full_path, cycle_path, cyc_idx,
                                    p, n_ctrl, c_penalty, v_penalty, eps_knot)

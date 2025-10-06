@@ -2,7 +2,7 @@ from matplotlib import pyplot as plt
 from picawe.timeseries.timeseries import TimeSeries
 from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
 from picawe import SystemModel
-from picawe.kinematics.Kinematics import ParametrizedKinematics
+from picawe.kinematics.Kinematics_with_new_spline_based_code import ParametrizedKinematics
 import casadi as ca
 import numpy as np
 from picawe.utils.defaults import DEFAULT_PATTERN_CONFIG, DEFAULT_OPTI_LIMITS
@@ -46,7 +46,7 @@ class ReelinPhase(TimeSeries):
 
     def run_simulation(self, start_state, allow_failure=True, return_states=False):
 
-        print("Starting state:", start_state)
+        # print("Starting state:", start_state)
         self.substitute_parametrized_kinematics()
         self.states = []
         self.kite_model.reset_solver()
