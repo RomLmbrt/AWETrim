@@ -187,6 +187,16 @@ class ReelinPhase(TimeSeries):
             t += time_step
             x0 = xf
             z0 = zf
+
+            # Recompute angles from updated s and r BEFORE appending to states
+            try:
+                pattern = create_pattern_from_dict(self.pattern_config)
+                pattern_result = pattern.evaluate_spline(new_state.distance_radial, new_state.s)
+                new_state.angle_azimuth = float(pattern_result["S"][0])
+                new_state.angle_elevation = float(pattern_result["S"][1])
+            except Exception as e:
+                print(f"Warning: Could not compute angles for step {i}: {e}")
+
             self.states.append(new_state.to_dict())
 
     def _flatten_for_function_call(vals): # FUNCTION CHECKED

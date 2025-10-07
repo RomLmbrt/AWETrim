@@ -1,13 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import json
-import casadi as ca
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from picawe import SystemModel, State
-from picawe.utils.color_palette import set_plot_style, get_color_list, custom_cmap
 from picawe.timeseries.reelin_phase_minimal import ReelinPhase
 from picawe.system.kite import Kite
 from picawe.system.tether import RigidLumpedTether
-from picawe.utils.defaults import PLOT_LABELS
 from picawe.environment.Wind import Wind
 from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
 import pickle
@@ -29,17 +27,11 @@ U_interior = fit_data["U_interior"]
 v0 = float(np.sqrt(fit_data["v0"][0]**2 + fit_data["v0"][1]**2 + fit_data["v0"][2]**2))
 
 # ---------- Config ----------
-speed_wind_at_100 = 10
 wind = Wind(
     wind_model="uniform",
     z0=0.1,
 )
-speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind.z0)
-# wind.speed_friction = speed_friction
-wind.speed_wind_ref = speed_wind_at_100
-
-colors = get_color_list()
-
+wind.speed_wind_ref = 10
 
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
@@ -69,57 +61,38 @@ pattern_config_v9 = {
     "optimization_parameters": [],
 }
 
-# Calculate realistic s_dot from your fitted data and kinematics
+# Calculate realistic s_dot from fitted data
 def calculate_consistent_speeds(s_current, pattern_config, v0_target, tether_length=330):
-    """
-    Calculate consistent speeds based on spline derivatives and target physical speed
-    """
     test_pattern = create_pattern_from_dict(pattern_config)
     result = test_pattern.evaluate_spline(tether_length, s_current)
     
-    # Get path derivatives 
     dphi_ds = float(result["dS"][0])
     dbeta_ds = float(result["dS"][1])
     
-    # Angular speed magnitude per unit s
-    angular_speed_magnitude = np.sqrt(dphi_ds**2 + dbeta_ds**2)  # rad per unit s
+    angular_speed_magnitude = np.sqrt(dphi_ds**2 + dbeta_ds**2)
     
     if angular_speed_magnitude < 1e-6:
-        print("WARNING: Very small angular derivatives")
-        return 0.001, 1.0  # Very slow fallback
+        return 0.001, 1.0
     
-    target_tangential_speed = v0_target  # Your fitted speed
-    calculated_s_dot = target_tangential_speed / (tether_length * angular_speed_magnitude)
-    
-    # Check resulting speeds
-    implied_angular_vel = angular_speed_magnitude * calculated_s_dot
-    implied_tangential_speed = tether_length * implied_angular_vel
-    
-    # Use much smaller radial speed (mostly tangential motion)
-    realistic_speed_radial = target_tangential_speed * 0.05  # 5% of tangential
+    calculated_s_dot = v0_target / (tether_length * angular_speed_magnitude)
+    realistic_speed_radial = v0_target * 0.05
     
     return calculated_s_dot, realistic_speed_radial
 
-# Add this calculation before updating base_start_state
-print(f"\n=== Calculating Realistic Speeds ===")
-print(f"Fitted speed magnitude v0: {v0:.2f} m/s")
-
-# Calculate realistic speeds
 s_dot_realistic, speed_radial_realistic = calculate_consistent_speeds(0.2, pattern_config_v9, v0)
 
-# Update the starting state with physically consistent values
 base_start_state = State(
     t=0,
     s=0.2,
-    s_dot=s_dot_realistic,  # Use calculated realistic s_dot
+    s_dot=s_dot_realistic,
     s_ddot=0,
     length_tether=330,
     input_steering=0,
     tension_tether_ground=3000,
     distance_radial=330,
-    speed_radial=speed_radial_realistic,  # Use calculated realistic radial speed
+    speed_radial=speed_radial_realistic,
     timeder_speed_radial=0,
-    input_depower=0.1,  # Reduce depower
+    input_depower=0.1,
 )
 
 def run_sim(
@@ -134,63 +107,62 @@ def run_sim(
 ):
     result = {}
     start_state = base_start_state
-    simulation_types = ["quasi_steady", "dynamic"]
-    for sim_type in simulation_types:
-        if sim_type == "quasi_steady":
-            quasi_steady = True
-            inertia_free = False
-        elif sim_type == "dynamic":
-            quasi_steady = False
-            inertia_free = False
-        else:
-            continue
-
-        label = f"{label_prefix} {sim_type.replace('_', ' ').title()}"
-        print(f"Running simulation for {sim_type} with label: {label}")
+    simulation_types = ["quasi_steady"]
     
-        try:
-            linestyle = {
-                "quasi_steady": "--",
-                "dynamic": "-",
-                "inertia_free": ":",
-                "no_mass": "-.",
-            }[sim_type]
-            color = colors[color_base]
-            tether = RigidLumpedTether(
-                diameter=tether_diameter,
-            )
-            kite = Kite(
-                mass_wing=mass_wing,
-                area_wing=area_wing,
-                aero_input=aero_input,
-                steering_control="asymmetric",
-            )
+    for sim_type in simulation_types:
+        quasi_steady = True
 
-            model = SystemModel(
-                dof=3,
-                quasi_steady=quasi_steady,
-                kite=kite,
-                tether=tether,
-                wind_model=wind,
-                neglect_radial_acceleration=False,
-            )
+        tether = RigidLumpedTether(diameter=tether_diameter)
+        kite = Kite(
+            mass_wing=mass_wing,
+            area_wing=area_wing,
+            aero_input=aero_input,
+            steering_control="asymmetric",
+        )
 
-            phase = ReelinPhase(
-                model, quasi_steady=quasi_steady, pattern_config=pattern_config
-            )
+        model = SystemModel(
+            dof=3,
+            quasi_steady=quasi_steady,
+            kite=kite,
+            tether=tether,
+            wind_model=wind,
+            neglect_radial_acceleration=False,
+        )
 
-            phase.run_simulation(start_state=start_state)
-            if len(phase.states) > 1:
-                print(f"Successfully completed {len(phase.states)} simulation steps")
-            else:
-                print(f"Simulation failed or produced no results")
-                
-        except Exception as e:
-            print(f"Error in {sim_type} simulation: {e}")
-            continue
+        phase = ReelinPhase(
+            model, 
+            quasi_steady=quasi_steady, 
+            pattern_config=pattern_config
+        )
+
+        phase.run_simulation(start_state=start_state)
+        
+        # Store results like in reel-in-old.py
+        result[sim_type] = {
+            "x": phase.return_variable("x"),
+            "y": phase.return_variable("y"),
+            "z": phase.return_variable("z"),
+            "phase": phase,
+        }
 
     return result
 
+# Run simulation
 results_v9 = run_sim(
     aero_input_v9, pattern_config_v9, "V9", 90, 47, 0.01, 2, marker="^"
 )
+
+# 3D plot exactly like in reel-in-old.py
+fig_3d = plt.figure()
+ax_3d = fig_3d.add_subplot(111, projection="3d")
+ax_3d.plot(
+    results_v9["quasi_steady"]["x"],
+    results_v9["quasi_steady"]["y"],
+    results_v9["quasi_steady"]["z"],
+    label="Quasi-Steady Trajectory",
+)
+ax_3d.set_xlabel("X")
+ax_3d.set_ylabel("Y")
+ax_3d.set_zlabel("Z")
+ax_3d.legend()
+plt.show()
