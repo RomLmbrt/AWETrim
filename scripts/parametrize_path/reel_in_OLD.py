@@ -9,6 +9,8 @@ from picawe.system.tether import RigidLumpedTether
 from picawe.environment.Wind import Wind
 from picawe.kinematics.parametrized_patterns import create_pattern_from_dict
 import pickle
+from picawe.utils.color_palette import set_plot_style, get_color_list
+from picawe.utils.defaults import PLOT_LABELS
 
 # ---------- Load precomputed fit data ----------
 with open("fit_results.pkl", "rb") as f:
@@ -24,14 +26,16 @@ betaf = fit_data["betaf"]
 C_interior = fit_data["C_interior"]
 u_vals = fit_data["u_vals"]
 U_interior = fit_data["U_interior"]
-v0 = float(np.sqrt(fit_data["v0"][0]**2 + fit_data["v0"][1]**2 + fit_data["v0"][2]**2))
+v0 = float(
+    np.sqrt(fit_data["v0"][0] ** 2 + fit_data["v0"][1] ** 2 + fit_data["v0"][2] ** 2)
+)
 
 # ---------- Config ----------
 wind = Wind(
     wind_model="uniform",
     z0=0.1,
 )
-wind.speed_wind_ref = 10
+wind.speed_wind_ref = 8
 
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
@@ -54,45 +58,66 @@ pattern_config_v9 = {
         "U_interior": U_interior,
     },
     "start_time": 0,
-    "end_time": 150,
-    "start_angle": 0,
-    "end_angle": 1,
-    "n_points": 400,
+    "end_time": 30,
+    "n_points": 300,
     "optimization_parameters": [],
 }
 
-# Calculate realistic s_dot from fitted data
-def calculate_consistent_speeds(s_current, pattern_config, v0_target, tether_length=330):
-    test_pattern = create_pattern_from_dict(pattern_config)
-    result = test_pattern.evaluate_spline(tether_length, s_current)
-    
-    dphi_ds = float(result["dS"][0])
-    dbeta_ds = float(result["dS"][1])
-    
-    angular_speed_magnitude = np.sqrt(dphi_ds**2 + dbeta_ds**2)
-    
-    if angular_speed_magnitude < 1e-6:
-        return 0.001, 1.0
-    
-    calculated_s_dot = v0_target / (tether_length * angular_speed_magnitude)
-    realistic_speed_radial = v0_target * 0.05
-    
-    return calculated_s_dot, realistic_speed_radial
 
-s_dot_realistic, speed_radial_realistic = calculate_consistent_speeds(0.2, pattern_config_v9, v0)
+# # Calculate realistic s_dot from fitted data
+# def calculate_consistent_speeds(
+#     s_current, pattern_config, v0_target, tether_length=330
+# ):
+#     test_pattern = create_pattern_from_dict(pattern_config)
+#     result = test_pattern.evaluate_spline(tether_length, s_current)
 
+#     dphi_ds = float(result["dS"][0])
+#     dbeta_ds = float(result["dS"][1])
+
+#     angular_speed_magnitude = np.sqrt(dphi_ds**2 + dbeta_ds**2)
+
+#     if angular_speed_magnitude < 1e-6:
+#         return 0.001, 1.0
+
+#     calculated_s_dot = v0_target / (tether_length * angular_speed_magnitude)
+#     realistic_speed_radial = v0_target * 0.05
+
+#     return calculated_s_dot, realistic_speed_radial
+
+
+# s_dot_realistic, speed_radial_realistic = calculate_consistent_speeds(
+#     0.2, pattern_config_v9, v0
+# )
+
+# ---------- Config ----------
+speed_wind_at_100 = 10
+wind = Wind(
+    wind_model="uniform",
+    z0=0.1,
+)
+speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind.z0)
+# wind.speed_friction = speed_friction
+wind.speed_wind_ref = speed_wind_at_100
+
+colors = get_color_list()
+
+
+with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
+    aero_input_v9 = json.load(file)
+
+# ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=0.2,
-    s_dot=s_dot_realistic,
+    s=0.01,
+    s_dot=2,
     s_ddot=0,
-    length_tether=330,
+    length_tether=199.6,
     input_steering=0,
-    tension_tether_ground=3000,
+    tension_tether_ground=1e8,
     distance_radial=330,
-    speed_radial=speed_radial_realistic,
+    speed_radial=2,
     timeder_speed_radial=0,
-    input_depower=0.1,
+    input_depower=0,
 )
 
 def run_sim(
@@ -107,10 +132,22 @@ def run_sim(
 ):
     result = {}
     start_state = base_start_state
-    simulation_types = ["quasi_steady"]
-    
+    simulation_types = ["quasi_steady", "dynamic"]
     for sim_type in simulation_types:
-        quasi_steady = True
+        if sim_type == "quasi_steady":
+            quasi_steady = True
+            inertia_free = False
+        elif sim_type == "dynamic":
+            quasi_steady = False
+            inertia_free = False
+        elif sim_type == "inertia_free":
+            quasi_steady = True
+            inertia_free = True
+        elif sim_type == "no_mass":
+            quasi_steady = True
+            inertia_free = True
+        else:
+            continue
 
         tether = RigidLumpedTether(diameter=tether_diameter)
         kite = Kite(
