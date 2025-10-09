@@ -6,7 +6,7 @@ import itertools
 from picawe.kinematics.parametrized_patterns import Helix
 from picawe import SystemModel, State
 from picawe.utils.color_palette import set_plot_style, get_color_list
-from picawe.timeseries.phase_parametrized import PhaseParameterized
+from picawe.timeseries.reelout_phase import PhaseParameterized
 from picawe.system.kite import Kite
 from picawe.system.tether import FlexibleLumpedTether
 from picawe.utils.defaults import PLOT_LABELS

@@ -8,7 +8,7 @@ from picawe.utils.color_palette import (
     get_color_list,
     set_plot_style_no_latex,
 )
-from picawe.timeseries.phase_parametrized import PhaseParameterized
+from picawe.timeseries.reelout_phase import PhaseParameterized
 from picawe.system.kite import Kite
 from picawe.system.tether import (
     FlexibleLumpedTether,
