@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 ''' Going from RO to RI, so we are looking at the points from the end of the consistent reel-out phase to the start of RI phase. '''
 
 class RO_RI_data_processing(Lisajous_data_processing):
-    def __init__(self, file_path_full, file_path_cycle, cyc_idx=0):
-        super().__init__(file_path_full=file_path_full, file_path_cycle=file_path_cycle, cyc_idx=cyc_idx)
+    def __init__(self, file_path_full, file_path_cycle, file_path_waypoints, cyc_idx=0):
+        super().__init__(file_path_full=file_path_full, file_path_cycle=file_path_cycle, file_path_waypoints=file_path_waypoints, cyc_idx=cyc_idx)
 
         self.RO_RI_idx0 = None  # Start index of the RO to RI transition (relative to cycle start)
         self.RO_RI_idxf = self.ri_idx0  # End index of the RO to RI transition (relative to cycle start)
 
+        self.find_start_RO_RI_idx()
         # This class has to find the start index of the RO to RI transition
 
     def find_start_RO_RI_idx(self):
@@ -38,7 +39,10 @@ class RO_RI_data_processing(Lisajous_data_processing):
         self.RO_RI_v0 = (self.dx_cyc[self.RO_RI_idx0], self.dy_cyc[self.RO_RI_idx0], self.dz_cyc[self.RO_RI_idx0])
         self.RO_RI_vf = (self.dx_cyc[self.RO_RI_idxf], self.dy_cyc[self.RO_RI_idxf], self.dz_cyc[self.RO_RI_idxf])
 
-        self.RO_RI_sph = (self.az_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1], self.el_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1])
+        self.RO_RI_az = self.az_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1]
+        self.RO_RI_el = self.el_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1]
+
+        self.RO_RI_sph = (self.RO_RI_az, self.RO_RI_el)
         self.RO_RI_cart = (self.x_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1], self.y_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1], self.z_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1])
 
     def plot_RO_RI_path3D(self):
@@ -55,9 +59,10 @@ class RO_RI_data_processing(Lisajous_data_processing):
         plt.show()
 
 if __name__ == "__main__":
+    waypoint_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
     full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
     cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
-    obj = RO_RI_data_processing(file_path_full=full_path, file_path_cycle=cycle_path, cyc_idx=0)
+    obj = RO_RI_data_processing(file_path_full=full_path, file_path_cycle=cycle_path, file_path_waypoints=waypoint_path, cyc_idx=0)
     obj.find_start_RO_RI_idx()
     obj.plot_RO_RI_path3D()

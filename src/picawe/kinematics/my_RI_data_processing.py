@@ -17,13 +17,18 @@ class RI_data_processing:
     # sph - spherical
     # cart - cartesian
 
-    def __init__(self, file_path_full, file_path_cycle, cyc_idx=0):
+    def __init__(self, file_path_full, file_path_cycle, file_path_waypoints, cyc_idx=0):
         """Load CSVs, preprocess times, compute cycle + reel-in slices."""
+        self.waypoints_df = pd.read_csv(file_path_waypoints)
         self.full_df = pd.read_csv(file_path_full)
         self.cycle_df = pd.read_csv(file_path_cycle)
         self.cyc_idx = cyc_idx
 
         # --- Time preprocessing ---
+        self.waypoints_df['time_string'] = np.round(
+            self.convert_time_to_seconds(self.waypoints_df['time_string']), 1
+        )
+
         self.full_df['time_s'] = np.round(
             self.convert_time_to_seconds(self.full_df['time_of_day']), 1
         )
@@ -39,6 +44,8 @@ class RI_data_processing:
         self.r = self.full_df['kite_distance'].to_numpy(dtype=float)
         self.phase = self.full_df['flight_phase'].to_numpy(dtype=str)
         self.crs = self.full_df['kite_course'].to_numpy(dtype=float)
+        self.depower = self.full_df['kite_actual_depower'].to_numpy(dtype=float)
+        self.waypoint = self.waypoints_df['waypoint_name'].to_numpy(dtype=str)
 
         # Cartesian coords + derivatives for full dataset
         self.x, self.y, self.z = self.sph2cart(self.az, self.el, self.r)
@@ -83,27 +90,27 @@ class RI_data_processing:
             raise ValueError("Reel-In start not found in this cycle")
         self.ri_idxf = len(self.phase_cyc) - 1
 
-        # Reel-in slices
-        self.az_ri = self.az_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.el_ri = self.el_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.r_ri = self.r_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.crs_ri = self.crs_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.x_ri = self.x_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.y_ri = self.y_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.z_ri = self.z_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.dx_ri = self.dx_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.dy_ri = self.dy_cyc[self.ri_idx0 : self.ri_idxf + 1]
-        self.dz_ri = self.dz_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # # Reel-in slices
+        self.RI_az = self.az_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        self.RI_el = self.el_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.r_ri = self.r_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.crs_ri = self.crs_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.x_ri = self.x_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.y_ri = self.y_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.z_ri = self.z_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.dx_ri = self.dx_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.dy_ri = self.dy_cyc[self.ri_idx0 : self.ri_idxf + 1]
+        # self.dz_ri = self.dz_cyc[self.ri_idx0 : self.ri_idxf + 1]
 
-        # Start/end points for reel-in
-        self.ri_p0_sph = np.array([self.az_ri[0], self.el_ri[0]])
-        self.ri_pf_sph = np.array([self.az_ri[-1], self.el_ri[-1]])
-        self.ri_p0_cart = np.array([self.x_ri[0], self.y_ri[0], self.z_ri[0]])
-        self.ri_pf_cart = np.array([self.x_ri[-1], self.y_ri[-1], self.z_ri[-1]])
-        self.ri_crs0 = self.crs_ri[0]
-        self.ri_crsf = self.crs_ri[-1]
-        self.ri_v0 = np.array([self.dx_ri[0], self.dy_ri[0], self.dz_ri[0]])
-        self.ri_vf = np.array([self.dx_ri[-1], self.dy_ri[-1], self.dz_ri[-1]])
+        # # Start/end points for reel-in
+        # self.ri_p0_sph = np.array([self.az_ri[0], self.el_ri[0]])
+        # self.ri_pf_sph = np.array([self.az_ri[-1], self.el_ri[-1]])
+        # self.ri_p0_cart = np.array([self.x_ri[0], self.y_ri[0], self.z_ri[0]])
+        # self.ri_pf_cart = np.array([self.x_ri[-1], self.y_ri[-1], self.z_ri[-1]])
+        # self.ri_crs0 = self.crs_ri[0]
+        # self.ri_crsf = self.crs_ri[-1]
+        # self.ri_v0 = np.array([self.dx_ri[0], self.dy_ri[0], self.dz_ri[0]])
+        # self.ri_vf = np.array([self.dx_ri[-1], self.dy_ri[-1], self.dz_ri[-1]])
 
     def convert_time_to_seconds(self, time_series):
         """Convert HH:MM:SS.sss strings to total seconds."""
@@ -133,8 +140,9 @@ class RI_data_processing:
         plt.show()
 
 if __name__ == "__main__":
+    waypoint_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
     full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
     cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
-    obj = RI_data_processing(file_path_full=full_path, file_path_cycle=cycle_path, cyc_idx=0)
+    obj = RI_data_processing(file_path_full=full_path, file_path_cycle=cycle_path, file_path_waypoints=waypoint_path, cyc_idx=0)
     obj.plot_path_3D()

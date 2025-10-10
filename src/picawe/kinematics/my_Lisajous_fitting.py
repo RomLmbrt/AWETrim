@@ -5,8 +5,8 @@ from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 
 class Lisajous_fitting(Lisajous_data_processing, CST_Lissajous):
-    def __init__(self, file_path_cycle=None, file_path_full=None, cyc_idx=0):
-        super().__init__(file_path_cycle=file_path_cycle, file_path_full=file_path_full, cyc_idx=cyc_idx)
+    def __init__(self, file_path_cycle=None, file_path_full=None, file_path_waypoint=None, cyc_idx=0):
+        super().__init__(file_path_cycle=file_path_cycle, file_path_full=file_path_full, file_path_waypoints=file_path_waypoint, cyc_idx=cyc_idx)
 
         self.az_data = self.az_Lisajous
         self.el_data = self.el_Lisajous
@@ -102,10 +102,11 @@ class Lisajous_fitting(Lisajous_data_processing, CST_Lissajous):
         plt.show()
 
 if __name__ == "__main__":
+    waypoint_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
     full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
     cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
-    lsq_obj = Lisajous_fitting(file_path_cycle=cycle_path, file_path_full=full_path, cyc_idx=0)
+    lsq_obj = Lisajous_fitting(file_path_cycle=cycle_path, file_path_full=full_path, file_path_waypoint=waypoint_path, cyc_idx=0)
     results, best_params = lsq_obj.LSQ()
     lsq_obj.plot_fitted_path(best_params)
 

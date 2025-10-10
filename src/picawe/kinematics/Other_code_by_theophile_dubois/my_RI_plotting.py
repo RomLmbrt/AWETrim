@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from picawe.kinematics.my_RI_fitting import RI_fitting as ribfit
+from picawe.kinematics.Other_code_by_theophile_dubois.my_RI_fitting import RI_fitting as ribfit
 from picawe.kinematics.my_parametrized_patterns import Bspline as Bspline_build
 import casadi as ca
 

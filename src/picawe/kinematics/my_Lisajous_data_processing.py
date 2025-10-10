@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class Lisajous_data_processing(ribdata):
-    def __init__(self, file_path_cycle=None, file_path_full=None, cyc_idx=0):
-        super().__init__(file_path_cycle=file_path_cycle, file_path_full=file_path_full, cyc_idx=cyc_idx)
+    def __init__(self, file_path_cycle=None, file_path_full=None, file_path_waypoints=None, cyc_idx=0):
+        super().__init__(file_path_cycle=file_path_cycle, file_path_full=file_path_full, file_path_waypoints=file_path_waypoints, cyc_idx=cyc_idx)
 
         self.az_RO = self.az_cyc[:self.ri_idx0]
         self.el_RO = self.el_cyc[:self.ri_idx0]
@@ -72,9 +72,10 @@ class Lisajous_data_processing(ribdata):
             raise ValueError("No valid start point found for the CST Lissajous pattern in the reel-out data.")
 
 if __name__ == "__main__":
+    waypoint_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
     full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
     cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
-    obj = Lisajous_data_processing(file_path_cycle=cycle_path, file_path_full=full_path, cyc_idx=0)
+    obj = Lisajous_data_processing(file_path_cycle=cycle_path, file_path_full=full_path, file_path_waypoints=waypoint_path, cyc_idx=0)
     obj.plot_reel_out_path2D()
     obj.plot_reel_out_path3D()

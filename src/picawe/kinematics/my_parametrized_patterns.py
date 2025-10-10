@@ -1,6 +1,9 @@
 import casadi as ca
 from abc import ABC, abstractmethod
 import numpy as np
+from math import comb
+import matplotlib.pyplot as plt
+
 
 
 class ParametrizedPatterns(ABC):
@@ -709,3 +712,78 @@ class Bspline(ParametrizedPatternsAngles):
         
         kappa_fun = ca.Function("kappa_stable", [r, s], [kappa])
         return kappa_fun(r_array, s_array)
+
+import casadi as ca
+import numpy as np
+import matplotlib.pyplot as plt
+from math import comb
+
+class CasadiSpline(ParametrizedPatternsAngles):
+    """
+    N-point Bézier spline (2D: azimuth and elevation)
+    Fully symbolic using CasADi MX.
+    Accepts scalar or vector s directly.
+    """
+
+    def __init__(self, r0=None, r1=None, C_az=None, C_el=None):
+
+        if r0 is None:
+            self.r0 = 322  # m
+        else:
+            self.r0 = r0
+
+        if r1 is None:
+            self.r1 = 240  # m
+        else:
+            self.r1 = r1
+
+        # Default interior points
+        if C_az is None:
+            self.C_az = np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float))
+        else:
+            self.C_az = C_az 
+
+        if C_el is None:
+            self.C_el = np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float))
+        else:
+            self.C_el = C_el
+        
+        # ---------- Chord-length parameterization on [0,1] ----------
+        pts = np.vstack([self.C_az, self.C_el]).T
+        d = np.sqrt(np.sum(np.diff(pts, axis=0) ** 2, axis=1))
+        s = np.hstack([[0.0], np.cumsum(d)])
+        if s[-1] == 0.0:
+            s[-1] = 1.0
+        self.s_norm = s / s[-1]
+
+        self.opts = opts = {"degree": [3]}
+
+        self.build()
+
+    def build(self):
+        self.spline_phi = ca.interpolant("spline_phi", "bspline", [self.s_norm], self.C_az, self.opts)
+        self.spline_beta = ca.interpolant("spline_beta", "bspline", [self.s_norm], self.C_el, self.opts)
+
+    
+    # helpers to evaluate from Python (vectorized)
+    def azimuth(self, r, s):
+        return np.array(self.spline_phi(s).full()).ravel()
+    
+    def elevation(self, r, s):
+        return np.array(self.spline_beta(s).full()).ravel()
+
+if __name__ == "__main__":
+    obj = CasadiSpline()
+
+    s = np.linspace(0,1,100)
+    az = obj.azimuth(1, s)
+    el = obj.elevation(1, s)
+
+    plt.figure()
+    plt.plot(s,az)
+    plt.plot(s,el)
+    plt.show()
+
+    plt.figure()
+    plt.plot(az, el)
+    plt.show()
