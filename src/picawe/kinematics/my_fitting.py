@@ -70,8 +70,8 @@ class Fitting(build):
             s_norm_el=self.u_vals[indices_el]
         )
 
-        az = spline.azimuth(1.0, self.u_vals)
-        el = spline.elevation(1.0, self.u_vals)
+        az = np.array(spline.azimuth(1.0, self.u_vals).full()).ravel()
+        el = np.array(spline.elevation(1.0, self.u_vals).full()).ravel()
 
         return np.concatenate([az - self.data_az, el - self.data_el])
 
@@ -117,8 +117,8 @@ class Fitting(build):
             s_norm_el=self.u_vals[self.fitted_indices_el]
         )
 
-        fitted_az = spline.azimuth(1.0, self.u_vals)
-        fitted_el = spline.elevation(1.0, self.u_vals)
+        fitted_az = np.array(spline.azimuth(1.0, self.u_vals).full()).ravel()
+        fitted_el = np.array(spline.elevation(1.0, self.u_vals).full()).ravel()
 
         # --- Azimuth Plot ---
         axes[0].plot(self.u_vals, self.data_az, 'b-', label='Data', linewidth=2)

@@ -186,15 +186,6 @@ class ParametrizedKinematics:
 
     @property
     def dtheta_ds(self):
-        # For spline patterns, use direct derivatives when available
-        if hasattr(self.pattern, 'azimuth_derivative'):
-            try:
-                return self.pattern.azimuth_derivative(self.r, self.s)
-            except:
-                # Fallback to simpler gradient calculation
-                pass
-        
-        # Simplified gradient calculation to avoid complex expressions
         dphi_ds = ca.gradient(self.phi, self.s)
         dphi_dr = ca.gradient(self.phi, self.r)
 
@@ -203,15 +194,6 @@ class ParametrizedKinematics:
 
     @property
     def dbeta_ds(self):
-        # For spline patterns, use direct derivatives when available
-        if hasattr(self.pattern, 'elevation_derivative'):
-            try:
-                return self.pattern.elevation_derivative(self.r, self.s)
-            except:
-                # Fallback to simpler gradient calculation
-                pass
-        
-        # Simplified gradient calculation to avoid complex expressions
         dbeta_ds = ca.gradient(self.beta, self.s)
         dbeta_dr = ca.gradient(self.beta, self.r)
         return dbeta_ds + dbeta_dr * self.vr / (self.s_dot + 1e-6)

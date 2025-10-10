@@ -774,10 +774,10 @@ class CasadiSpline(ParametrizedPatternsAngles):
     
     # helpers to evaluate from Python (vectorized)
     def azimuth(self, r, s):
-        return np.array(self.spline_phi(s).full()).ravel()
+        return self.spline_phi(s)
     
     def elevation(self, r, s):
-        return np.array(self.spline_beta(s).full()).ravel()
+        return self.spline_beta(s)
 
 if __name__ == "__main__":
     obj = CasadiSpline()
