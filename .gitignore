@@ -168,3 +168,6 @@ cython_debug/
 #.idea/
 
 src/picawe/kinematics/winch_force_curve.py
+
+# pickle file
+*.pkl
