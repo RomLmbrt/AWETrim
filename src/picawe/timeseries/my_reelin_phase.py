@@ -5,7 +5,7 @@ from picawe import SystemModel
 from picawe.kinematics.my_Kinematics import ParametrizedKinematics
 import casadi as ca
 import numpy as np
-from picawe.utils.my_defaults import DEFAULT_SPLINE_PATTERN_CONFIG, DEFAULT_OPTI_LIMITS
+from picawe.utils.my_defaults import DEFAULT_SPLINE_PATTERN_CONFIG
 import copy
 from picawe.system.tether import RigidLinkTether
 from picawe import State
@@ -195,7 +195,7 @@ class ReelinPhase(TimeSeries):
             
             # Recompute angles from updated s and r BEFORE appending to states
             try:
-                pattern = create_pattern_from_dict(self.pattern_config)
+                pattern = create_pattern_from_dict(self.pattern_config["pattern_type"], self.pattern_config["parameters"])
                 new_state.angle_azimuth = pattern.azimuth(
                     new_state.distance_radial, new_state.s
                 ).full()
@@ -570,7 +570,7 @@ class ReelinPhase(TimeSeries):
 
     def substitute_parametrized_kinematics(self, optimize=False):
 
-        pattern = create_pattern_from_dict(self.pattern_config, optimize=optimize)
+        pattern = create_pattern_from_dict(self.pattern_config["pattern_type"], self.pattern_config["parameters"])
         # print(pattern.r0, pattern.r1)
         kinematics = ParametrizedKinematics(pattern, self)
 

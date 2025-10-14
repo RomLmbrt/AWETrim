@@ -1,5 +1,5 @@
 from picawe.kinematics.my_parametrized_patterns import Bspline as Bspline_build
-from picawe.kinematics.my_RO_RI_data_processing import RO_RI_data_processing
+from picawe.kinematics.Other_code_by_theophile_dubois.my_RO_RI_data_processing import RO_RI_data_processing
 import numpy as np
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt

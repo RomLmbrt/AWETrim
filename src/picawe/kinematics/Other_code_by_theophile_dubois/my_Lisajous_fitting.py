@@ -1,5 +1,5 @@
 from picawe.kinematics.my_parametrized_patterns import CST_Lissajous
-from picawe.kinematics.my_Lisajous_data_processing import Lisajous_data_processing
+from picawe.kinematics.Other_code_by_theophile_dubois.my_Lisajous_data_processing import Lisajous_data_processing
 import numpy as np
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
@@ -30,7 +30,7 @@ class Lisajous_fitting(Lisajous_data_processing, CST_Lissajous):
             "k_vr": 2716,
         }
 
-        n_coeffs = 8  # number of Fourier coefficients for azimuth and elevation
+        n_coeffs = 10  # number of Fourier coefficients for azimuth and elevation
 
         # parameters to optimize
         params_init = {

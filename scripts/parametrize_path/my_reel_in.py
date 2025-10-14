@@ -20,10 +20,14 @@ filename = f"fit_results_{segment_name}.pkl"
 with open(filename, "rb") as f:
     fit_data = pickle.load(f)
 
+r0 = fit_data["r0"]
+r1 = fit_data["r1"]
 C_az = fit_data["C_az"]
 C_el = fit_data["C_el"]
 s_norm_az = fit_data["s_norm_az"]
 s_norm_el = fit_data["s_norm_el"]
+
+
 
 # ---------- Config ----------
 wind = Wind(
@@ -35,13 +39,11 @@ wind.speed_wind_ref = 8
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
 
-# r0=None, r1=None, C_az=None, C_el=None, s_norm_az=None, s_norm_el=None
-
 pattern_config_v9 = {
     "pattern_type": "spline",
     "parameters": {
-        "r0": 322,
-        "r1": 240,
+        "r0": r0,
+        "r1": r1,
         "C_az": C_az,
         "C_el": C_el,
         "s_norm_az": s_norm_az,
@@ -52,32 +54,6 @@ pattern_config_v9 = {
     "n_points": 600,
     "optimization_parameters": [],
 }
-
-
-# # Calculate realistic s_dot from fitted data
-# def calculate_consistent_speeds(
-#     s_current, pattern_config, v0_target, tether_length=330
-# ):
-#     test_pattern = create_pattern_from_dict(pattern_config)
-#     result = test_pattern.evaluate_spline(tether_length, s_current)
-
-#     dphi_ds = float(result["dS"][0])
-#     dbeta_ds = float(result["dS"][1])
-
-#     angular_speed_magnitude = np.sqrt(dphi_ds**2 + dbeta_ds**2)
-
-#     if angular_speed_magnitude < 1e-6:
-#         return 0.001, 1.0
-
-#     calculated_s_dot = v0_target / (tether_length * angular_speed_magnitude)
-#     realistic_speed_radial = v0_target * 0.05
-
-#     return calculated_s_dot, realistic_speed_radial
-
-
-# s_dot_realistic, speed_radial_realistic = calculate_consistent_speeds(
-#     0.2, pattern_config_v9, v0
-# )
 
 # ---------- Config ----------
 speed_wind_at_100 = 10

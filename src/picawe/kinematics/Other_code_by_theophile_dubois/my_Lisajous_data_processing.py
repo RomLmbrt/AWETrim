@@ -1,11 +1,12 @@
-from picawe.kinematics.my_RI_data_processing import RI_data_processing as ribdata
+from picawe.kinematics.Other_code_by_theophile_dubois.my_RI_data_processing import RI_data_processing as ribdata
 import numpy as np
 import matplotlib.pyplot as plt
 
 class Lisajous_data_processing(ribdata):
-    def __init__(self, file_path_cycle=None, file_path_full=None, file_path_waypoints=None, cyc_idx=0):
+    def __init__(self, file_path_cycle, file_path_full, file_path_waypoints, cyc_idx=0):
         super().__init__(file_path_cycle=file_path_cycle, file_path_full=file_path_full, file_path_waypoints=file_path_waypoints, cyc_idx=cyc_idx)
 
+        self.RO_r0 = self.r_cyc[0]
         self.az_RO = self.az_cyc[:self.ri_idx0]
         self.el_RO = self.el_cyc[:self.ri_idx0]
 
@@ -14,10 +15,10 @@ class Lisajous_data_processing(ribdata):
 
         self.x_RO, self.y_RO, self.z_RO = self.x_cyc[:self.ri_idx0], self.y_cyc[:self.ri_idx0], self.z_cyc[:self.ri_idx0]
 
-        self.ID_lisajous_start_end()
+        self.find_lisajous_start_end()
 
     # 2D Plot of the Reel-Out Path (Azimuth vs Elevation)
-    def plot_reel_out_path2D(self):
+    def plot_Lissajous_path2D(self):
 
         plt.figure()
         plt.plot(self.az_Lisajous, self.el_Lisajous)
@@ -30,7 +31,7 @@ class Lisajous_data_processing(ribdata):
         plt.show()
     
     # 3D Plot of the Reel-Out Path (X, Y, Z)
-    def plot_reel_out_path3D(self):
+    def plot_Lissajous_path3D(self):
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -46,7 +47,7 @@ class Lisajous_data_processing(ribdata):
         ax.legend()
         plt.show()
 
-    def ID_lisajous_start_end(self):
+    def find_lisajous_start_end(self):
         # Truncate the RO data to find the CST Lissajous pattern parameters
         
         self.Lisajous_p0 = []
@@ -77,5 +78,5 @@ if __name__ == "__main__":
     cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
 
     obj = Lisajous_data_processing(file_path_cycle=cycle_path, file_path_full=full_path, file_path_waypoints=waypoint_path, cyc_idx=0)
-    obj.plot_reel_out_path2D()
-    obj.plot_reel_out_path3D()
+    obj.plot_Lissajous_path2D()
+    obj.plot_Lissajous_path3D()

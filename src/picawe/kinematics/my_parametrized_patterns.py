@@ -779,17 +779,17 @@ if __name__ == "__main__":
     plt.plot(az, el)
     plt.show()
 
-    pattern = create_pattern_from_dict({
-        "pattern_type": "spline",
-        "parameters": {
+    pattern = create_pattern_from_dict(
+        "spline",
+        {
             "r0": 300,
             "r1": 150,
             "C_az": np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)),
             "C_el": np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)),
             "s_norm_az": np.linspace(0,1,10),
             "s_norm_el": np.linspace(0,1,10),
-        },
-        "optimization_parameters": []
-    }, optimize=False) 
+        }
+    )
 
-    pattern2 = create_pattern_from_dict(DEFAULT_SPLINE_PATTERN_CONFIG, optimize=False)
+    pattern2 = create_pattern_from_dict(DEFAULT_SPLINE_PATTERN_CONFIG["pattern_type"],
+                                        DEFAULT_SPLINE_PATTERN_CONFIG["parameters"])

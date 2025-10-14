@@ -1,4 +1,4 @@
-from picawe.kinematics.my_Lisajous_data_processing import Lisajous_data_processing
+from picawe.kinematics.Other_code_by_theophile_dubois.my_Lisajous_data_processing import Lisajous_data_processing
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -12,7 +12,7 @@ class RO_RI_data_processing(Lisajous_data_processing):
         self.RO_RI_idxf = self.ri_idx0  # End index of the RO to RI transition (relative to cycle start)
 
         self.find_start_RO_RI_idx()
-        self._compute_u_vals()
+        self.RORI_compute_u_vals()
         # This class has to find the start index of the RO to RI transition
 
     def find_start_RO_RI_idx(self):
@@ -27,6 +27,9 @@ class RO_RI_data_processing(Lisajous_data_processing):
         
         if self.RO_RI_idx0 is None:
             raise ValueError("No valid start point found for the RO to RI transition in the reel-out data.")
+        
+        self.RO_RI_r0 = self.r_cyc[self.RO_RI_idx0]
+        self.RO_RI_r1 = self.r_cyc[self.RO_RI_idxf]
         
         self.RO_RI_p0_sph = (self.az_cyc[self.RO_RI_idx0], self.el_cyc[self.RO_RI_idx0])
         self.RO_RI_pf_sph = (self.az_cyc[self.RO_RI_idxf], self.el_cyc[self.RO_RI_idxf])
@@ -46,7 +49,7 @@ class RO_RI_data_processing(Lisajous_data_processing):
         self.RO_RI_sph = (self.RO_RI_az, self.RO_RI_el)
         self.RO_RI_cart = (self.x_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1], self.y_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1], self.z_cyc[self.RO_RI_idx0:self.RO_RI_idxf+1])
     
-    def _compute_u_vals(self):
+    def RORI_compute_u_vals(self):
         # Only compute if RO_RI_cart exists (i.e., after find_start_RO_RI_idx is called)
         if hasattr(self, 'RO_RI_cart'):
             # Convert tuple to numpy array for proper axis handling

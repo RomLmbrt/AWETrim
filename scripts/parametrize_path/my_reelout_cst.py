@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import json
+import pickle
 
 # from picawe.kinematics.parametrized_patterns import Helix  # unused
 from picawe import SystemModel, State
 from picawe.utils.color_palette import set_plot_style, get_color_list
-from picawe.timeseries.phase_parametrized import PhaseParameterized
+from picawe.timeseries.my_phase_parametrized import PhaseParameterized
 from picawe.system.kite import Kite
 from picawe.system.tether import RigidLumpedTether
 from picawe.utils.defaults import PLOT_LABELS
@@ -27,26 +28,43 @@ wind.speed_friction = speed_friction
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
 
+segment_name = "Lissajous"
+
+filename = f"fit_results_{segment_name}.pkl"
+with open(filename, "rb") as f:
+    fit_data = pickle.load(f)
+
+r0 = fit_data["r0"]
+az_amp0 = fit_data["az_amp0"]
+beta_amp0 = fit_data["beta_amp0"]
+beta_coeffs = fit_data["beta_coeffs"]
+az_coeffs = fit_data["az_coeffs"]
+beta0 = fit_data["beta0"]
+
+# Recreating the starting and ending point of the path used to validate the model
+start_angle = 1.34 * np.pi
+range = 1.45 * np.pi
+cycles = 1
+
 pattern_config_v9 = {
     "pattern_type": "cst_lissajous",
     "path_parameters": {
-        "omega": 1.0,
-        "r0": 230.0,
-        "az_amp0": 0.48777050522375176,
-        "beta_amp0": 0.25,
-        "width_phi": 0.5,
-        "width_beta": 0.5,
-        "left_first": True,
-        "normalize_bumps": False,
-        "repeat_phi": True,
-        "repeat_beta": True,
-        "beta_coeffs": np.array(
-            [0.00793318, -1.00000001, -0.09528962, -1.00000001, -0.43694973]
-        ),
-        "az_coeffs": [0, 0, 0, 0, 0],
-        "kbeta": 1,
-        "beta0": 0.6936021090152621,
-        "kappa": 1,
+        "omega": 1.0,#
+        "r0": r0,#
+        "az_amp0": az_amp0,
+        "beta_amp0": beta_amp0,
+        "width_phi": 0.5,#
+        "width_beta": 0.5, #
+        "left_first": True,#
+        "normalize_bumps": False,#
+        "repeat_phi": False,
+        "repeat_beta": False,#
+        "beta_coeffs": beta_coeffs,
+        "az_coeffs": az_coeffs,
+        "kbeta": 0,#
+        "beta0": beta0,
+        "kappa": 0,#
+        "k_vr": 2716,#
     },
     "radial_parameters": {
         "reeling_strategy": "force",  # "force" or "constant"
@@ -69,10 +87,52 @@ pattern_config_v9 = {
     "optimization_parameters": [],
 }
 
+# pattern_config_v9 = {
+#     "pattern_type": "cst_lissajous",
+#     "path_parameters": {
+#         "omega": 1.0,
+#         "r0": 230.0,
+#         "az_amp0": 0.48777050522375176,
+#         "beta_amp0": 0.25,
+#         "width_phi": 0.5,
+#         "width_beta": 0.5,
+#         "left_first": True,
+#         "normalize_bumps": False,
+#         "repeat_phi": True,
+#         "repeat_beta": True,
+#         "beta_coeffs": np.array(
+#             [0.00793318, -1.00000001, -0.09528962, -1.00000001, -0.43694973]
+#         ),
+#         "az_coeffs": [0, 0, 0, 0, 0],
+#         "kbeta": 1,
+#         "beta0": 0.6936021090152621,
+#         "kappa": 1,
+#     },
+#     "radial_parameters": {
+#         "reeling_strategy": "force",  # "force" or "constant"
+#         "force_model": "quadratic",  # "linear" or "quadratic"
+#         "reeling_speed": 0.0,  # m/s, only for constant reeling
+#         "max_tether_force": 2e4,  # N, only for force reeling
+#         "min_tether_force": 2000.0,  # N, only for force reeling
+#         "softplus": True,
+#         "softplus_beta": 1e-4,
+#         "softminus": True,
+#         "softminus_beta": 1e-3,
+#         "slope": 2716,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+#         "offset": -1,  # m/s
+#     },
+#     "start_time": 0,
+#     "end_time": 35,
+#     "start_angle": np.pi / 2,
+#     "end_angle": 2 * np.pi + np.pi / 2,
+#     "n_points": 600,
+#     "optimization_parameters": [],
+# }
+
 # ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=np.pi / 2,
+    s=start_angle,
     s_dot=1,
     s_ddot=0,
     length_tether=199.6,
@@ -182,8 +242,8 @@ qs_phase.plot_overview_3d(
 fig.legend(loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=2)
 set_plot_style()
 plt.tight_layout()
-# Save the figure as pdf
-plt.savefig("./results/figures/reelout_cst.pdf", bbox_inches="tight")
+# # Save the figure as pdf
+# plt.savefig("./results/figures/reelout_cst.pdf", bbox_inches="tight")
 plt.show()
 
 

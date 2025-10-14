@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import least_squares
-from picawe.kinematics.my_RI_data_processing import RI_data_processing as ribdata
+from picawe.kinematics.Other_code_by_theophile_dubois.my_RI_data_processing import RI_data_processing as ribdata
 from picawe.kinematics.my_parametrized_patterns import Bspline as Bspline_build
 import casadi as ca
 

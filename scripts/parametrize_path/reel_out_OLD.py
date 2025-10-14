@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 from scipy.interpolate import interp1d
+import pickle
 # from picawe.kinematics.parametrized_patterns import Helix
 from picawe import SystemModel, State
 from picawe.utils.color_palette import set_plot_style, get_color_list, custom_cmap
@@ -10,7 +11,6 @@ from picawe.system.kite import Kite
 from picawe.system.tether import RigidLumpedTether
 from picawe.utils.defaults import PLOT_LABELS
 from picawe.environment.Wind import Wind
-from picawe.kinematics.my_Lisajous_fitting import Lisajous_fitting
 
 # ---------- Config ----------
 speed_wind_at_100 = 12
@@ -28,21 +28,18 @@ colors = get_color_list()
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v9 = json.load(file)
 
-# File paths
-base_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2"
-waypoint_path = f"{base_path}/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
-full_path = f"{base_path}/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
-cycle_path = f"{base_path}/cycles/cycle_data_sheet_lines.csv"
+segment_name = "Lissajous"
 
-Lisajous_fitting_obj = Lisajous_fitting(file_path_cycle=cycle_path, file_path_full=full_path, file_path_waypoint=waypoint_path, cyc_idx=0)
-results, best_params = Lisajous_fitting_obj.LSQ()
-az_amp0 = float(best_params["az_amp0"])
-beta_amp0 = float(best_params["beta_amp0"])
-beta_coeffs = best_params["beta_coeffs"]
-az_coeffs = best_params["az_coeffs"]
-beta0 = float(best_params["beta0"])
+filename = f"fit_results_{segment_name}.pkl"
+with open(filename, "rb") as f:
+    fit_data = pickle.load(f)
 
-# Lisajous_fitting_obj.plot_fitted_path(best_params)
+r0 = fit_data["r0"]
+az_amp0 = fit_data["az_amp0"]
+beta_amp0 = fit_data["beta_amp0"]
+beta_coeffs = fit_data["beta_coeffs"]
+az_coeffs = fit_data["az_coeffs"]
+beta0 = fit_data["beta0"]
 
 # Recreating the starting and ending point of the path used to validate the model
 start_angle = 1.34 * np.pi
@@ -53,7 +50,7 @@ pattern_config_v9 = {
     "pattern_type": "cst_lissajous",
     "parameters": {
         "omega": 1.0,#
-        "r0": 200.0,#
+        "r0": r0,#
         "az_amp0": az_amp0,
         "beta_amp0": beta_amp0,
         "width_phi": 0.5,#
@@ -81,7 +78,7 @@ pattern_config_v9 = {
 base_start_state = State(
     t=0,
     s=start_angle,
-    s_dot=2,
+    s_dot=1,
     s_ddot=0,
     length_tether=199.6,
     input_steering=0,

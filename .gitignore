@@ -171,3 +171,6 @@ src/picawe/kinematics/winch_force_curve.py
 
 # pickle file
 *.pkl
+
+# Winch data from PathEditor
+

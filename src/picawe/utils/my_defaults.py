@@ -2,7 +2,7 @@ import numpy as np
 
 DEFAULT_BOUNDS = {
     "tension_tether_ground": [0, 1e12],
-    "input_steering": [-1.5, 1.5],
+    "input_steering": [-3, 3],
     "s_dot": [-10, 30],
     "s_ddot": [-100, 100],
     "speed_tangential": [0, 400],
@@ -82,17 +82,18 @@ DEFAULT_PATTERN_CONFIG = {
     },
 }
 
-DEFAULT_SPLINE_PATTERN_CONFIG = {
-    "pattern_type": "spline",
-    "parameters": {
-        "r0": 300,
-        "r1": 150,
-        "C_az": np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)),
-        "C_el": np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)),
-        "s_norm_az": np.linspace(0, 1, 10),
-            "s_norm_el": np.linspace(0,1,10),
-        },
-        "optimization_parameters": {}
+# Default configuration for the winch subsystem
+# Values align with common bounds used elsewhere
+# and provide reasonable physical limits for simulations.
+DEFAULT_WINCH_CONFIG = {
+    "max_tether_length": 2000.0,  # m
+    "min_tether_length": 100.0,  # m
+    "max_speed": 8.0,  # m/s (reel-out positive)
+    "min_speed": -6.0,  # m/s (reel-in negative)
+    "max_acceleration": 2.0,  # m/s^2
+    "min_acceleration": -2.0,  # m/s^2
+    # Softplus sharpness for force limiting in winch model
+    "sharpness_beta": 1e-4,
 }
 
 # defaults.py (This is your file containing the limits)
@@ -104,7 +105,7 @@ DEFAULT_OPTI_LIMITS = {
     "s": (0, 300),  # Range for s: 0 to 10
     "angle_elevation": (0.0, np.pi / 2),  # Range for angle_elevation: 0 to pi
     # HElix
-    "kappa": (0, 1),  # Range for kappa: 0 to 5
+    "kappa": (0, 1),  # Range for kappa: 0 to 1
     # "vr": (-10, 10),      # Range for vr: 0 to 100
     "beta0": (0.35, 1),  # Range for beta: 20 ot 50 degrees
     "d0": (40, 500),  # Range for d0: 0 to 100
@@ -127,5 +128,21 @@ DEFAULT_OPTI_LIMITS = {
     "speed_radial": (0.2, 6),
     "distance_radial": (100, 2000),
     "k_vr": (0.5, 1.5),
-    "C_interior": (-np.pi, np.pi),  # Range for spline interior control points: -pi to pi
+    "slope": (100, 8000),  # Range for slope in winch model
+    "offset": (-2, 2),  # Range for offset in winch model
+    "max_tether_force": (20000, 50000),  # Range for max tether force in winch model
+}
+
+
+DEFAULT_SPLINE_PATTERN_CONFIG = {
+    "pattern_type": "spline",
+    "parameters": {
+        "r0": 300,
+        "r1": 150,
+        "C_az": np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)),
+        "C_el": np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)),
+        "s_norm_az": np.linspace(0, 1, 10),
+            "s_norm_el": np.linspace(0,1,10),
+        },
+        "optimization_parameters": {}
 }

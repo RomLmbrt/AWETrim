@@ -199,7 +199,7 @@ class ReelinPhase(TimeSeries):
 
             # Recompute angles from updated s and r BEFORE appending to states
             try:
-                pattern = create_pattern_from_dict(self.pattern_config)
+                pattern = create_pattern_from_dict(self.pattern_config["pattern_type"], self.pattern_config["parameters"])
                 pattern_result = pattern.evaluate_spline(
                     new_state.distance_radial, new_state.s
                 )
@@ -222,7 +222,7 @@ class ReelinPhase(TimeSeries):
 
     def substitute_parametrized_kinematics(self, optimize=False):  
 
-        pattern = create_pattern_from_dict(self.pattern_config, optimize=optimize)
+        pattern = create_pattern_from_dict(self.pattern_config["pattern_type"], self.pattern_config["parameters"])
         # print(pattern.r0, pattern.r1)
         kinematics = ParametrizedKinematics(pattern, self)
 

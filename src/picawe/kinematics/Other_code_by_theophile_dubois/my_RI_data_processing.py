@@ -39,6 +39,7 @@ class RI_data_processing:
         # --- Extract full data ---
         self.time_full = self.full_df['time_s'].to_numpy()
         self.time_cycle = self.cycle_df['start_time_s'].to_numpy()
+        self.time_waypoints = self.waypoints_df['time_string'].to_numpy()
         self.az = self.full_df['kite_azimuth'].to_numpy(dtype=float)
         self.el = self.full_df['kite_elevation'].to_numpy(dtype=float)
         self.r = self.full_df['kite_distance'].to_numpy(dtype=float)
@@ -103,6 +104,8 @@ class RI_data_processing:
         self.dz_ri = self.dz_cyc[self.ri_idx0 : self.ri_idxf + 1]
 
         # Start/end points for reel-in
+        self.RI_r0 = self.r_ri[0]
+        self.RI_r1 = self.r_ri[-1]
         self.ri_p0_sph = np.array([self.RI_az[0], self.RI_el[0]])
         self.ri_pf_sph = np.array([self.RI_az[-1], self.RI_el[-1]])
         self.ri_p0_cart = np.array([self.x_ri[0], self.y_ri[0], self.z_ri[0]])
@@ -112,7 +115,7 @@ class RI_data_processing:
         self.ri_v0 = np.array([self.dx_ri[0], self.dy_ri[0], self.dz_ri[0]])
         self.ri_vf = np.array([self.dx_ri[-1], self.dy_ri[-1], self.dz_ri[-1]])
 
-        self._compute_u_vals()
+        self.RI_compute_u_vals()
 
     def convert_time_to_seconds(self, time_series):
         """Convert HH:MM:SS.sss strings to total seconds."""
@@ -128,7 +131,7 @@ class RI_data_processing:
         z = r * np.sin(el)
         return x, y, z
     
-    def _compute_u_vals(self):
+    def RI_compute_u_vals(self):
         if hasattr(self, 'x_ri') and hasattr(self, 'y_ri') and hasattr(self, 'z_ri'):
             # Compute u_vals for the reel-in segment
             self.cart = np.vstack([self.x_ri, self.y_ri, self.z_ri]).T
