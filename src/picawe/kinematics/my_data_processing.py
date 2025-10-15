@@ -79,6 +79,10 @@ class DataProcessing:
         self.RI_RO_u_vals = self._compute_u(self.RI_RO_x, self.RI_RO_y, self.RI_RO_z)
         self.RO_RI_u_vals = self._compute_u(self.RO_RI_x, self.RO_RI_y, self.RO_RI_z)
 
+        self.Lissajous_r0 = self.r_cyc[self.RI_RO_idxf]
+        self.Lissajous_r1 = self.r_cyc[self.RO_RI_idx0]
+        self.Lissajous_Duration = self.time_cyc[self.RO_RI_idx0] - self.time_cyc[self.RI_RO_idxf]
+
     # -------------------------
     # Utilities
     # -------------------------

@@ -120,18 +120,18 @@ class Fitting(DataProcessing):
         """Run least-squares Lissajous fitting."""
         fixed_params = {
             "omega": 1,
-            "r0": 200,
-            "kappa": 0.0,
-            "kbeta": 0.0,
+            "r0": self.Lissajous_r0,
+            "kappa": 1.0,
+            "kbeta": 1.0,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
             "normalize_bumps": False,
-            "repeat_phi": False,
-            "repeat_beta": False,
+            "repeat_phi": True,
+            "repeat_beta": True,
             "k_vr": 2716,
         }
-        n_coeffs = 10
+        n_coeffs = 5
         params_init = {
             "az_amp0": 0.34,
             "beta_amp0": 0.08,
@@ -188,7 +188,7 @@ class Fitting(DataProcessing):
     def plot_fit(self, title_prefix="", ax=None, show_control_points=True):
         """Unified plotting for spline or Lissajous."""
         if self.segment == "LISSAJOUS":
-            plt.figure()
+            fig = plt.figure()
             plt.plot(self.az_fit, self.el_fit, 'r-', label='Fitted Lissajous')
             plt.plot(self.az_data, self.el_data, 'b--', label='Data')
             plt.xlabel("Azimuth (rad)")
@@ -197,7 +197,7 @@ class Fitting(DataProcessing):
             plt.legend()
             plt.grid(True, alpha=0.3)
             plt.show()
-            return
+            return fig, None
 
         # --- spline plotting ---
         if ax is None:
@@ -255,6 +255,8 @@ class Fitting(DataProcessing):
                 'segment_name': self.segment,
                 'best_params': self.best_params,
                 's': self.s,
+                'r0': self.Lissajous_r0,
+                'duration': self.Lissajous_Duration,
                 'az_data': self.az_data,
                 'el_data': self.el_data,
                 'az_fit': self.az_fit,
