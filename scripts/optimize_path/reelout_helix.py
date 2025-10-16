@@ -71,24 +71,22 @@ phases_qs = []
 for i in range(N):
 
     pattern_config = {
-        "pattern_type": "cst_lissajous",
+        "pattern_type": "cst_helix",
         "path_parameters": {
             "omega": 1.0,
             "r0": 230.0,
-            "az_amp0": 0.4815631965341702,
-            "beta_amp0": 0.09875937127714636,
+            "az_amp0": 0.1434,
+            "beta_amp0": 0.0873,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
             "normalize_bumps": False,
             "repeat_phi": True,
-            "repeat_beta": True,
-            "beta_coeffs": np.array(
-                [0.25485496, -0.99986137, 0.12645635, -0.86821607, 0.35302077]
-            ),
+            "repeat_beta": False,
+            "beta_coeffs": np.array([0, 0, 0, 0, 0, 0]),
             "az_coeffs": [0, 0, 0, 0, 0],
             "kbeta": 0,
-            "beta0": 0.4414535012239937,
+            "beta0": 0.337,
             "kappa": 0,
         },
         "radial_parameters": {

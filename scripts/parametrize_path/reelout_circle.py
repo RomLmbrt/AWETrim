@@ -33,12 +33,12 @@ with open("./data/LEI-V3-KITE/v3_aero_input.json", "r") as file:
     aero_input_v3 = json.load(file)
 
 pattern_config = {
-    "pattern_type": "cst_lissajous",
+    "pattern_type": "cst_helix",
     "path_parameters": {
         "omega": 1.0,
         "r0": 230.0,
-        "az_amp0": np.deg2rad(20),
-        "beta_amp0": np.deg2rad(5),
+        "az_amp0": np.deg2rad(10),
+        "beta_amp0": np.deg2rad(10),
         "width_phi": 0.5,
         "width_beta": 0.5,
         "left_first": True,

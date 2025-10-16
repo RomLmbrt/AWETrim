@@ -397,6 +397,15 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
+        "cst_helix": [
+            "omega",
+            "r0",
+            "az_amp0",
+            "beta_amp0",
+            "beta0",
+            "beta_coeffs",
+            "az_coeffs",
+        ],
         "reel_in": [
             "r0",
             "r1",
@@ -422,6 +431,7 @@ def create_pattern_from_dict(
         "figure_eight": FigureEight,
         "figure_eight_angles": FigureEightAngles,
         "cst_lissajous": CST_Lissajous,
+        "cst_helix": CST_Helix,
         "reel_in": ReelInBezier,
     }
 
@@ -523,6 +533,108 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         c_beta = self.beta_center(r)
         b_beta = self.beta_amp(r)
         beta_class = c_beta + b_beta * ca.sin(2.0 * self.omega * s)
+        u = self._u(s)
+        N_beta = self._build_shape_repeat(
+            u, self.K_beta, self.width_beta, self.beta_coeffs
+        )
+        return (beta_class) * N_beta
+
+
+class CST_Helix(ParametrizedPatternsAngles):
+    def __init__(
+        self,
+        omega,
+        r0,
+        az_amp0,
+        beta_amp0,
+        beta0,
+        beta_coeffs,
+        az_coeffs,
+        kappa=0.0,
+        kbeta=0.0,
+        width_phi=0.5,
+        width_beta=0.5,
+        left_first=True,
+        normalize_bumps=False,
+        repeat_phi=False,
+        repeat_beta=False,
+        k_vr=6300,
+    ):  # <- only flags
+        super().__init__(
+            omega=omega,
+            r0=r0,
+            az_amp0=az_amp0,
+            beta_amp0=beta_amp0,
+            beta0=beta0,
+            kappa=kappa,
+            kbeta=kbeta,
+            beta_coeffs=beta_coeffs,
+            az_coeffs=az_coeffs,
+            width_phi=width_phi,
+            width_beta=width_beta,
+            left_first=left_first,
+            normalize_bumps=normalize_bumps,
+        )
+
+        # Base weight vectors
+        self.az_coeffs = ca.vertcat(az_coeffs)
+        self.beta_coeffs = ca.vertcat(beta_coeffs)
+        P_phi = int(self.az_coeffs.numel())
+        P_beta = int(self.beta_coeffs.numel())
+
+        # Total number of bumps = len(weights) or 2× if repeating
+        self.K_phi = 2 * P_phi if repeat_phi else P_phi
+        self.K_beta = 2 * P_beta if repeat_beta else P_beta
+
+        self.width_phi, self.width_beta = float(width_phi), float(width_beta)
+        self.normalize_bumps = bool(normalize_bumps)
+        self.sgn = -1.0 if left_first else +1.0
+
+    def beta_center(self, r):
+        return self.beta0 * (self.r0 / (self.r0 + (r - self.r0) * self.kbeta))
+
+    def az_amp(self, r):
+        return self.az_amp0 * (self.r0 / (self.r0 + (r - self.r0) * self.kappa))
+
+    def beta_amp(self, r):
+        return self.beta_amp0 * (self.r0 / (self.r0 + (r - self.r0) * self.kappa))
+
+    @staticmethod
+    def _mod1(x):
+        return x - ca.floor(x)
+
+    def _bump(self, u, a, width, normalize=False):
+        delta = self._mod1(u - a)
+        s = delta / width
+        val = 6.0 * (s**2) * ((1.0 - s) ** 2)
+        inside = ca.if_else(delta <= width, 1.0, 0.0)
+        bump = inside * val
+        return bump / width if normalize else bump
+
+    def _build_shape_repeat(self, u, K, width, base_vec):
+        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump(u; a=k/K, width)."""
+        P = int(base_vec.numel())
+        N = 1.0
+        for k in range(K):
+            wk = base_vec[k % P]
+            a = k / K
+            N = N + wk * self._bump(u, a=a, width=width, normalize=self.normalize_bumps)
+        return N
+
+    def _u(self, s):  # unit-phase for shaping
+        return self._mod1(self.omega * s / (2.0 * ca.pi))
+
+    def azimuth(self, r, s):
+        a_phi = self.az_amp(r)
+        phi_class = self.sgn * a_phi * ca.sin(self.omega * s)
+        u = self._u(s)
+        N_phi = self._build_shape_repeat(u, self.K_phi, self.width_phi, self.az_coeffs)
+        return phi_class * N_phi  # c_phi = 0
+
+    def elevation(self, r, s):
+        c_beta = self.beta_center(r)
+        b_beta = self.beta_amp(r)
+        beta_class = c_beta + b_beta * ca.cos(self.omega * s)
         u = self._u(s)
         N_beta = self._build_shape_repeat(
             u, self.K_beta, self.width_beta, self.beta_coeffs
