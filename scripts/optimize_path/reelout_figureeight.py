@@ -16,7 +16,7 @@ file_path = "./data/LEI-V9-KITE/v9_aero_input.json"
 with open(file_path, "r") as file:
     aero_input = json.load(file)
 
-speed_wind_at_100 = 8  # m/s
+speed_wind_at_100 = 10  # m/s
 
 wind = Wind(
     wind_model="uniform",  # logarithmic
@@ -44,7 +44,7 @@ start_state = State(
     angle_yaw=0,
     tension_tether_ground=1e8,
     speed_radial=2,
-    distance_radial=200,
+    distance_radial=230,
 )
 time = np.arange(0, 50, 0.1)
 s_array = np.linspace(5 * np.pi / 2, 9 * np.pi / 2, 200)
@@ -60,9 +60,9 @@ x_param = "s"
 
 N = 1
 
-mass_wing = 14.2
-mass_kcu = 10
-area_wing = 19.75
+mass_wing = 60
+mass_kcu = 30
+area_wing = 46.85
 tension_min = 3000
 tension_max = 25000
 tether_diameter = 0.01
@@ -73,10 +73,10 @@ for i in range(N):
     pattern_config = {
         "pattern_type": "cst_lissajous",
         "path_parameters": {
-            "omega": -1.0,
+            "omega": 1.0,
             "r0": 230.0,
-            "az_amp0": np.deg2rad(30),
-            "beta_amp0": np.deg2rad(7),
+            "az_amp0": 0.698,
+            "beta_amp0": 0.2,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
@@ -86,20 +86,20 @@ for i in range(N):
             "beta_coeffs": np.array([0, 0, 0, 0, 0]),
             "az_coeffs": [0, 0, 0, 0, 0],
             "kbeta": 0,
-            "beta0": np.deg2rad(30),
+            "beta0": 0.6,
             "kappa": 0,
         },
         "radial_parameters": {
             "reeling_strategy": "force",  # "force" or "constant"
             "force_model": "quadratic",  # "linear" or "quadratic"
             "reeling_speed": 0.0,  # m/s, only for constant reeling
-            "max_tether_force": 2e4,  # N, only for force reeling
-            "min_tether_force": 2000.0,  # N, only for force reeling
+            "max_tether_force": tension_max,  # N, only for force reeling
+            "min_tether_force": tension_min,  # N, only for force reeling
             "softplus": True,
             "softplus_beta": 1e-4,
             "softminus": True,
             "softminus_beta": 1e-3,
-            "slope": 2716,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+            "slope": 2700,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
             "offset": 0,  # m/s
         },
         "start_time": 0,
@@ -194,7 +194,7 @@ fig, axes_map, _ = phases_qs[0].plot_overview_3d(
         "speed_tangential",
         "tension_tether_ground",
         "input_steering",
-        "speed_radial",
+        "mechanical_power",
     ],
     x_param="s",
 )
@@ -206,7 +206,7 @@ phases_qs[-1].plot_overview_3d(
         "speed_tangential",
         "tension_tether_ground",
         "input_steering",
-        "speed_radial",
+        "mechanical_power",
     ],
     x_param="s",
     axes=axes_map,

@@ -12,9 +12,9 @@ from awetrim.utils.defaults import PLOT_LABELS
 from awetrim.environment.Wind import Wind
 
 # ---------- Config ----------
-mass_wing = 14.2
-mass_kcu = 10
-area_wing = 19.75
+mass_wing = 61
+mass_kcu = 30
+area_wing = 46.85
 tether_diameter = 0.01
 
 speed_wind_at_100 = 10
@@ -29,7 +29,7 @@ wind.speed_friction = speed_friction
 # color palette available via get_color_list() as needed
 
 
-with open("./data/LEI-V3-KITE/v3_aero_input.json", "r") as file:
+with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v3 = json.load(file)
 
 pattern_config = {
@@ -37,8 +37,8 @@ pattern_config = {
     "path_parameters": {
         "omega": 1.0,
         "r0": 230.0,
-        "az_amp0": np.deg2rad(20),
-        "beta_amp0": np.deg2rad(5),
+        "az_amp0": np.deg2rad(40),
+        "beta_amp0": np.deg2rad(15),
         "width_phi": 0.5,
         "width_beta": 0.5,
         "left_first": True,
@@ -166,7 +166,7 @@ fig, axes_map, scatter = dynamic_phase.plot_overview_3d(
         "input_steering",
         "speed_radial",
     ],
-    x_param="s",
+    x_param="t",
 )
 
 # Second series overlays on the same axes
@@ -180,7 +180,7 @@ qs_phase.plot_overview_3d(
         "input_steering",
         "speed_radial",
     ],
-    x_param="s",
+    x_param="t",
     axes=axes_map,
 )
 
