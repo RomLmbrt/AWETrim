@@ -13,9 +13,9 @@ from picawe.utils.defaults import PLOT_LABELS
 from picawe.environment.Wind import Wind
 
 # ---------- Config ----------
-speed_wind_at_100 = 10
+speed_wind_at_100 = 7.64
 wind = Wind(
-    wind_model="logarithmic",
+    wind_model="uniform",
     z0=0.0002,
 )
 speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind.z0)
@@ -48,18 +48,18 @@ range = 1.45 * np.pi
 cycles = 1
 
 Realistic_RO_eg = {
-        "reeling_strategy": "force",  # "force" or "constant"
-        "force_model": "quadratic",  # "linear" or "quadratic"
-        "reeling_speed": 0,  # m/s, only for constant reeling
-        "max_tether_force": 3.5e4,  # N, only for force reeling
-        "min_tether_force": 4400.0,  # N, only for force reeling
-        "softplus": True,
-        "softplus_beta": 1e-4,
-        "softminus": True,
-        "softminus_beta": 1e-3,
-        "slope": 1800,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-        "offset": -2,  # m/s
-    }
+    "reeling_strategy": "force",  # "force" or "constant"
+    "force_model": "quadratic",  # "linear" or "quadratic"
+    "reeling_speed": 0,  # m/s, only for constant reeling
+    "max_tether_force": 3.5e4,  # N, only for force reeling
+    "min_tether_force": 4400.0,  # N, only for force reeling
+    "softplus": True,
+    "softplus_beta": 1e-4,
+    "softminus": True,
+    "softminus_beta": 1e-3,
+    "slope": 1800,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+    "offset": -2,  # m/s
+}
 
 pattern_config_v9 = {
     "pattern_type": "cst_lissajous",
@@ -70,17 +70,15 @@ pattern_config_v9 = {
         "beta_amp0": beta_amp0,
         "width_phi": 0.5,
         "width_beta": 0.5,
-        "left_first": True, # Match the Julia simulation start of Lissajous after connecting RIRO spline
+        "left_first": True,  # Match the Julia simulation start of Lissajous after connecting RIRO spline
         "normalize_bumps": False,
         "repeat_phi": True,
         "repeat_beta": True,
-        "beta_coeffs": np.array(
-            beta_coeffs
-        ),
+        "beta_coeffs": np.array(beta_coeffs),
         "az_coeffs": az_coeffs,
-        "kbeta": 1,
+        "kbeta": 0,
         "beta0": beta0,
-        "kappa": 1,
+        "kappa": 0,
     },
     "radial_parameters": Realistic_RO_eg,
     "start_time": 0,
