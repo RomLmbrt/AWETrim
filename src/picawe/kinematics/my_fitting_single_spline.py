@@ -196,6 +196,31 @@ class Fitting(DataProcessing):
         plt.tight_layout()
         return fig, axes
 
+    # -------------------------------------------------------------------------
+    # ------------------------- Unified Save ---------------------------------
+    # -------------------------------------------------------------------------
+    def save_data(self):
+        """Save fitted spline or Lissajous results to pickle."""
+        filename = f"fit_results_Single_Spline.pkl"
+        fitted_data = {
+                "n_ctrl": self.n_ctrl,
+                "s_norm_az": self.fitted_indices_az,
+                "s_norm_el": self.fitted_indices_el,
+                "r0": self.r0,
+                "r1": self.r1,
+                "data_az": self.data_az,
+                "data_el": self.data_el,
+                "C_az": np.concatenate(
+                    ([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])
+                ),
+                "C_el": np.concatenate(
+                    ([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])
+                ),
+            }
+        with open(filename, "wb") as f:
+            pickle.dump(fitted_data, f)
+        print(f"💾 Saved Single_Spline results to {filename}")
+
 # -----------------------------------------------------------------------------
 # Function to plot the 3 splines on one 3D cycle trajectory for validation
 # -----------------------------------------------------------------------------
@@ -263,6 +288,7 @@ if __name__ == "__main__":
     # Set up spline segment and perform fitting
     fit._setup_spline_segment()
     fit.FitSpline()
+    fit.save_data()
 
     # Plot all spline segments on one 3D trajectory for validation
     plot_spline(fit)

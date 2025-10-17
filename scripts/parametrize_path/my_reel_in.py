@@ -14,7 +14,7 @@ from picawe.utils.color_palette import set_plot_style, get_color_list
 from picawe.utils.defaults import PLOT_LABELS
 
 # ---------- Load precomputed fit data ----------
-segment_name = input("Enter segment name (e.g., 'RI' or 'RI_RO' or 'RO_RI'): ").strip()
+segment_name = input("Enter segment name (e.g., 'RI' or 'RI_RO' or 'RO_RI or 'Single_Spline'): ").strip()
 
 filename = f"fit_results_{segment_name}.pkl"
 with open(filename, "rb") as f:
