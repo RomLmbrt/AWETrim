@@ -64,8 +64,6 @@ class DataProcessing:
 
         self._extract_cycle_slice()
 
-        # --- Detect RI and define RO (reel-out is before RI start) ---
-        self._detect_RI_segment()
         self._extract_RO_segment()
 
         # --- Find Lissajous bounds on RO data ---
@@ -75,9 +73,7 @@ class DataProcessing:
         self._find_RI_RO_transition()
         self._find_RO_RI_transition()
 
-        self.Lissajous_r0 = self.r_cyc[self.Lissajous_idx0]
-        self.Lissajous_r1 = self.r_cyc[self.Lissajous_idxf]
-        self.Lissajous_Duration = self.time_cyc[self.Lissajous_idxf] - self.time_cyc[self.Lissajous_idx0]
+        self._Single_Spline_segment()
 
     # -------------------------
     # Utilities
@@ -138,27 +134,6 @@ class DataProcessing:
         self.dy_cyc = self.dy_full[s:f]
         self.dz_cyc = self.dz_full[s:f]
         self.depower_cyc = self.depower_full[s:f]
-
-    # -------------------------
-    # Reel-In (RI_) extraction
-    # -------------------------
-    def _detect_RI_segment(self):
-        """
-        Find RI start index (first phase tag in set) relative to cycle slice.
-        Use same tags as original: "pp-ri", "pp-rori", "pp-riro".
-        """
-        self.RI_idx0 = next(
-            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-ri"]),
-            None,
-        )
-        self.RI_idxf = next(
-            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-riro"]),
-            None,
-        )
-        if self.RI_idx0 is None or self.RI_idxf is None:
-            raise ValueError("Reel-In not found in this cycle")
-        
-        self._assign_transition("RI", self.RI_idx0, self.RI_idxf)
 
     # -------------------------
     # Reel-Out (RO_) extraction
@@ -257,7 +232,7 @@ class DataProcessing:
         setattr(self, f"{prefix}_vf", np.array([dx_slice[-1], dy_slice[-1], dz_slice[-1]]))
         setattr(self, f"{prefix}_u_vals", self._compute_u(x_slice, y_slice, z_slice))
 
-    def _combine_slices_for_RI_RO(self, slice1, slice2, i0, i1, prefix = "RI_RO"):
+    def _combine_slices(self, slice1, slice2, i0, i1, prefix = "Single_Spline"):
         # Combine the slices for the RI_RO transition
         az_combined = np.concatenate((getattr(self, f"{slice1}_az"), getattr(self, f"{slice2}_az")))
         el_combined = np.concatenate((getattr(self, f"{slice1}_el"), getattr(self, f"{slice2}_el")))
@@ -290,17 +265,11 @@ class DataProcessing:
         setattr(self, f"{prefix}_vf", np.array([dx_combined[-1], dy_combined[-1], dz_combined[-1]]))
         setattr(self, f"{prefix}_u_vals", self._compute_u(x_combined, y_combined, z_combined))
 
-
-
     def _find_RI_RO_transition(self):
         """
         Find end index of RI->RO transition (search before Lissajous_idx0).
         Original heuristic: az_cyc[i] < 0 and del_RO[i] < 0 and daz_RO[i] < 0
         """
-        self.RI_RO_idx0 = next(
-            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-riro"]),
-            None,
-        )
         self.RI_RO_idxf = None
         for i in range(self.Lissajous_idx0):
             if self.az_cyc[i] < 0 and self.del_RO[i] < 0 and self.daz_RO[i] < 0:
@@ -308,11 +277,6 @@ class DataProcessing:
                 break
         if self.RI_RO_idxf is None:
             raise ValueError("No valid end point found for the RI->RO transition in the reel-out data.")
-        self._assign_transition("RI_RO_1", self.RI_RO_idx0, len(self.time_cyc)-1)
-        self._assign_transition("RI_RO_2", 0, self.RI_RO_idxf)
-
-        self._combine_slices_for_RI_RO("RI_RO_1", "RI_RO_2", self.RI_RO_idx0, self.RI_RO_idxf, prefix="RI_RO")
-
 
     def _find_RO_RI_transition(self):
         """
@@ -320,14 +284,17 @@ class DataProcessing:
         Heuristic: az_cyc[i] > 0.1 and del_RO[i] > 0 and daz_RO[i] < 0 and el_cyc[i] < 0.25
         """
         self.RO_RI_idx0 = None
-        for i in range(self.Lissajous_idxf, self.RI_idx0):
+        for i in range(self.Lissajous_idxf, len(self.phase_cyc)-1):
             if self.az_cyc[i] > 0.1 and self.del_RO[i] > 0 and self.daz_RO[i] < 0 and self.el_cyc[i] < 0.25:
                 self.RO_RI_idx0 = i
                 break
         if self.RO_RI_idx0 is None:
             raise ValueError("No valid start point found for the RO->RI transition in the reel-out data.")
-        self.RO_RI_idxf = self.RI_idx0
-        self._assign_transition("RO_RI", self.RO_RI_idx0, self.RO_RI_idxf)
+
+    def _Single_Spline_segment(self):
+        self._assign_transition("pref1", self.RO_RI_idx0, len(self.phase_cyc)-1)
+        self._assign_transition("pref2", 0, self.RI_RO_idxf)
+        self._combine_slices("pref1", "pref2", self.RI_RO_idxf, self.RO_RI_idx0, prefix="Single_Spline")
 
     # -------------------------
     # Plotting helpers (call plt.show() automatically)
@@ -341,92 +308,18 @@ class DataProcessing:
             title="Full Cycle Path",
         )
 
-    def plot_RI_3D(self):
-        """Plot the cycle and highlight the Reel-In segment."""
+    def plot_Single_Spline_3D(self):
+        """Plot the cycle and highlight the Single Spline segment."""
         self._plot3d_generic(
             self.x_cyc,
             self.y_cyc,
             self.z_cyc,
-            seg=(self.RI_x, self.RI_y, self.RI_z),
-            seg_label="Reel-In",
-            start=self.RI_p0_cart,
-            end=self.RI_pf_cart,
-            title="Reel-In Phase",
+            seg=(self.Single_Spline_x, self.Single_Spline_y, self.Single_Spline_z),
+            seg_label="Single Spline Fit",
+            start=self.Single_Spline_p0_cart,
+            end=self.Single_Spline_pf_cart,
+            title="Single Spline Fit",
         )
-
-    def plot_RI_RO_3D(self):
-        """Plot RI->RO transition segment in the context of the cycle."""
-        self._plot3d_generic(
-            self.x_cyc,
-            self.y_cyc,
-            self.z_cyc,
-            seg=(self.RI_RO_x, self.RI_RO_y, self.RI_RO_z),
-            seg_label="RI->RO",
-            start=self.RI_RO_p0_cart,
-            end=self.RI_RO_pf_cart,
-            title="Reel-In → Reel-Out Transition",
-        )
-
-    def plot_RO_RI_3D(self):
-        """Plot RO->RI transition segment in the context of the cycle."""
-        self._plot3d_generic(
-            self.x_cyc,
-            self.y_cyc,
-            self.z_cyc,
-            seg=(self.RO_RI_x, self.RO_RI_y, self.RO_RI_z),
-            seg_label="RO->RI",
-            start=self.RO_RI_p0_cart,
-            end=self.RO_RI_pf_cart,
-            title="Reel-Out → Reel-In Transition",
-        )
-
-    def plot_Lissajous_path2D(self):
-        """
-        2D Lissajous plot (azimuth vs elevation) on the RO Lissajous segment.
-        Mirrors your original plotting style and labels.
-        """
-        plt.figure()
-        plt.plot(self.Lissajous_az, self.Lissajous_el, label="Lissajous (az vs el)")
-        # use stored endpoints lists (they contain tuples)
-        p0 = self.Lissajous_p0[0] if self.Lissajous_p0 else (self.Lissajous_az[0], self.Lissajous_el[0])
-        pf = self.Lissajous_pf[0] if self.Lissajous_pf else (self.Lissajous_az[-1], self.Lissajous_el[-1])
-        plt.scatter(p0[0], p0[1], color="green", label="Lissajous Start Point")
-        plt.scatter(pf[0], pf[1], color="red", label="Lissajous End Point")
-        plt.xlabel("Azimuth (rad)")
-        plt.ylabel("Elevation (rad)")
-        plt.title("Kite Path During Reel-Out Phase (Lissajous)")
-        plt.legend()
-        plt.show()
-
-    def plot_Lissajous_path3D(self):
-        """
-        3D plot of the Reel-Out path with Lissajous start/end and whole RO start/end markers.
-        """
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
-        ax.plot(self.RO_x, self.RO_y, self.RO_z, label="Reel-Out Path")
-        ax.scatter(
-            self.RO_x[self.Lissajous_idx0],
-            self.RO_y[self.Lissajous_idx0],
-            self.RO_z[self.Lissajous_idx0],
-            color="green",
-            label="Lissajous Start Point",
-        )
-        ax.scatter(
-            self.RO_x[self.Lissajous_idxf],
-            self.RO_y[self.Lissajous_idxf],
-            self.RO_z[self.Lissajous_idxf],
-            color="red",
-            label="Lissajous End Point",
-        )
-        ax.scatter(self.RO_x[0], self.RO_y[0], self.RO_z[0], color="blue", label="RO Start Point")
-        ax.scatter(self.RO_x[-1], self.RO_y[-1], self.RO_z[-1], color="orange", label="RO End Point")
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.set_zlabel("Z (m)")
-        ax.set_title("3D Kite Path During Reel-Out Phase")
-        ax.legend()
-        plt.show()
 
 
 if __name__ == "__main__":
@@ -438,8 +331,4 @@ if __name__ == "__main__":
 
     dp = DataProcessing(full_path, cycle_path, waypoint_path, cyc_idx=0)
     dp.plot_cycle_3D()
-    dp.plot_RI_3D()
-    dp.plot_RI_RO_3D()
-    dp.plot_RO_RI_3D()
-    dp.plot_Lissajous_path2D()
-    dp.plot_Lissajous_path3D()
+    dp.plot_Single_Spline_3D()
