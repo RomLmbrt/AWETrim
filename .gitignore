@@ -175,3 +175,4 @@ src/picawe/kinematics/winch_force_curve.py
 
 # Winch data from PathEditor
 
+src/picawe/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json
