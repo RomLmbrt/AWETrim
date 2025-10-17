@@ -47,7 +47,7 @@ class Fitting(DataProcessing):
     def _setup_spline_segment(self):
         """Prepare data for spline fitting based on segment."""
 
-        self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.r = (
+        self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.data_r = (
                 getattr(self, f"{self.segment}_az"),
                 getattr(self, f"{self.segment}_el"),
                 getattr(self, f"{self.segment}_u_vals"),
@@ -139,6 +139,17 @@ class Fitting(DataProcessing):
         self.fitted_indices_el = np.concatenate(
             ([0], result.x[3 * n :].astype(int), [len(self.data_az) - 1])
         )
+
+        spline = CasadiSpline(
+            C_az=np.concatenate(([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])),
+            C_el=np.concatenate(([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])),
+            s_norm_az=self.u_vals[self.fitted_indices_az],
+            s_norm_el=self.u_vals[self.fitted_indices_el],
+        )
+
+        self.az_fit = np.array(spline.azimuth(1.0, self.u_vals).full()).ravel()
+        self.el_fit = np.array(spline.elevation(1.0, self.u_vals).full()).ravel()
+
         print(f"✅ {self.segment} spline fitting completed.")
 
     # -------------------------------------------------------------------------
@@ -341,6 +352,69 @@ class Fitting(DataProcessing):
             pickle.dump(fitted_data, f)
         print(f"💾 Saved {self.segment} results to {filename}")
 
+# -----------------------------------------------------------------------------
+# Function to plot the 3 splines on one 3D cycle trajectory for validation
+# -----------------------------------------------------------------------------
+
+def plot_all_splines(objects):
+
+    az = [] 
+    el = [] 
+    r = []
+
+    x_list = []
+    y_list = []
+    z_list = []
+
+    x_cyc = objects[0].x_cyc
+    y_cyc = objects[0].y_cyc
+    z_cyc = objects[0].z_cyc
+
+    for fit in objects:
+        az.append(fit.az_fit)
+        el.append(fit.el_fit)
+        r.append(fit.data_r)
+
+        x, y, z = fit._sph2cart(fit.az_fit, fit.el_fit, fit.data_r)
+        x_list.append(x)
+        y_list.append(y)
+        z_list.append(z)
+
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot full cycle trajectory - solid line, light blue
+    ax.plot(x_cyc, y_cyc, z_cyc, color='lightblue', linewidth=2, 
+            label='Full Cycle Trajectory', linestyle='-')
+    
+    # Define colors and labels for each segment
+    colors = ['lightgreen', 'orange', 'hotpink']
+    labels = ['RI Segment', 'RIRO Segment', 'RORI Segment']
+    
+    # Plot spline segments with dashed lines and start/end points
+    for i in range(len(objects)):
+        # Plot spline as dashed line
+        ax.plot(x_list[i], y_list[i], z_list[i], color=colors[i], 
+                label=labels[i], linewidth=2, linestyle='--')
+        
+        # Plot start point
+        ax.scatter(x_list[i][0], y_list[i][0], z_list[i][0], 
+                  color=colors[i], s=80, marker='o', edgecolors='black', 
+                  label=f'{labels[i]} Start')
+        
+        # Plot end point
+        ax.scatter(x_list[i][-1], y_list[i][-1], z_list[i][-1], 
+                  color=colors[i], s=80, marker='s', edgecolors='black',
+                  label=f'{labels[i]} End')
+    
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.set_title('3D Trajectory with Fitted Spline Segments')
+    ax.legend(loc='best', bbox_to_anchor=(1.05, 1), borderaxespad=0)
+    plt.tight_layout()
+    plt.show()
+
 
 # =============================================================================
 # MAIN SCRIPT
@@ -357,14 +431,21 @@ if __name__ == "__main__":
     figs = []
     axes_list = []
 
+    objects = []
+
     for seg in segments:
         print(f"\n🔹 Fitting {seg} segment...")
         fit = Fitting(
             full_path, cycle_path, waypoint_path, cyc_idx=0, segment=seg, n_ctrl_pts=17
         )
+        if seg != "LISSAJOUS":
+            objects.append(fit)
+        
         fit.save_data()
-        fig, axes = fit.plot_fit(title_prefix=seg)
-        figs.append(fig)
-        axes_list.append(axes)
+    #     fig, axes = fit.plot_fit(title_prefix=seg)
+    #     figs.append(fig)
+    #     axes_list.append(axes)
+    # plt.show()
 
-    plt.show()
+    # Plot all spline segments on one 3D trajectory for validation
+    plot_all_splines(objects)
