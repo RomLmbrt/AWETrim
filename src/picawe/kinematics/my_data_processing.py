@@ -75,10 +75,6 @@ class DataProcessing:
         self._find_RI_RO_transition()
         self._find_RO_RI_transition()
 
-        self.RI_u_vals = self._compute_u(self.RI_x, self.RI_y, self.RI_z)
-        self.RI_RO_u_vals = self._compute_u(self.RI_RO_x, self.RI_RO_y, self.RI_RO_z)
-        self.RO_RI_u_vals = self._compute_u(self.RO_RI_x, self.RO_RI_y, self.RO_RI_z)
-
         self.Lissajous_r0 = self.r_cyc[self.RI_RO_idxf]
         self.Lissajous_r1 = self.r_cyc[self.RO_RI_idx0]
         self.Lissajous_Duration = self.time_cyc[self.RO_RI_idx0] - self.time_cyc[self.RI_RO_idxf]
@@ -100,7 +96,7 @@ class DataProcessing:
         return x, y, z
 
     def _compute_u(self, x, y, z):
-        """Return normalized cumulative distance along (x,y,z)."""
+        """Return normalized cumulative distance along (x,y,z)."""        
         cart = np.vstack([x, y, z]).T
         dist = np.cumsum(np.linalg.norm(np.diff(cart, axis=0), axis=1))
         dist = np.insert(dist, 0, 0.0)
@@ -152,46 +148,30 @@ class DataProcessing:
         Use same tags as original: "pp-ri", "pp-rori", "pp-riro".
         """
         self.RI_idx0 = next(
-            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-ri", "pp-rori", "pp-riro"]),
+            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-ri"]),
             None,
         )
-        if self.RI_idx0 is None:
-            raise ValueError("Reel-In start not found in this cycle")
-        self.RI_idxf = len(self.phase_cyc) - 1
-
-        s, f = self.RI_idx0, self.RI_idxf + 1
-        self.RI_az = self.az_cyc[s:f]
-        self.RI_el = self.el_cyc[s:f]
-        self.RI_r = self.r_cyc[s:f]
-        self.RI_crs = self.crs_cyc[s:f]
-        self.RI_x = self.x_cyc[s:f]
-        self.RI_y = self.y_cyc[s:f]
-        self.RI_z = self.z_cyc[s:f]
-        self.RI_dx = self.dx_cyc[s:f]
-        self.RI_dy = self.dy_cyc[s:f]
-        self.RI_dz = self.dz_cyc[s:f]
-
-        # endpoints & velocities
-        self.RI_r0 = self.RI_r[0]
-        self.RI_r1 = self.RI_r[-1]
-        self.RI_p0_sph = np.array([self.RI_az[0], self.RI_el[0]])
-        self.RI_pf_sph = np.array([self.RI_az[-1], self.RI_el[-1]])
-        self.RI_p0_cart = np.array([self.RI_x[0], self.RI_y[0], self.RI_z[0]])
-        self.RI_pf_cart = np.array([self.RI_x[-1], self.RI_y[-1], self.RI_z[-1]])
-        self.RI_crs0 = self.RI_crs[0]
-        self.RI_crsf = self.RI_crs[-1]
-        self.RI_v0 = np.array([self.RI_dx[0], self.RI_dy[0], self.RI_dz[0]])
-        self.RI_vf = np.array([self.RI_dx[-1], self.RI_dy[-1], self.RI_dz[-1]])
-
-        # normalized distance (u) along RI
-        self.RI_u = self._compute_u(self.RI_x, self.RI_y, self.RI_z)
+        self.RI_idxf = next(
+            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-riro"]),
+            None,
+        )
+        if self.RI_idx0 is None or self.RI_idxf is None:
+            raise ValueError("Reel-In not found in this cycle")
+        
+        self._assign_transition("RI", self.RI_idx0, self.RI_idxf)
 
     # -------------------------
     # Reel-Out (RO_) extraction
     # -------------------------
     def _extract_RO_segment(self):
         """RO is cycle portion before RI start (indices relative to cycle)."""
-        s, f = 0, self.RI_idx0
+
+        self.RO_idxf = next(
+            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-rori"]),
+            None,
+        )
+
+        s, f = 0, self.RO_idxf
         self.RO_az = self.az_cyc[s:f]
         self.RO_el = self.el_cyc[s:f]
         self.RO_r = self.r_cyc[s:f]
@@ -201,7 +181,7 @@ class DataProcessing:
         # derivatives on RO signals (used in Lissajous detection / transition heuristics)
         self.daz_RO = np.gradient(self.RO_az)
         self.del_RO = np.gradient(self.RO_el)
-        self.RO_r0 = self.r_cyc[0]
+        self.RO_r0 = self.RO_r[0]
 
     # -------------------------
     # Lissajous detection on RO
@@ -217,7 +197,7 @@ class DataProcessing:
         self.Lissajous_idx0 = None
         self.Lissajous_idxf = None
 
-        for i in range(len(self.daz_RO)):
+        for i in range(self.RO_idxf+1):
             cond = (
                 self.daz_RO[i] > 0
                 and self.del_RO[i] > 0
@@ -239,6 +219,7 @@ class DataProcessing:
         # store truncated Lissajous signals (azimuth / elevation)
         self.Lissajous_az = self.RO_az[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
         self.Lissajous_el = self.RO_el[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
+        self.Lissajous_r = self.RO_r[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
 
     # -------------------------
     # Transitions detection & assignment helpers
@@ -250,28 +231,76 @@ class DataProcessing:
         x_slice = self.x_cyc[i0 : i1 + 1]
         y_slice = self.y_cyc[i0 : i1 + 1]
         z_slice = self.z_cyc[i0 : i1 + 1]
+        dx_slice = self.dx_cyc[i0 : i1 + 1]
+        dy_slice = self.dy_cyc[i0 : i1 + 1]
+        dz_slice = self.dz_cyc[i0 : i1 + 1]
+        r_slice = self.r_cyc[i0 : i1 + 1]
 
         setattr(self, f"{prefix}_az", az_slice)
         setattr(self, f"{prefix}_el", el_slice)
         setattr(self, f"{prefix}_x", x_slice)
         setattr(self, f"{prefix}_y", y_slice)
         setattr(self, f"{prefix}_z", z_slice)
+        setattr(self, f"{prefix}_dx", dx_slice)
+        setattr(self, f"{prefix}_dy", dy_slice)
+        setattr(self, f"{prefix}_dz", dz_slice)
+        setattr(self, f"{prefix}_r", r_slice)
+        setattr(self, f"{prefix}_p0_sph", np.array([az_slice[0], el_slice[0]]))
+        setattr(self, f"{prefix}_pf_sph", np.array([az_slice[-1], el_slice[-1]]))
         setattr(self, f"{prefix}_p0_cart", np.array([x_slice[0], y_slice[0], z_slice[0]]))
         setattr(self, f"{prefix}_pf_cart", np.array([x_slice[-1], y_slice[-1], z_slice[-1]]))
         setattr(self, f"{prefix}_r0", self.r_cyc[i0])
         setattr(self, f"{prefix}_r1", self.r_cyc[i1])
         setattr(self, f"{prefix}_crs0", self.crs_cyc[i0])
         setattr(self, f"{prefix}_crsf", self.crs_cyc[i1])
-        setattr(self, f"{prefix}_v0", np.array([self.dx_cyc[i0], self.dy_cyc[i0], self.dz_cyc[i0]]))
-        setattr(self, f"{prefix}_vf", np.array([self.dx_cyc[i1], self.dy_cyc[i1], self.dz_cyc[i1]]))
-        setattr(self, f"{prefix}_u", self._compute_u(x_slice, y_slice, z_slice))
+        setattr(self, f"{prefix}_v0", np.array([dx_slice[0], dy_slice[0], dz_slice[0]]))
+        setattr(self, f"{prefix}_vf", np.array([dx_slice[-1], dy_slice[-1], dz_slice[-1]]))
+        setattr(self, f"{prefix}_u_vals", self._compute_u(x_slice, y_slice, z_slice))
+
+    def _combine_slices_for_RI_RO(self, slice1, slice2, i0, i1, prefix = "RI_RO"):
+        # Combine the slices for the RI_RO transition
+        az_combined = np.concatenate((getattr(self, f"{slice1}_az"), getattr(self, f"{slice2}_az")))
+        el_combined = np.concatenate((getattr(self, f"{slice1}_el"), getattr(self, f"{slice2}_el")))
+        x_combined = np.concatenate((getattr(self, f"{slice1}_x"), getattr(self, f"{slice2}_x")))
+        y_combined = np.concatenate((getattr(self, f"{slice1}_y"), getattr(self, f"{slice2}_y")))
+        z_combined = np.concatenate((getattr(self, f"{slice1}_z"), getattr(self, f"{slice2}_z")))
+        dx_combined = np.concatenate((getattr(self, f"{slice1}_dx"), getattr(self, f"{slice2}_dx")))
+        dy_combined = np.concatenate((getattr(self, f"{slice1}_dy"), getattr(self, f"{slice2}_dy")))
+        dz_combined = np.concatenate((getattr(self, f"{slice1}_dz"), getattr(self, f"{slice2}_dz")))
+        r_combined = np.concatenate((getattr(self, f"{slice1}_r"), getattr(self, f"{slice2}_r")))
+
+        setattr(self, f"{prefix}_az", az_combined)
+        setattr(self, f"{prefix}_el", el_combined)
+        setattr(self, f"{prefix}_x", x_combined)
+        setattr(self, f"{prefix}_y", y_combined)
+        setattr(self, f"{prefix}_z", z_combined)
+        setattr(self, f"{prefix}_dx", dx_combined)
+        setattr(self, f"{prefix}_dy", dy_combined)
+        setattr(self, f"{prefix}_dz", dz_combined)
+        setattr(self, f"{prefix}_r", r_combined)
+        setattr(self, f"{prefix}_p0_sph", np.array([az_combined[0], el_combined[0]]))
+        setattr(self, f"{prefix}_pf_sph", np.array([az_combined[-1], el_combined[-1]]))
+        setattr(self, f"{prefix}_p0_cart", np.array([x_combined[0], y_combined[0], z_combined[0]]))
+        setattr(self, f"{prefix}_pf_cart", np.array([x_combined[-1], y_combined[-1], z_combined[-1]]))
+        setattr(self, f"{prefix}_r0", self.r_cyc[i0])
+        setattr(self, f"{prefix}_r1", self.r_cyc[i1])
+        setattr(self, f"{prefix}_crs0", self.crs_cyc[i0])
+        setattr(self, f"{prefix}_crsf", self.crs_cyc[i1])
+        setattr(self, f"{prefix}_v0", np.array([dx_combined[0], dy_combined[0], dz_combined[0]]))
+        setattr(self, f"{prefix}_vf", np.array([dx_combined[-1], dy_combined[-1], dz_combined[-1]]))
+        setattr(self, f"{prefix}_u_vals", self._compute_u(x_combined, y_combined, z_combined))
+
+
 
     def _find_RI_RO_transition(self):
         """
         Find end index of RI->RO transition (search before Lissajous_idx0).
         Original heuristic: az_cyc[i] < 0 and del_RO[i] < 0 and daz_RO[i] < 0
         """
-        self.RI_RO_idx0 = 0
+        self.RI_RO_idx0 = next(
+            (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-riro"]),
+            None,
+        )
         self.RI_RO_idxf = None
         for i in range(self.Lissajous_idx0):
             if self.az_cyc[i] < 0 and self.del_RO[i] < 0 and self.daz_RO[i] < 0:
@@ -279,7 +308,11 @@ class DataProcessing:
                 break
         if self.RI_RO_idxf is None:
             raise ValueError("No valid end point found for the RI->RO transition in the reel-out data.")
-        self._assign_transition("RI_RO", self.RI_RO_idx0, self.RI_RO_idxf)
+        self._assign_transition("RI_RO_1", self.RI_RO_idx0, len(self.time_cyc)-1)
+        self._assign_transition("RI_RO_2", 0, self.RI_RO_idxf)
+
+        self._combine_slices_for_RI_RO("RI_RO_1", "RI_RO_2", self.RI_RO_idx0, self.RI_RO_idxf, prefix="RI_RO")
+
 
     def _find_RO_RI_transition(self):
         """
@@ -397,9 +430,11 @@ class DataProcessing:
 
 
 if __name__ == "__main__":
-    waypoint_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/waypoints/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
-    full_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/ProtoLogger_csv/2025-09-25_11-48-58_ProtoLogger.csv"
-    cycle_path = "/home/theophile/src/Simulation_Results/trial_Uri_valid_2/cycles/cycle_data_sheet_lines.csv"
+    # File paths
+    base_path = "./processed_data/fitting"
+    waypoint_path = f"{base_path}/2025-09-25_11-48-58_ProtoLogger_waypoints.csv"
+    full_path = f"{base_path}/2025-09-25_11-48-58_ProtoLogger.csv"
+    cycle_path = f"{base_path}/cycle_data_sheet_lines.csv"
 
     dp = DataProcessing(full_path, cycle_path, waypoint_path, cyc_idx=0)
     dp.plot_cycle_3D()

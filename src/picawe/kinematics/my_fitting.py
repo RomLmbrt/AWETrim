@@ -24,7 +24,7 @@ class Fitting(DataProcessing):
         file_path_waypoints,
         cyc_idx=0,
         segment="RI",
-        n_ctrl_pts=8,
+        n_ctrl_pts=17,
     ):
         # Initialize DataProcessing parent class
         super().__init__(file_path_full, file_path_cycle, file_path_waypoints, cyc_idx)
@@ -46,28 +46,16 @@ class Fitting(DataProcessing):
     # -------------------------------------------------------------------------
     def _setup_spline_segment(self):
         """Prepare data for spline fitting based on segment."""
-        if self.segment == "RI":
-            self.data_az, self.data_el, self.u_vals = (
-                self.RI_az,
-                self.RI_el,
-                self.RI_u_vals,
-            )
-            self.r0, self.r1 = self.RI_r0, self.RI_r1
-        elif self.segment == "RI_RO":
-            self.data_az, self.data_el, self.u_vals = (
-                self.RI_RO_az,
-                self.RI_RO_el,
-                self.RI_RO_u_vals,
-            )
-            self.r0, self.r1 = self.RI_RO_r0, self.RI_RO_r1
-        elif self.segment == "RO_RI":
-            self.data_az, self.data_el, self.u_vals = (
-                self.RO_RI_az,
-                self.RO_RI_el,
-                self.RO_RI_u_vals,
-            )
-            self.r0, self.r1 = self.RO_RI_r0, self.RO_RI_r1
 
+        self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.r = (
+                getattr(self, f"{self.segment}_az"),
+                getattr(self, f"{self.segment}_el"),
+                getattr(self, f"{self.segment}_u_vals"),
+                getattr(self, f"{self.segment}_r0"),
+                getattr(self, f"{self.segment}_r1"),
+                getattr(self, f"{self.segment}_r")
+            )
+ 
         # Initial control points
         self.indices0 = np.linspace(0, len(self.data_az) - 1, self.n_ctrl, dtype=int)[
             1:-1
@@ -113,16 +101,20 @@ class Fitting(DataProcessing):
             ([0], params[3 * n :].astype(int), [len(self.data_az) - 1])
         )
 
-        if not np.all(np.diff(self.u_vals[indices_az]) > 0):
-            return np.full(2 * len(self.data_az), 1e6)
+        if not np.all(np.diff(self.u_vals[indices_az]) >= 0) or not np.all(np.diff(self.u_vals[indices_el]) >= 0):
+            return np.full(2 * len(self.data_az), 1e7)
 
-        spline = CasadiSpline(
-            C_az=np.concatenate(([self.data_az[0]], params_az, [self.data_az[-1]])),
-            C_el=np.concatenate(([self.data_el[0]], params_el, [self.data_el[-1]])),
-            s_norm_az=self.u_vals[indices_az],
-            s_norm_el=self.u_vals[indices_el],
-        )
-
+        try:
+            spline = CasadiSpline(
+                C_az=np.concatenate(([self.data_az[0]], params_az, [self.data_az[-1]])),
+                C_el=np.concatenate(([self.data_el[0]], params_el, [self.data_el[-1]])),
+                s_norm_az=self.u_vals[indices_az],
+                s_norm_el=self.u_vals[indices_el],
+            )
+        except Exception as e:
+            print("Error creating spline:", e)
+            return np.full(2 * len(self.data_az), 1e7)
+    
         az_fit = np.array(spline.azimuth(1.0, self.u_vals).full()).ravel()
         el_fit = np.array(spline.elevation(1.0, self.u_vals).full()).ravel()
         return np.concatenate([az_fit - self.data_az, el_fit - self.data_el])
@@ -154,17 +146,19 @@ class Fitting(DataProcessing):
     # -------------------------------------------------------------------------
     def _setup_lissajous_segment(self):
         """Prepare data for Lissajous fitting from RO Lissajous."""
-        self.az_data = self.Lissajous_az
-        self.el_data = self.Lissajous_el
-        self.s = np.linspace(0, 2 * np.pi, len(self.az_data))
+        self.data_az = self.Lissajous_az
+        self.data_el = self.Lissajous_el
+        self.data_r = self.Lissajous_r
+        self.Lissajous_r0 = self.Lissajous_r0
+        self.s = np.linspace(0, 2 * np.pi, len(self.data_az))
 
     def FitLissajous(self):
         """Run least-squares Lissajous fitting."""
         fixed_params = {
             "omega": 1,
             "r0": self.Lissajous_r0,
-            "kappa": 1.0,
-            "kbeta": 1.0,
+            "kappa": 0.0,
+            "kbeta": 0.0,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
@@ -209,7 +203,7 @@ class Fitting(DataProcessing):
             az_model = obj.azimuth(params["r0"], self.s)
             el_model = obj.elevation(params["r0"], self.s)
             return np.concatenate(
-                (self.az_data - az_model, self.el_data - el_model)
+                (self.data_az - az_model, self.data_el - el_model)
             ).ravel()
 
         res = least_squares(
@@ -236,7 +230,7 @@ class Fitting(DataProcessing):
         if self.segment == "LISSAJOUS":
             fig = plt.figure()
             plt.plot(self.az_fit, self.el_fit, "r-", label="Fitted Lissajous")
-            plt.plot(self.az_data, self.el_data, "b--", label="Data")
+            plt.plot(self.data_az, self.data_el, "b--", label="Data")
             plt.xlabel("Azimuth (rad)")
             plt.ylabel("Elevation (rad)")
             plt.title(f"{title_prefix} Lissajous Fit")
@@ -321,8 +315,8 @@ class Fitting(DataProcessing):
                 "s": self.s,
                 "r0": self.Lissajous_r0,
                 "duration": self.Lissajous_Duration,
-                "az_data": self.az_data,
-                "el_data": self.el_data,
+                "data_az": self.data_az,
+                "data_el": self.data_el,
                 "az_fit": self.az_fit,
                 "el_fit": self.el_fit,
             }
@@ -366,7 +360,7 @@ if __name__ == "__main__":
     for seg in segments:
         print(f"\n🔹 Fitting {seg} segment...")
         fit = Fitting(
-            full_path, cycle_path, waypoint_path, cyc_idx=0, segment=seg, n_ctrl_pts=15
+            full_path, cycle_path, waypoint_path, cyc_idx=0, segment=seg, n_ctrl_pts=17
         )
         fit.save_data()
         fig, axes = fit.plot_fit(title_prefix=seg)
