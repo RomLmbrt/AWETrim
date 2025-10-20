@@ -1,7 +1,7 @@
 import casadi as ca
 import pytest
-from picawe.system.system_model import SystemModel
-from picawe.system.kite import Kite
+from awetrim.system.system_model import SystemModel
+from awetrim.system.kite import Kite
 import numpy as np
 
 

@@ -4,13 +4,13 @@ import json
 import pickle
 
 # from picawe.kinematics.parametrized_patterns import Helix  # unused
-from picawe import SystemModel, State
-from picawe.utils.color_palette import set_plot_style, get_color_list
-from picawe.timeseries.my_phase_parametrized import PhaseParameterized
-from picawe.system.kite import Kite
-from picawe.system.tether import RigidLumpedTether
-from picawe.utils.defaults import PLOT_LABELS
-from picawe.environment.Wind import Wind
+from awetrim import SystemModel, State
+from awetrim.utils.color_palette import set_plot_style, get_color_list
+from awetrim.timeseries.my_phase_parametrized import PhaseParameterized
+from awetrim.system.kite import Kite
+from awetrim.system.tether import RigidLumpedTether
+from awetrim.utils.defaults import PLOT_LABELS
+from awetrim.environment.Wind import Wind
 
 # ---------- Config ----------
 speed_wind_at_100 = 7.64

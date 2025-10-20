@@ -15,7 +15,7 @@ import numpy as np
 def test_position_properties(
     azimuth, elevation, radial_distance, expected_position, expected_position_W
 ):
-    from picawe.kinematics.Kinematics import Position
+    from awetrim.kinematics.Kinematics import Position
 
     pos = Position()
     pos.angle_azimuth = azimuth
@@ -85,7 +85,7 @@ def test_velocity_properties(
     expected_velocity,
     expected_velocity_W,
 ):
-    from picawe.kinematics.Kinematics import KiteKinematics
+    from awetrim.kinematics.Kinematics import KiteKinematics
 
     kite = KiteKinematics()
     kite.angle_azimuth = azimuth
@@ -147,7 +147,7 @@ def test_omega_course_properties(
     course_rate,
     expected_omega_course,
 ):
-    from picawe.kinematics.Kinematics import KiteKinematics
+    from awetrim.kinematics.Kinematics import KiteKinematics
 
     kite = KiteKinematics()
     kite.angle_azimuth = azimuth
