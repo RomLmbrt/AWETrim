@@ -332,3 +332,5 @@ if __name__ == "__main__":
     dp = DataProcessing(full_path, cycle_path, waypoint_path, cyc_idx=0)
     dp.plot_cycle_3D()
     dp.plot_Single_Spline_3D()
+
+    print(dp.Single_Spline_u_vals)

@@ -161,7 +161,7 @@ class Fitting(DataProcessing):
         self.data_el = self.Lissajous_el
         self.data_r = self.Lissajous_r
         self.Lissajous_r0 = self.Lissajous_r0
-        self.s = np.linspace(0, 2 * np.pi, len(self.data_az))
+        self.u_vals = np.linspace(0, 2 * np.pi, len(self.data_az))
 
     def FitLissajous(self):
         """Run least-squares Lissajous fitting."""
@@ -211,8 +211,8 @@ class Fitting(DataProcessing):
         def residual(x):
             params = unpack_params(x)
             obj = CST_Lissajous(**params)
-            az_model = obj.azimuth(params["r0"], self.s)
-            el_model = obj.elevation(params["r0"], self.s)
+            az_model = obj.azimuth(params["r0"], self.u_vals)
+            el_model = obj.elevation(params["r0"], self.u_vals)
             return np.concatenate(
                 (self.data_az - az_model, self.data_el - el_model)
             ).ravel()
@@ -229,8 +229,8 @@ class Fitting(DataProcessing):
 
         self.best_params = unpack_params(res.x)
         obj = CST_Lissajous(**self.best_params)
-        self.az_fit = obj.azimuth(self.best_params["r0"], self.s)
-        self.el_fit = obj.elevation(self.best_params["r0"], self.s)
+        self.az_fit = obj.azimuth(self.best_params["r0"], self.u_vals)
+        self.el_fit = obj.elevation(self.best_params["r0"], self.u_vals)
         print("✅ Lissajous fitting completed.")
 
     # -------------------------------------------------------------------------
@@ -323,7 +323,7 @@ class Fitting(DataProcessing):
             fitted_data = {
                 "segment_name": self.segment,
                 "best_params": self.best_params,
-                "s": self.s,
+                "u_vals": self.u_vals,
                 "r0": self.Lissajous_r0,
                 "duration": self.Lissajous_Duration,
                 "data_az": self.data_az,
@@ -440,6 +440,8 @@ if __name__ == "__main__":
         )
         if seg != "LISSAJOUS":
             objects.append(fit)
+        
+        print(fit.u_vals[-1])
         
         fit.save_data()
     #     fig, axes = fit.plot_fit(title_prefix=seg)

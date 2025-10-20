@@ -231,10 +231,6 @@ class Fitting(DataProcessing):
         y_cyc = self.y_cyc
         z_cyc = self.z_cyc
 
-        az = self.az_fit
-        el = self.el_fit
-        r = self.data_r
-
         x, y, z = self._sph2cart(self.az_fit, self.el_fit, self.data_r)
 
         fig = plt.figure(figsize=(12, 10))
@@ -289,7 +285,7 @@ if __name__ == "__main__":
     fit.FitSpline()
     fit.save_data()
     fit.plot_spline()
-
+    print(fit.u_vals[-1])
 
     # s = np.linspace(0, 1, 10000)
     # for i in s:
