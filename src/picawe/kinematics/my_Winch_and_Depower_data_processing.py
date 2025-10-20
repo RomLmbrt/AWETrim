@@ -26,6 +26,8 @@ Each waypoint dictionary contains:
 - "type"
 - "winch_control"
     - "wcs_drum_control" : {"force_control_curve": {"force_knee" and "force_slope_factor"}, "controller_type"}
+    - pid_force : {"Kp"}
+    - pid_velocity : {"Kp"}
     - "winch_control_v1" : {"f_high", "f_low", "reelout_speed"}
 
 '''
