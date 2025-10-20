@@ -44,14 +44,14 @@ Realistic_RI_eg = {
     "reeling_strategy": "force",  # "force" or "constant"
     "force_model": "quadratic",  # "linear" or "quadratic"
     "reeling_speed": 0,  # m/s, only for constant reeling
-    "max_tether_force": 3.5e4,  # N, only for force reeling
-    "min_tether_force": 4400.0,  # N, only for force reeling
+    "max_tether_force": 3e4,  # N, only for force reeling
+    "min_tether_force": 4070.0,  # N, only for force reeling
     "softplus": True,
     "softplus_beta": 1e-4,
     "softminus": True,
     "softminus_beta": 1e-3,
-    "slope": 1800,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-    "offset": -4,  # m/s
+    "slope": 1400,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+    "offset": -2.8,  # m/s
 }
 pattern_config_v9 = {
     "pattern_type": "spline",
@@ -65,15 +65,15 @@ pattern_config_v9 = {
     },
     "radial_parameters": Realistic_RI_eg,
     "start_time": 0,
-    "end_time": 30,
-    "n_points": 300,
+    "end_time": 70,
+    "n_points": 700,
     "optimization_parameters": [],
 }
 
 # ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=0.01,
+    s=0,
     s_dot=5,
     s_ddot=0,
     input_steering=0,

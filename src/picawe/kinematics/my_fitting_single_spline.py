@@ -225,7 +225,7 @@ class Fitting(DataProcessing):
     # Function to plot the 3 splines on one 3D cycle trajectory for validation
     # -----------------------------------------------------------------------------
 
-    def plot_spline(self):
+    def plot_spline_cart(self):
 
         x_cyc = self.x_cyc
         y_cyc = self.y_cyc
@@ -263,6 +263,24 @@ class Fitting(DataProcessing):
         plt.tight_layout()
         plt.show()
 
+    def plot_spline_sph(self):
+        fig, axes = plt.subplots(2, 1, figsize=(10, 12))
+        axes[0].plot(self.u_vals, self.az_fit, 'r-', label='Fitted Azimuth', linewidth=2)
+        axes[0].plot(self.u_vals, self.data_az, 'b--', label='Data Azimuth', linewidth=2)
+        axes[0].set_title('Azimuth vs u parameter')
+        axes[0].set_xlabel('u parameter')
+        axes[0].set_ylabel('Azimuth (rad)')
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].plot(self.u_vals, self.el_fit, 'g-', label='Fitted Elevation', linewidth=2)
+        axes[1].plot(self.u_vals, self.data_el, 'b--', label='Data Elevation', linewidth=2)
+        axes[1].set_title('Elevation vs u parameter')
+        axes[1].set_xlabel('u parameter')
+        axes[1].set_ylabel('Elevation (rad)')
+        axes[1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
 
 # =============================================================================
 # MAIN SCRIPT
@@ -284,12 +302,40 @@ if __name__ == "__main__":
     fit._setup_spline_segment()
     fit.FitSpline()
     fit.save_data()
-    fit.plot_spline()
+    fit.plot_spline_cart()
     print(fit.u_vals[-1])
 
-    # s = np.linspace(0, 1, 10000)
-    # for i in s:
-    #     print(i)
-    #     az = fit.final_spline.azimuth(1.0, i)
-    #     el = fit.final_spline.elevation(1.0, i)
-    # print("Done evaluating final spline at high resolution.")
+    fit.plot_spline_sph()
+
+    if fit.az_fit[-1] == fit.data_az[-1]:
+        print("Max s check passed: final azimuth matches data azimuth.")
+    else:
+        print("Max s check failed: final azimuth does not match data azimuth.")
+        print(fit.az_fit[-1], fit.data_az[-1])
+
+    if fit.el_fit[-1] == fit.data_el[-1]:
+        print("Max s check passed: final elevation matches data elevation.")   
+    else:
+        print("Max s check failed: final elevation does not match data elevation.")
+        print(fit.el_fit[-1], fit.data_el[-1])
+
+    s = np.linspace(0, 1, len(fit.data_az))
+    az = []
+    el = []
+    for i in s:
+        a = np.array(fit.final_spline.azimuth(1.0, i).full()).ravel()[0]
+        e = np.array(fit.final_spline.elevation(1.0, i).full()).ravel()[0]
+        az.append(a)
+        el.append(e)
+    print("Done evaluating final spline at high resolution.")
+
+    plt.figure()
+    plt.plot(s, az, 'r-', label='Fitted Azimuth')
+    plt.plot(fit.u_vals, fit.data_az, 'b--', label='Data Azimuth')
+    plt.show()
+
+    plt.figure()
+    plt.plot(s, el, 'r-', label='Fitted Elevation')
+    plt.plot(fit.u_vals, fit.data_el, 'b--', label='Data Elevation')
+    plt.show()
+    
