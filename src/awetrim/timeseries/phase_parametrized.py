@@ -174,9 +174,9 @@ class PhaseParameterized(TimeSeries):
 
         # unknowns to solve at each s-node
         if self.quasi_steady:
-            unknown_vars = ["length_tether", "input_steering", "s_dot"]
+            unknown_vars = ["length_tether", "input_steering", "s_dot", "speed_radial"]
         else:
-            unknown_vars = ["length_tether", "input_steering", "s_ddot"]
+            unknown_vars = ["length_tether", "input_steering", "s_ddot", "speed_radial"]
 
         if km_copy.is_tether_rigid:
             unknown_vars[0] = "tension_tether_ground"
@@ -306,9 +306,9 @@ class PhaseParameterized(TimeSeries):
         self.kite_model.reset_solver()
 
         if self.quasi_steady:
-            unknown_vars = ["length_tether", "input_steering", "s_dot"]
+            unknown_vars = ["length_tether", "input_steering", "s_dot", "speed_radial"]
         else:
-            unknown_vars = ["length_tether", "input_steering", "s_ddot"]
+            unknown_vars = ["length_tether", "input_steering", "s_ddot", "speed_radial"]
 
         if self.kite_model.is_tether_rigid:
             unknown_vars[0] = "tension_tether_ground"
@@ -882,8 +882,4 @@ class PhaseParameterized(TimeSeries):
 
     def get_boundaries(self, state_obj, unknown_vars, km_copy):
         lbx, ubx, lbg, ubg = km_copy.get_boundaries(state_obj, unknown_vars)
-        lbx.append(0)
-        ubx.append(10)
-        lbg.append(0)
-        ubg.append(0)
         return lbx, ubx, lbg, ubg
