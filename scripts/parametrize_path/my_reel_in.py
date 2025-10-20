@@ -22,7 +22,6 @@ with open(filename, "rb") as f:
 
 r0 = fit_data["r0"]
 r1 = fit_data["r1"]
-print(f"Loaded r0: {r0}, r1: {r1}")
 C_az = fit_data["C_az"]
 C_el = fit_data["C_el"]
 s_norm_az = fit_data["s_norm_az"]
@@ -74,7 +73,7 @@ pattern_config_v9 = {
 base_start_state = State(
     t=0,
     s=0,
-    s_dot=5,
+    s_dot=1/700,
     s_ddot=0,
     input_steering=0,
     tension_tether_ground=1e10,

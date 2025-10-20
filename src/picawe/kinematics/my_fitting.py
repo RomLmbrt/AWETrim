@@ -335,8 +335,8 @@ class Fitting(DataProcessing):
             fitted_data = {
                 "segment_name": self.segment,
                 "n_ctrl": self.n_ctrl,
-                "s_norm_az": self.fitted_indices_az,
-                "s_norm_el": self.fitted_indices_el,
+                "s_norm_az": self.u_vals[self.fitted_indices_az],
+                "s_norm_el": self.u_vals[self.fitted_indices_el],
                 "r0": self.r0,
                 "r1": self.r1,
                 "data_az": self.data_az,
