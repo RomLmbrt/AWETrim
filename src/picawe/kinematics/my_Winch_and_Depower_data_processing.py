@@ -351,25 +351,22 @@ class Winch_and_Depower_data_processing(DataProcessing):
     
     def _get_winch_phase_settings(self):
         self.phase_settings = []
-        start_indices = self.phase_start_indices
-
-        self.winch_phases_s_values = self.u_vals_cyc[start_indices]
-
-        for i in range(len(start_indices)):
-            start_idx = start_indices[i]
+        self.winch_phases_s_values = self.u_vals_cyc[self.phase_start_indices]
+        s_idx = 0
+        for i in self.phase_start_indices:
 
             settings = {
-                "start_index": start_idx,
-                "f_low": self.f_low[start_idx],
-                "f_high": self.f_high[start_idx],
-                "reelout_speed": self.reelout_speed[start_idx],
-                "force_slope_factor": self.force_slope_factor[start_idx],
-                "force_knee": self.force_knee[start_idx],
-                "kp_v": self.kp_v[start_idx],
-                "kp_f": self.kp_f[start_idx],
-                "depower": self.depower[start_idx],
+                "s": self.winch_phases_s_values[s_idx],
+                "f_low": self.f_low[i],
+                "f_high": self.f_high[i],
+                "reelout_speed": self.reelout_speed[i],
+                "force_slope_factor": self.force_slope_factor[i],
+                "force_knee": self.force_knee[i],
+                "kp_v": self.kp_v[i],
+                "kp_f": self.kp_f[i],
+                "depower": self.depower[i],
             }
-
+            s_idx += 1
             self.phase_settings.append(settings)
         
         # print(f"\nWinch phase settings: {self.phase_settings}\n")

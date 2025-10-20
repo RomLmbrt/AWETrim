@@ -1,5 +1,6 @@
 import json
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 from picawe.kinematics.my_Winch_and_Depower_data_processing import Winch_and_Depower_data_processing
@@ -85,6 +86,9 @@ class WinchCurveFitter:
         final_fitted_params = []
 
         for settings in self.settings_list:
+
+            s = settings["s"]
+
             params = WinchControllerParameters(
                 f_min=settings["f_low"],
                 f_max=settings["f_high"],
@@ -134,8 +138,13 @@ class WinchCurveFitter:
                     "softminus_beta": fitted_params[3],
                     "slope": fitted_params[4],
                     "offset": fitted_params[5],
+                    "s_value": s,
                 }
             )
+
+        # Save the list to a pickle file
+        with open("fit_results_winch_phase_settings.pkl", "wb") as f:
+            pickle.dump(final_fitted_params, f)
 
         self.curve_data_stored = curve_data_stored
         self.final_fitted_params = final_fitted_params
