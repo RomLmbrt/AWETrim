@@ -221,51 +221,51 @@ class Fitting(DataProcessing):
             pickle.dump(fitted_data, f)
         print(f"💾 Saved Single_Spline results to {filename}")
 
-# -----------------------------------------------------------------------------
-# Function to plot the 3 splines on one 3D cycle trajectory for validation
-# -----------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
+    # Function to plot the 3 splines on one 3D cycle trajectory for validation
+    # -----------------------------------------------------------------------------
 
-def plot_spline(object):
+    def plot_spline(self):
 
-    x_cyc = object.x_cyc
-    y_cyc = object.y_cyc
-    z_cyc = object.z_cyc
+        x_cyc = self.x_cyc
+        y_cyc = self.y_cyc
+        z_cyc = self.z_cyc
 
-    az = object.az_fit
-    el = object.el_fit
-    r = object.data_r
+        az = self.az_fit
+        el = self.el_fit
+        r = self.data_r
 
-    x, y, z = object._sph2cart(object.az_fit, object.el_fit, object.data_r)
+        x, y, z = self._sph2cart(self.az_fit, self.el_fit, self.data_r)
 
-    fig = plt.figure(figsize=(12, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot full cycle trajectory - solid line, light blue
-    ax.plot(x_cyc, y_cyc, z_cyc, color='lightblue', linewidth=2, 
-            label='Full Cycle Trajectory', linestyle='-')
+        fig = plt.figure(figsize=(12, 10))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        # Plot full cycle trajectory - solid line, light blue
+        ax.plot(x_cyc, y_cyc, z_cyc, color='lightblue', linewidth=2, 
+                label='Full Cycle Trajectory', linestyle='-')
 
-    
-    # Plot spline as dashed line
-    ax.plot(x, y, z, color="r", 
-            label="Spline", linewidth=2, linestyle='--')
-    
-    # Plot start point
-    ax.scatter(x[0], y[0], z[0], 
-                color="g", s=80, marker='o', edgecolors='black', 
-                label='Spline Start')
-    
-    # Plot end point
-    ax.scatter(x[-1], y[-1], z[-1], 
-                color="b", s=80, marker='s', edgecolors='black',
-                label='Spline End')
-    
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    ax.set_title('3D Trajectory with Fitted Spline Segments')
-    ax.legend(loc='best', bbox_to_anchor=(1.05, 1), borderaxespad=0)
-    plt.tight_layout()
-    plt.show()
+        
+        # Plot spline as dashed line
+        ax.plot(x, y, z, color="r", 
+                label="Spline", linewidth=2, linestyle='--')
+        
+        # Plot start point
+        ax.scatter(x[0], y[0], z[0], 
+                    color="g", s=80, marker='o', edgecolors='black', 
+                    label='Spline Start')
+        
+        # Plot end point
+        ax.scatter(x[-1], y[-1], z[-1], 
+                    color="b", s=80, marker='s', edgecolors='black',
+                    label='Spline End')
+        
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_zlabel('Z (m)')
+        ax.set_title('3D Trajectory with Fitted Spline Segments')
+        ax.legend(loc='best', bbox_to_anchor=(1.05, 1), borderaxespad=0)
+        plt.tight_layout()
+        plt.show()
 
 
 # =============================================================================
@@ -282,21 +282,18 @@ if __name__ == "__main__":
     axes_list = []
 
     fit = Fitting(
-            full_path, cycle_path, waypoint_path, cyc_idx=0, n_ctrl_pts=30
+            full_path, cycle_path, waypoint_path, cyc_idx=0, n_ctrl_pts=35
         )
 
-    # Set up spline segment and perform fitting
     fit._setup_spline_segment()
     fit.FitSpline()
     fit.save_data()
-
-    # Plot all spline segments on one 3D trajectory for validation
-    plot_spline(fit)
+    fit.plot_spline()
 
 
-    s = np.linspace(0, 1, 10000)
-    for i in s:
-        print(i)
-        az = fit.final_spline.azimuth(1.0, i)
-        el = fit.final_spline.elevation(1.0, i)
-    print("Done evaluating final spline at high resolution.")
+    # s = np.linspace(0, 1, 10000)
+    # for i in s:
+    #     print(i)
+    #     az = fit.final_spline.azimuth(1.0, i)
+    #     el = fit.final_spline.elevation(1.0, i)
+    # print("Done evaluating final spline at high resolution.")
