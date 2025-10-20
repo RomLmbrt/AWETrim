@@ -152,8 +152,8 @@ if __name__ == "__main__":
         "softplus_beta": 1e-4,
         "softminus": True,
         "softminus_beta": 1e-3,
-        "slope": 1800,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-        "offset": -2,  # m/s
+        "slope": 300,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+        "offset": -6,  # m/s
     }
 
     winch = Winch(pattern_config=example_pattern_config)
