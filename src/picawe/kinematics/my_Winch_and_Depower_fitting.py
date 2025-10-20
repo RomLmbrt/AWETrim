@@ -88,6 +88,7 @@ class WinchCurveFitter:
         for settings in self.settings_list:
 
             s = settings["s"]
+            depower = settings["depower"]
 
             params = WinchControllerParameters(
                 f_min=settings["f_low"],
@@ -138,7 +139,8 @@ class WinchCurveFitter:
                     "softminus_beta": fitted_params[3],
                     "slope": fitted_params[4],
                     "offset": fitted_params[5],
-                    "s_value": s,
+                    "s": s,
+                    "depower": depower,
                 }
             )
 
