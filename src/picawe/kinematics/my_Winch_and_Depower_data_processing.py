@@ -105,7 +105,7 @@ class Winch_and_Depower_data_processing(DataProcessing):
         self._winch_and_depower_dictionary()
         self._create_settings_lists_for_cyc()
         self._identify_winch_phases()
-        self._plot_settings_over_cycle_time()
+        # self._plot_settings_over_cycle_time()
         self._get_winch_phase_settings()
 
     
