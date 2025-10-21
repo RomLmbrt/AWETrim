@@ -4,7 +4,7 @@ import json
 import matplotlib.pyplot as plt
 
 # Load JSON
-with open("src/picawe/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json") as f:
+with open("src/awetrim/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json") as f:
     data = json.load(f)
 
 # Access the list

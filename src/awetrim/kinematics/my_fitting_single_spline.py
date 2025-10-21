@@ -111,7 +111,7 @@ class Fitting(DataProcessing):
             self.residuals,
             self.init_params,
             bounds=self.bounds,
-            verbose=0,
+            verbose=2,
             xtol=1e-10,
             ftol=1e-10,
             gtol=1e-10,

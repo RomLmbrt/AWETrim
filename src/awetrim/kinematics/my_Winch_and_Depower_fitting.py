@@ -193,7 +193,7 @@ class WinchCurveFitter:
 # Run script
 # ----------------------------
 if __name__ == "__main__":
-    json_path = "src/picawe/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json"
+    json_path = "src/awetrim/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json"
     base_path = "./processed_data/fitting"
 
     fitter = WinchCurveFitter(json_path, base_path)
