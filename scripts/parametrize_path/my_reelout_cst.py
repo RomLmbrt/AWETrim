@@ -193,6 +193,20 @@ phases, states = run_sim(
     aero_input_v9, pattern_config, "V9", mass_wing, area_wing, mass_kcu, tether_diameter, depower, base_start_state, wind
 )
 
+QS_tension = []
+for i in states["quasi_steady"]:
+    QS_tension.append(i["tension_tether_ground"])
+
+Dyn_tension = []
+for i in states["dynamic"]:
+    Dyn_tension.append(i["tension_tether_ground"])
+
+plt.figure()
+plt.plot(QS_tension, label="Quasi-Steady")
+plt.plot(Dyn_tension, label="Dynamic")
+plt.legend()
+plt.show()
+
 dynamic_phase = phases["dynamic"]
 qs_phase = phases["quasi_steady"]
 
