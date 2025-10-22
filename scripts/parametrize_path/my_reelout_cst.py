@@ -47,8 +47,8 @@ az_coeffs = fit_data["best_params"]["az_coeffs"]
 beta0 = fit_data["best_params"]["beta0"]
 
 # Recreating the starting and ending point of the path used to validate the model
-s_start = 1.36 * np.pi
-range = 1.45 * np.pi
+s_start = 4.272566008882119 # from the find_Lissajous_RO_start_end_angles script
+range = 4.5553093477052 # from the find_Lissajous_RO_start_end_angles script
 cycles = 1
 
 # ---------Load winch and depower data ----------
@@ -111,7 +111,9 @@ pattern_config = {
 # ---------- Starting state ----------
 Single_Spline_final_state["s"] = s_start
 Single_Spline_final_state["length_tether"] = 199.6
-Single_Spline_final_state["tension_tether_ground"] = 1e6 # NOT CORRECT, if I lower the tension QS and Dyn are totally different, well only QS is wrong
+Single_Spline_final_state["tension_tether_ground"] = 1e7 
+# NOT CORRECT, if I lower the tension QS and Dyn are totally different, well only QS is wrong
+# True value should be around 17000 N according to real flight csv data 
 
 print("\n")
 for key in Single_Spline_final_state.keys():

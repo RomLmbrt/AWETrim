@@ -40,6 +40,7 @@ class DataProcessing:
         self.phase_full = self.full_df["flight_phase"].astype(str).to_numpy()
         self.crs_full = self.full_df["kite_course"].astype(float).to_numpy()
         self.depower_full = self.full_df["kite_actual_depower"].astype(float).to_numpy()
+        self.tension_tether_ground_full = self.full_df["ground_tether_force"].astype(float).to_numpy() # Kg
         self.wp_names = self.wp_df["waypoint_name"].astype(str).to_numpy()
 
         # Cartesian & derivatives for full dataset
@@ -121,6 +122,7 @@ class DataProcessing:
     def _extract_cycle_slice(self):
         """Populate cyc_ prefixed arrays for the selected cycle."""
         s, f = self.cyc_idx0, self.cyc_idxf + 1
+        self.tension_tether_ground_cyc = self.tension_tether_ground_full[s:f]
         self.time_cyc = self.time_full[s:f]
         self.az_cyc = self.az_full[s:f]
         self.el_cyc = self.el_full[s:f]
