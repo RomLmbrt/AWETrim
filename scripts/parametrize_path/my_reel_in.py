@@ -145,8 +145,9 @@ def main():
             s_end = 1
         else:
             s_end = winch_depower_data[phase_idx+1]["s"] 
-        print(s_start)
-        print(s_end)
+        # print(s_start)
+        # print(s_end)
+        
         Realistic_RI_eg = {
         "reeling_strategy": "force",  # "force" or "constant"
         "force_model": "quadratic",  # "linear" or "quadratic"

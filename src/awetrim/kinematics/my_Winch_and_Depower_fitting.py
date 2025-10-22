@@ -267,5 +267,5 @@ if __name__ == "__main__":
     # for i in range(len(fitter.processed.Single_Spline_phase_settings)):
     #     fitter.plot_example(fitter.SS_curve_data_stored, fitter.SS_final_fitted_params, phase_index=i)
 
-    # # RO phase example
-    # fitter.plot_example(fitter.RO_curve_data_stored, fitter.RO_final_fitted_params, phase_index=0)
+    # RO phase example
+    fitter.plot_example(fitter.RO_curve_data_stored, fitter.RO_final_fitted_params, phase_index=0)

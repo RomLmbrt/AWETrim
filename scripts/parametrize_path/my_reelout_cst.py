@@ -29,7 +29,7 @@ wind.speed_friction = speed_friction
 # color palette available via get_color_list() as needed
 
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
-    aero_input_v3 = json.load(file)
+    aero_input_v9 = json.load(file)
 
 # ---------- Load precomputed Lissajous fit data ----------
 segment_name = "LISSAJOUS"
@@ -70,14 +70,14 @@ Realistic_RO_eg = {
     "reeling_strategy": "force",  # "force" or "constant"
     "force_model": "quadratic",  # "linear" or "quadratic"
     "reeling_speed": 0,  # m/s, only for constant reeling
-    "max_tether_force": 3.5e4,  # N, only for force reeling
-    "min_tether_force": 4400.0,  # N, only for force reeling
+    "max_tether_force": f_max,  # N, only for force reeling
+    "min_tether_force": f_min,  # N, only for force reeling
     "softplus": True,
-    "softplus_beta": 1e-4,
+    "softplus_beta": beta_plus,
     "softminus": True,
-    "softminus_beta": 1e-3,
-    "slope": 1800,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-    "offset": -2,  # m/s
+    "softminus_beta": beta_minus,
+    "slope": slope,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+    "offset": offset,  # m/s
 }
 
 pattern_config = {
@@ -110,8 +110,27 @@ pattern_config = {
 
 # ---------- Starting state ----------
 Single_Spline_final_state["s"] = s_start
+Single_Spline_final_state["length_tether"] = 199.6
+
+print("\n")
+for key in Single_Spline_final_state.keys():
+    print(f"{key}:              {Single_Spline_final_state[key]}")
+print("\n")
 
 base_start_state = State(**Single_Spline_final_state)
+
+base_start_state = State(
+    t=10.9, # check
+    s=4.27, # check
+    s_dot=0.025, # check
+    s_ddot=0, # check
+    input_steering=0.254, # check
+    tension_tether_ground=1e6, # NOT CHECK, if I lower the tension QS and Dyn are totally different, well only QS is wrong
+    input_depower=0.4, # check
+    speed_radial= 0.215, # check # speed_wind_at_100 / 5,
+    distance_radial=187, # check
+    length_tether=199.6, # check
+)
 
 def run_sim(
     aero_input,
@@ -179,7 +198,7 @@ def run_sim(
 
 
 phases, states = run_sim(
-    aero_input_v3, pattern_config, "V3", mass_wing, mass_kcu, area_wing, tether_diameter, depower
+    aero_input_v9, pattern_config, "V9", mass_wing, mass_kcu, area_wing, tether_diameter, depower
 )
 
 dynamic_phase = phases["dynamic"]
@@ -222,21 +241,21 @@ plt.tight_layout()
 plt.show()
 
 
-metrics = dynamic_phase.energy_metrics(qs_phase)
-print("\n--- V9 ---")
-print(
-    f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
-)
-print(
-    f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
-)
-print(f"Δ Power: {metrics['power_diff_percent']:.2f}%")
-print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
-print(f"ΔF_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
-print(f"ΔF_t,max: {metrics['delta_ft_max_percent']:.2f}%")
-print(f"ΔF_t,min: {metrics['delta_ft_min_percent']:.2f}%")
-print(f"Δv_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
-print(f"Δv_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
-print(f"Δs_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
-print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
-plt.show()
+# metrics = dynamic_phase.energy_metrics(qs_phase)
+# print("\n--- V9 ---")
+# print(
+#     f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
+# )
+# print(
+#     f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
+# )
+# print(f"Δ Power: {metrics['power_diff_percent']:.2f}%")
+# print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
+# print(f"ΔF_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
+# print(f"ΔF_t,max: {metrics['delta_ft_max_percent']:.2f}%")
+# print(f"ΔF_t,min: {metrics['delta_ft_min_percent']:.2f}%")
+# print(f"Δv_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
+# print(f"Δv_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
+# print(f"Δs_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
+# print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
+# plt.show()
