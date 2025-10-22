@@ -5,7 +5,7 @@ import casadi as ca
 import pickle
 from scipy.optimize import least_squares
 
-from awetrim.kinematics.my_parametrized_patterns import CasadiSpline as build
+from awetrim.kinematics.parametrized_patterns import CasadiSpline as build
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_RI_data_processing import RI_data_processing
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_RI_RO_data_processing import RI_RO_data_processing
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_RO_RI_data_processing import RO_RI_data_processing

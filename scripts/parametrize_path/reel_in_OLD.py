@@ -7,7 +7,7 @@ from awetrim.timeseries.my_reelin_phase import ReelinPhase
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
 from awetrim.environment.Wind import Wind
-from awetrim.kinematics.my_parametrized_patterns import create_pattern_from_dict
+from awetrim.kinematics.parametrized_patterns import create_pattern_from_dict
 import pickle
 from awetrim.utils.color_palette import set_plot_style, get_color_list
 from awetrim.utils.defaults import PLOT_LABELS

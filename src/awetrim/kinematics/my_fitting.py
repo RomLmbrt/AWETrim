@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pickle
 from scipy.optimize import least_squares
 
-from awetrim.kinematics.my_parametrized_patterns import CasadiSpline, CST_Lissajous
+from awetrim.kinematics.parametrized_patterns import CasadiSpline, CST_Lissajous
 from awetrim.kinematics.my_data_processing import (
     DataProcessing,
 )  # Your refactored DataProcessing class

@@ -32,12 +32,9 @@ class WinchCurveFitter:
         full_path = f"{self.base_path}/2025-09-25_11-48-58_ProtoLogger.csv"
         cycle_path = f"{self.base_path}/cycle_data_sheet_lines.csv"
 
-        processed = Winch_and_Depower_data_processing(
+        self.processed = Winch_and_Depower_data_processing(
             full_path, cycle_path, waypoint_path, json_trajectory
         )
-
-        self.settings_list = processed.phase_settings
-        self.s_values = processed.winch_phases_s_values
 
     # ----------------------------
     # Residuals for least squares
@@ -78,14 +75,14 @@ class WinchCurveFitter:
         result = least_squares(self.residuals, initial_guess, args=(v_m_data, force_data))
         return result.x
 
-    # ----------------------------
-    # Run fitting for all phases
-    # ----------------------------
+    # --------------------------------------------
+    # Run fitting for all Single_Spline phases
+    # --------------------------------------------
     def run(self):
         curve_data_stored = []
         final_fitted_params = []
 
-        for settings in self.settings_list:
+        for settings in self.processed.Single_Spline_phase_settings: 
 
             s = settings["s"]
             depower = settings["depower"]
@@ -145,22 +142,90 @@ class WinchCurveFitter:
             )
 
         # Save the list to a pickle file
-        with open("fit_results_winch_phase_settings.pkl", "wb") as f:
+        with open("fit_winch_results_Single_Spline_phase_settings.pkl", "wb") as f:
             pickle.dump(final_fitted_params, f)
 
-        self.curve_data_stored = curve_data_stored
-        self.final_fitted_params = final_fitted_params
-        return curve_data_stored, final_fitted_params
+        self.SS_curve_data_stored = curve_data_stored
+        self.SS_final_fitted_params = final_fitted_params
+        
+        # Save the RO winch data
+        settings = self.processed.RO_phase_settings
+
+        s = settings["s"]
+        depower = settings["depower"]
+
+        params = WinchControllerParameters(
+            f_min=settings["f_low"],
+            f_max=settings["f_high"],
+            v_cmd=settings["reelout_speed"],
+            force_slope_factor=settings["force_slope_factor"],
+            force_knee=settings["force_knee"],
+            p_gain_v=settings["kp_v"],
+            p_gain_f=settings["kp_f"],
+        )
+
+        # True winch curve (from controller characteristics)
+        KP_winch = WinchControllerCharacteristics()
+        winch_curve_force_data = (
+            np.array(
+                KP_winch.get_effective_controller_function(
+                    v_cmd=params.v_cmd,
+                    p_gain_v=params.p_gain_v,
+                    p_gain_f=params.p_gain_f,
+                    f_min=params.f_min,
+                    f_max=params.f_max,
+                    f_knee=params.force_knee,
+                    force_slope_factor=params.force_slope_factor,
+                )
+            )
+            * self.gravity
+        )
+        winch_curve_velocity_data = KP_winch.v_m_list
+
+        curve_data_stored.append(
+            {
+                "force": winch_curve_force_data,
+                "velocity": winch_curve_velocity_data,
+                "KP_settings": settings,
+            }
+        )
+
+        # Fit parameters to reproduce the true curve
+        fitted_params = self.fit_winch_curve(
+            winch_curve_velocity_data, winch_curve_force_data
+        )
+
+        final_fitted_params.append(
+            {
+                "max_tether_force": fitted_params[0],
+                "min_tether_force": fitted_params[1],
+                "softplus_beta": fitted_params[2],
+                "softminus_beta": fitted_params[3],
+                "slope": fitted_params[4],
+                "offset": fitted_params[5],
+                "s": s,
+                "depower": depower,
+            }
+        )
+
+        # Save the list to a pickle file
+        with open("fit_winch_results_RO_phase_settings.pkl", "wb") as f:
+            pickle.dump(final_fitted_params, f)
+
+        self.RO_curve_data_stored = curve_data_stored
+        self.RO_final_fitted_params = final_fitted_params
+
+        return self.SS_curve_data_stored, self.SS_final_fitted_params, self.RO_curve_data_stored, self.RO_final_fitted_params
 
     # ----------------------------
     # Plot example comparison
     # ----------------------------
-    def plot_example(self, phase_index=0):
-        curve_data = self.curve_data_stored[phase_index]
-        fitted = self.final_fitted_params[phase_index]
+    def plot_example(self, curve_data, fitted_params, phase_index=0):
+        data = curve_data[phase_index]
+        fitted = fitted_params[phase_index]
 
-        v_data = curve_data["velocity"]
-        f_true = curve_data["force"]
+        v_data = data["velocity"]
+        f_true = data["force"]
 
         pattern_config = {
             "force_model": "quadratic",
@@ -198,5 +263,9 @@ if __name__ == "__main__":
 
     fitter = WinchCurveFitter(json_path, base_path)
     fitter.run()
-    for i in range(len(fitter.settings_list)):
-        fitter.plot_example(phase_index=i)
+
+    # for i in range(len(fitter.processed.Single_Spline_phase_settings)):
+    #     fitter.plot_example(fitter.SS_curve_data_stored, fitter.SS_final_fitted_params, phase_index=i)
+
+    # # RO phase example
+    # fitter.plot_example(fitter.RO_curve_data_stored, fitter.RO_final_fitted_params, phase_index=0)

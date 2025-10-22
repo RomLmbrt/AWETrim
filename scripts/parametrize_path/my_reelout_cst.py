@@ -1,16 +1,14 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import json
-import pickle
-
-# from awetrim.kinematics.parametrized_patterns import Helix  # unused
+import matplotlib.pyplot as plt
 from awetrim import SystemModel, State
-from awetrim.utils.color_palette import set_plot_style, get_color_list
 from awetrim.timeseries.phase_parametrized import PhaseParameterized
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
-from awetrim.utils.defaults import PLOT_LABELS
 from awetrim.environment.Wind import Wind
+import pickle
+from awetrim.utils.color_palette import set_plot_style, get_color_list
+from awetrim.utils.defaults import PLOT_LABELS
 
 # ---------- Config ----------
 mass_wing = 61
@@ -29,10 +27,10 @@ wind.speed_friction = speed_friction
 
 # color palette available via get_color_list() as needed
 
-
 with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
     aero_input_v3 = json.load(file)
 
+# ---------- Load precomputed Lissajous fit data ----------
 segment_name = "LISSAJOUS"
 
 filename = f"fit_results_{segment_name}.pkl"
@@ -48,9 +46,24 @@ az_coeffs = fit_data["best_params"]["az_coeffs"]
 beta0 = fit_data["best_params"]["beta0"]
 
 # Recreating the starting and ending point of the path used to validate the model
-start_angle = 1.36 * np.pi
+s_start = 1.36 * np.pi
 range = 1.45 * np.pi
 cycles = 1
+
+# ---------Load winch and depower data ----------
+
+with open("fit_winch_results_RO_phase_settings.pkl", "rb") as f:
+    winch_depower_data = pickle.load(f)
+
+f_max = winch_depower_data[0]["max_tether_force"]
+f_min = winch_depower_data[0]["min_tether_force"]
+beta_plus = winch_depower_data[0]["softplus_beta"]
+beta_minus= winch_depower_data[0]["softminus_beta"]
+slope = winch_depower_data[0]["slope"]
+offset = winch_depower_data[0]["offset"]
+# s_start = winch_depower_data[0]["s"]
+depower = winch_depower_data[0]["depower"]
+# s_end = 2*np.pi
 
 Realistic_RO_eg = {
     "reeling_strategy": "force",  # "force" or "constant"
@@ -88,16 +101,16 @@ pattern_config = {
     "radial_parameters": Realistic_RO_eg,
     "start_time": 0,
     "end_time": duration + 1,
-    "start_angle": start_angle,
-    "end_angle": start_angle + range * cycles,
-    "n_points": 900,
+    "start_angle": s_start,
+    "end_angle": s_start + range + cycles * (2*np.pi),
+    "n_points": 500,
     "optimization_parameters": [],
 }
 
 # ---------- Starting state ----------
 base_start_state = State(
     t=0,
-    s=start_angle,
+    s=s_start,
     s_dot=1,
     s_ddot=0,
     length_tether=199.6,
@@ -162,7 +175,7 @@ def run_sim(
         phase = PhaseParameterized(
             model, quasi_steady=quasi_steady, pattern_config=pattern_config
         )
-        phase.run_simulation(start_state=start_state)
+        phase.run_simulation_phase(start_state=start_state)
         s_dot = phase.return_variable("s_dot")
         start_state.s_dot = s_dot[0]
         phases[sim_type] = phase

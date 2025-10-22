@@ -1,4 +1,4 @@
-from awetrim.kinematics.my_parametrized_patterns import Bspline as Bspline_build
+from awetrim.kinematics.parametrized_patterns import Bspline as Bspline_build
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_RI_RO_data_processing import RI_RO_data_processing
 import numpy as np
 from scipy.optimize import least_squares

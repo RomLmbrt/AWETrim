@@ -2,10 +2,10 @@
 import numpy as np
 import casadi as ca
 import matplotlib.pyplot as plt
-from awetrim.kinematics.my_Kinematics import ParametrizedKinematics
+from awetrim.kinematics.Kinematics import ParametrizedKinematics
 from awetrim.system.system_model import SystemModel
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_RI_fitting import RI_fitting as ribfit
-from awetrim.kinematics.my_parametrized_patterns import Bspline as Bspline_build
+from awetrim.kinematics.parametrized_patterns import Bspline as Bspline_build
 
 # =========================================================
 # Base class: angles-only pattern (radians) + numeric eval

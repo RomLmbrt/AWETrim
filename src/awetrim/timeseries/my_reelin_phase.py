@@ -1,8 +1,8 @@
 from matplotlib import pyplot as plt
 from awetrim.timeseries.timeseries import TimeSeries
-from awetrim.kinematics.my_parametrized_patterns import create_pattern_from_dict
+from awetrim.kinematics.parametrized_patterns import create_pattern_from_dict
 from awetrim import SystemModel
-from awetrim.kinematics.my_Kinematics import ParametrizedKinematics
+from awetrim.kinematics.Kinematics import ParametrizedKinematics
 import casadi as ca
 import numpy as np
 from awetrim.utils.my_defaults import DEFAULT_SPLINE_PATTERN_CONFIG

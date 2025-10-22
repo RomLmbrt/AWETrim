@@ -359,13 +359,8 @@ class FigureEightAngles(ParametrizedPatternsAngles):
             1 + self.kz * ca.sin(self.omega * s) ** 2
         ) + self.beta(t)
 
-<<<<<<<< HEAD:src/awetrim/kinematics/my_parametrized_patterns.py
-========
-
 from awetrim.kinematics.reelin_parametrization import ReelInBezier
 
-
->>>>>>>> develop:src/awetrim/kinematics/parametrized_patterns.py
 def create_pattern_from_dict(
     pattern_type,
     parameters,
@@ -404,7 +399,6 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
-<<<<<<<< HEAD:src/awetrim/kinematics/my_parametrized_patterns.py
         "spline": [
             "r0", 
             "r1", 
@@ -412,7 +406,7 @@ def create_pattern_from_dict(
             "C_el", 
             "s_norm_az", 
             "s_norm_el", 
-========
+        ],
         "cst_helix": [
             "omega",
             "r0",
@@ -425,7 +419,6 @@ def create_pattern_from_dict(
         "reel_in": [
             "r0",
             "r1",
->>>>>>>> develop:src/awetrim/kinematics/parametrized_patterns.py
         ],
     }
 
@@ -448,12 +441,9 @@ def create_pattern_from_dict(
         "figure_eight": FigureEight,
         "figure_eight_angles": FigureEightAngles,
         "cst_lissajous": CST_Lissajous,
-<<<<<<<< HEAD:src/awetrim/kinematics/my_parametrized_patterns.py
         "spline": CasadiSpline,
-========
         "cst_helix": CST_Helix,
         "reel_in": ReelInBezier,
->>>>>>>> develop:src/awetrim/kinematics/parametrized_patterns.py
     }
 
     return pattern_classes[pattern_type](**parameters)
@@ -560,7 +550,6 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         )
         return (beta_class) * N_beta
 
-<<<<<<<< HEAD:src/awetrim/kinematics/my_parametrized_patterns.py
 class Bspline(ParametrizedPatternsAngles): 
     
     # =======================================
@@ -821,7 +810,6 @@ if __name__ == "__main__":
 
     pattern2 = create_pattern_from_dict(DEFAULT_SPLINE_PATTERN_CONFIG["pattern_type"],
                                         DEFAULT_SPLINE_PATTERN_CONFIG["parameters"])
-========
 
 class CST_Helix(ParametrizedPatternsAngles):
     def __init__(
@@ -923,4 +911,3 @@ class CST_Helix(ParametrizedPatternsAngles):
             u, self.K_beta, self.width_beta, self.beta_coeffs
         )
         return (beta_class) * N_beta
->>>>>>>> develop:src/awetrim/kinematics/parametrized_patterns.py

@@ -1,15 +1,9 @@
 from matplotlib import pyplot as plt
 from awetrim.timeseries.timeseries import TimeSeries
-<<<<<<<< HEAD:src/awetrim/timeseries/my_phase_parametrized.py
 from awetrim.timeseries.my_reelin_phase import smooth_gate_interval
-from awetrim.kinematics.my_parametrized_patterns import create_pattern_from_dict
 from awetrim import SystemModel
-from awetrim.kinematics.my_Kinematics import ParametrizedKinematics
-========
 from awetrim.kinematics.parametrized_patterns import create_pattern_from_dict
-from awetrim import SystemModel
 from awetrim.kinematics.Kinematics import ParametrizedKinematics
->>>>>>>> develop:src/awetrim/timeseries/phase_parametrized.py
 import casadi as ca
 import numpy as np
 from awetrim.utils.defaults import DEFAULT_PATTERN_CONFIG, DEFAULT_OPTI_LIMITS

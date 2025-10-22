@@ -1,4 +1,4 @@
-from awetrim.kinematics.my_parametrized_patterns import CST_Lissajous
+from awetrim.kinematics.parametrized_patterns import CST_Lissajous
 from awetrim.kinematics.Other_code_by_theophile_dubois.my_Lisajous_data_processing import Lisajous_data_processing
 import numpy as np
 from scipy.optimize import least_squares
