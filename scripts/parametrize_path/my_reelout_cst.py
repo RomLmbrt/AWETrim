@@ -18,7 +18,7 @@ mass_kcu = 30
 area_wing = 46.85
 tether_diameter = 0.01
 
-speed_wind_at_100 = 10
+speed_wind_at_100 = 10 # 7.5492  # m/s (6 m/s at reference height of 6 m) got from KP software for EXPLOG
 wind = Wind(
     wind_model="uniform",
     z0=0.0002,
