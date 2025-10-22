@@ -111,6 +111,7 @@ pattern_config = {
 # ---------- Starting state ----------
 Single_Spline_final_state["s"] = s_start
 Single_Spline_final_state["length_tether"] = 199.6
+Single_Spline_final_state["tension_tether_ground"] = 1e6 # NOT CORRECT, if I lower the tension QS and Dyn are totally different, well only QS is wrong
 
 print("\n")
 for key in Single_Spline_final_state.keys():
@@ -118,19 +119,6 @@ for key in Single_Spline_final_state.keys():
 print("\n")
 
 base_start_state = State(**Single_Spline_final_state)
-
-base_start_state = State(
-    t=10.9, # check
-    s=4.27, # check
-    s_dot=0.025, # check
-    s_ddot=0, # check
-    input_steering=0.254, # check
-    tension_tether_ground=1e6, # NOT CHECK, if I lower the tension QS and Dyn are totally different, well only QS is wrong
-    input_depower=0.4, # check
-    speed_radial= 0.215, # check # speed_wind_at_100 / 5,
-    distance_radial=187, # check
-    length_tether=199.6, # check
-)
 
 def run_sim(
     aero_input,
