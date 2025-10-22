@@ -125,15 +125,16 @@ def run_sim(
     pattern_config,
     label_prefix,
     mass_wing,
-    mass_kcu,
     area_wing,
+    mass_kcu,
     tether_diameter,
     depower,
+    start_state,
+    wind,
 ):
     result = {}
     phases = {}
     states = {}
-    start_state = base_start_state
     simulation_types = ["quasi_steady", "dynamic"]
     for sim_type in simulation_types:
         if sim_type == "quasi_steady":
@@ -184,9 +185,8 @@ def run_sim(
 
     return phases, states
 
-
 phases, states = run_sim(
-    aero_input_v9, pattern_config, "V9", mass_wing, mass_kcu, area_wing, tether_diameter, depower
+    aero_input_v9, pattern_config, "V9", mass_wing, area_wing, mass_kcu, tether_diameter, depower, base_start_state, wind
 )
 
 dynamic_phase = phases["dynamic"]
