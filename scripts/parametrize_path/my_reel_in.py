@@ -14,6 +14,26 @@ from awetrim.timeseries.phase_parametrized import PhaseParameterized
 from awetrim.utils.color_palette import set_plot_style, get_color_list
 from awetrim.utils.defaults import PLOT_LABELS
 
+PLOT_VARIABLES = [
+    "distance_radial",
+    "speed_radial",
+    "speed_tangential",
+    "tension_tether_ground",
+    "lift_coefficient",
+    "drag_coefficient",
+]
+BASE_VARIABLES = PLOT_VARIABLES + [
+    "angle_elevation",
+    "angle_azimuth",
+]
+DERIVED_VARIABLES = ["x_position", "y_position", "z_position"]
+CSV_HEADER = ["segment", "simulation", "time"] + BASE_VARIABLES + DERIVED_VARIABLES
+REEL_IN_OUTPUT_PATH = Path("results/timeseries/reel_in_timeseries.csv")
+
+AGGREGATED_RESULTS = None
+init_conditions_QS = None
+init_conditions_Dyn = None
+
 
 def define_system(
     tether_diameter,
@@ -64,71 +84,71 @@ def run_sim(
     phase = PhaseParameterized(
         model, quasi_steady=quasi_steady, pattern_config=pattern_config
     )
-    states = phase.run_simulation_phase(start_state=start_state, return_states=True)
+    phase.run_simulation_phase(start_state=start_state, return_states=True)
 
     return phase
 
 
-def main():
+def main(run_plots=True, save_csv=True):
+    global AGGREGATED_RESULTS, init_conditions_QS, init_conditions_Dyn
 
-    plot_variables = [
-        "speed_radial",
-        "speed_tangential",
-        "tension_tether_ground",
-        "lift_coefficient",
-        "drag_coefficient",
-    ]
-    variables_to_save = plot_variables + [
-        "distance_radial",
-        "angle_elevation",
-        "angle_azimuth",
-    ]
-    derived_variables = ["x_position", "y_position", "z_position"]
     aggregated_data = {
-        "quasi_steady": {"t": []},
-        "dynamic": {"t": []},
+        "quasi_steady": {"t": [], "segment": []},
+        "dynamic": {"t": [], "segment": []},
     }
-    for var_name in variables_to_save + derived_variables:
+    for var_name in BASE_VARIABLES + DERIVED_VARIABLES:
         aggregated_data["quasi_steady"][var_name] = []
         aggregated_data["dynamic"][var_name] = []
     cumulative_time = {"quasi_steady": 0.0, "dynamic": 0.0}
 
-    def extend_aggregated(sim_key, series_dict):
-        times = np.asarray(series_dict.get("t", []), dtype=float)
+    def extend_phase(phase, sim_key, segment_label, time_offset):
+        try:
+            times = np.asarray(phase.return_variable("t"), dtype=float)
+        except Exception:
+            times = np.array([], dtype=float)
         if times.size == 0:
-            return
-        shifted = cumulative_time[sim_key] + (times - times[0])
+            return time_offset
+        times = np.nan_to_num(times, nan=0.0)
+        shifted = time_offset + (times - times[0])
         aggregated_data[sim_key]["t"].extend(shifted.tolist())
-        for var_name in variables_to_save:
-            values = np.asarray(series_dict.get(var_name, []), dtype=float)
-            if values.size != times.size:
-                temp = np.full(times.shape, np.nan, dtype=float)
-                temp[: min(values.size, times.size)] = values[
-                    : min(values.size, times.size)
-                ]
+        aggregated_data[sim_key]["segment"].extend([segment_label] * shifted.size)
+
+        r_vals = None
+        beta_vals = None
+        phi_vals = None
+        for var_name in BASE_VARIABLES:
+            try:
+                values = np.asarray(phase.return_variable(var_name), dtype=float)
+            except Exception:
+                values = np.array([], dtype=float)
+            if values.size != shifted.size:
+                temp = np.full(shifted.shape, np.nan, dtype=float)
+                count = min(values.size, shifted.size)
+                if count > 0:
+                    temp[:count] = values[:count]
                 values = temp
             aggregated_data[sim_key][var_name].extend(values.tolist())
+            if var_name == "distance_radial":
+                r_vals = values
+            elif var_name == "angle_elevation":
+                beta_vals = values
+            elif var_name == "angle_azimuth":
+                phi_vals = values
 
-        r_vals = np.asarray(series_dict.get("distance_radial", []), dtype=float)
-        beta_vals = np.asarray(series_dict.get("angle_elevation", []), dtype=float)
-        phi_vals = np.asarray(series_dict.get("angle_azimuth", []), dtype=float)
-        if (
-            r_vals.size == times.size
-            and beta_vals.size == times.size
-            and phi_vals.size == times.size
-        ):
-            x_vals = r_vals * np.cos(beta_vals) * np.cos(phi_vals)
-            y_vals = r_vals * np.cos(beta_vals) * np.sin(phi_vals)
-            z_vals = r_vals * np.sin(beta_vals)
-        else:
-            x_vals = np.full(times.shape, np.nan, dtype=float)
-            y_vals = np.full(times.shape, np.nan, dtype=float)
-            z_vals = np.full(times.shape, np.nan, dtype=float)
+        if r_vals is None:
+            r_vals = np.full(shifted.shape, np.nan, dtype=float)
+        if beta_vals is None:
+            beta_vals = np.full(shifted.shape, np.nan, dtype=float)
+        if phi_vals is None:
+            phi_vals = np.full(shifted.shape, np.nan, dtype=float)
 
+        x_vals = r_vals * np.cos(beta_vals) * np.cos(phi_vals)
+        y_vals = r_vals * np.cos(beta_vals) * np.sin(phi_vals)
+        z_vals = r_vals * np.sin(beta_vals)
         aggregated_data[sim_key]["x_position"].extend(x_vals.tolist())
         aggregated_data[sim_key]["y_position"].extend(y_vals.tolist())
         aggregated_data[sim_key]["z_position"].extend(z_vals.tolist())
-        cumulative_time[sim_key] = shifted[-1]
+        return shifted[-1]
 
     # ---------- Config ----------
     mass_wing = 61
@@ -166,8 +186,9 @@ def main():
     with open(filename, "rb") as f:
         fit_data = pickle.load(f)
 
-    r0 = fit_data["r0"]
-    r1 = fit_data["r1"]
+    r0 = fit_data["r1"]
+    r1 = fit_data["r0"]
+    print(r1, r0)
     C_az = fit_data["C_az"]
     C_el = fit_data["C_el"]
     s_norm_az = fit_data["s_norm_az"]
@@ -284,8 +305,8 @@ def main():
             quasi_steady=True,
         )
 
-        if phase_idx == 0:
-            base_start_state_Dyn = phaseQS.states[0]
+        # if phase_idx == 0:
+        base_start_state_Dyn = phaseQS.states[0]
 
         phaseDyn = run_sim(
             pattern_config,
@@ -344,13 +365,12 @@ def main():
 
         dynamic_phase = phaseDyn
         qs_phase = phaseQS
-        qs_series = {"t": qs_phase.return_variable("t")}
-        dyn_series = {"t": dynamic_phase.return_variable("t")}
-        for var_name in variables_to_save:
-            qs_series[var_name] = qs_phase.return_variable(var_name)
-            dyn_series[var_name] = dynamic_phase.return_variable(var_name)
-        extend_aggregated("quasi_steady", qs_series)
-        extend_aggregated("dynamic", dyn_series)
+        cumulative_time["quasi_steady"] = extend_phase(
+            qs_phase, "quasi_steady", "reel_in", cumulative_time["quasi_steady"]
+        )
+        cumulative_time["dynamic"] = extend_phase(
+            dynamic_phase, "dynamic", "reel_in", cumulative_time["dynamic"]
+        )
 
         # First series creates the overview figure
         # fig, axes_map, scatter = phaseDyn.plot_overview_3d(
@@ -407,19 +427,21 @@ def main():
         # print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
         # plt.show()
 
+    AGGREGATED_RESULTS = aggregated_data
+
     has_timeseries_data = bool(aggregated_data["quasi_steady"]["t"]) or bool(
         aggregated_data["dynamic"]["t"]
     )
-    if has_timeseries_data:
+    if has_timeseries_data and run_plots:
         set_plot_style()
         fig, axes = plt.subplots(
-            len(plot_variables),
+            len(PLOT_VARIABLES),
             1,
             sharex=True,
-            figsize=(10, 3 * len(plot_variables)),
+            figsize=(10, 3 * len(PLOT_VARIABLES)),
         )
         axes = np.atleast_1d(axes)
-        for idx, var_name in enumerate(plot_variables):
+        for idx, var_name in enumerate(PLOT_VARIABLES):
             ax = axes[idx]
             ylabel = PLOT_LABELS.get(var_name, var_name)
             for sim_key, sim_label in [
@@ -497,30 +519,27 @@ def main():
         else:
             plt.close(fig3d)
 
-        output_dir = Path("results/timeseries")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = output_dir / "aggregated_timeseries.csv"
-        header = ["simulation", "time"] + variables_to_save + derived_variables
-        with csv_path.open("w", newline="") as csvfile:
+    if has_timeseries_data and save_csv:
+        REEL_IN_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with REEL_IN_OUTPUT_PATH.open("w", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(header)
+            writer.writerow(CSV_HEADER)
             for sim_key, sim_label in [
                 ("quasi_steady", "quasi_steady"),
                 ("dynamic", "dynamic"),
             ]:
                 times = aggregated_data[sim_key]["t"]
-                if not times:
-                    continue
+                segments = aggregated_data[sim_key]["segment"]
                 for idx in range(len(times)):
-                    row = [sim_label, times[idx]]
+                    row = [segments[idx], sim_label, times[idx]]
                     row.extend(
-                        aggregated_data[sim_key][var][idx] for var in variables_to_save
+                        aggregated_data[sim_key][var][idx] for var in BASE_VARIABLES
                     )
                     row.extend(
-                        aggregated_data[sim_key][var][idx] for var in derived_variables
+                        aggregated_data[sim_key][var][idx] for var in DERIVED_VARIABLES
                     )
                     writer.writerow(row)
-        print(f"Saved aggregated timeseries to {csv_path}")
+        print(f"Saved aggregated timeseries to {REEL_IN_OUTPUT_PATH}")
 
     total_qs_time = (
         aggregated_data["quasi_steady"]["t"][-1]
@@ -537,10 +556,17 @@ def main():
         print(f"Total dynamic time: {total_dyn_time:.3f} s")
     print("Total time:", time)
 
-    return (
-        init_condit_QS_dict[-1],
-        init_condit_Dyn_dict[-1],
-    )  # Return the last state as initial condition for further use in the reelout_Lissajous segment
+    init_conditions_QS = init_condit_QS_dict[-1]
+    init_conditions_Dyn = init_condit_Dyn_dict[-1]
+    return init_conditions_QS, init_conditions_Dyn
 
 
-init_conditions_QS, init_conditions_Dyn = main()
+def get_initial_conditions(run_if_needed=True):
+    global init_conditions_QS, init_conditions_Dyn
+    if run_if_needed and (init_conditions_QS is None or init_conditions_Dyn is None):
+        main(run_plots=False, save_csv=False)
+    return init_conditions_QS, init_conditions_Dyn
+
+
+if __name__ == "__main__":
+    main()
