@@ -1,8 +1,10 @@
 import json
 import pickle
+import csv
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 from awetrim import SystemModel, State
 from awetrim.environment.Wind import Wind
@@ -15,6 +17,7 @@ from awetrim.timeseries.phase_parametrized import PhaseParameterized
 from awetrim.utils.color_palette import set_plot_style, get_color_list
 from my_reel_in import init_conditions_QS as Single_Spline_final_state_QS
 from my_reel_in import init_conditions_Dyn as Single_Spline_final_state_Dyn
+from awetrim.utils.defaults import PLOT_LABELS
 
 
 def define_system(
@@ -70,6 +73,21 @@ def run_sim(
 
 
 def main():
+    plot_variables = [
+        "speed_radial",
+        "speed_tangential",
+        "tension_tether_ground",
+        "lift_coefficient",
+        "drag_coefficient",
+        "mechanical_power",
+    ]
+    variables_to_save = plot_variables + [
+        "distance_radial",
+        "angle_elevation",
+        "angle_azimuth",
+    ]
+    derived_variables = ["x_position", "y_position", "z_position"]
+
     # ---------- Config ----------
     mass_wing = 61
     mass_kcu = 30
@@ -220,68 +238,235 @@ def main():
     qs_tension = [state["tension_tether_ground"] for state in phaseQS.states]
     dyn_tension = [state["tension_tether_ground"] for state in phaseDyn.states]
 
-    plt.figure()
-    plt.plot(qs_tension, label="Quasi-Steady")
-    plt.plot(dyn_tension, label="Dynamic")
-    plt.legend()
-    plt.show()
+    # plt.figure()
+    # plt.plot(qs_tension, label="Quasi-Steady")
+    # plt.plot(dyn_tension, label="Dynamic")
+    # plt.legend()
+    # plt.show()
 
     dynamic_phase = phaseDyn
     qs_phase = phaseQS
 
-    fig, axes_map, scatter = dynamic_phase.plot_overview_3d(
-        label="V9 Dynamic",
-        color=get_color_list()[2],
-        linestyle="-",
-        variables=[
-            "speed_tangential",
-            "tension_tether_ground",
-            "input_steering",
-            "speed_radial",
-        ],
-        x_param="t",
-    )
+    dynamic_phase = phaseDyn
+    qs_phase = phaseQS
+    qs_series = {"t": qs_phase.return_variable("t")}
+    dyn_series = {"t": dynamic_phase.return_variable("t")}
+    for var_name in variables_to_save:
+        qs_series[var_name] = qs_phase.return_variable(var_name)
+        dyn_series[var_name] = dynamic_phase.return_variable(var_name)
+    for var_name in derived_variables:
+        qs_series[var_name] = []
+        dyn_series[var_name] = []
 
-    qs_phase.plot_overview_3d(
-        label="V9 Quasi-Steady",
-        color=get_color_list()[1],
-        linestyle="--",
-        variables=[
-            "speed_tangential",
-            "tension_tether_ground",
-            "input_steering",
-            "speed_radial",
-        ],
-        x_param="t",
-        axes=axes_map,
-    )
+    # fig, axes_map, scatter = dynamic_phase.plot_overview_3d(
+    #     label="V9 Dynamic",
+    #     color=get_color_list()[2],
+    #     linestyle="-",
+    #     variables=[
+    #         "speed_tangential",
+    #         "tension_tether_ground",
+    #         "input_steering",
+    #         "speed_radial",
+    #         "mechanical_power",
+    #         "lift_coefficient",
+    #         "drag_coefficient",
+    #     ],
+    #     x_param="t",
+    # )
 
-    fig.legend(loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=2)
+    # qs_phase.plot_overview_3d(
+    #     label="V9 Quasi-Steady",
+    #     color=get_color_list()[1],
+    #     linestyle="--",
+    #     variables=[
+    #         "speed_tangential",
+    #         "tension_tether_ground",
+    #         "input_steering",
+    #         "speed_radial",
+    #         "mechanical_power",
+    #         "lift_coefficient",
+    #         "drag_coefficient",
+    #     ],
+    #     x_param="t",
+    #     axes=axes_map,
+    # )
+
+    # fig.legend(loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=2)
+    # set_plot_style()
+    # plt.tight_layout()
+    # # plt.savefig("./results/figures/reelout_cst.pdf", bbox_inches="tight")
+    # plt.show()
+
+    # metrics = dynamic_phase.energy_metrics(qs_phase)
+    # print("\n--- V9 ---")
+    # print(
+    #     f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
+    # )
+    # print(
+    #     f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
+    # )
+    # print(f"Delta Power: {metrics['power_diff_percent']:.2f}%")
+    # print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
+    # print(f"Delta F_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
+    # print(f"Delta F_t,max: {metrics['delta_ft_max_percent']:.2f}%")
+    # print(f"Delta F_t,min: {metrics['delta_ft_min_percent']:.2f}%")
+    # print(f"Delta v_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
+    # print(f"Delta v_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
+    # print(f"Delta s_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
+    # print(f"Delta s_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
+    # plt.show()
+
+    
+    aggregated_data = {
+        "quasi_steady": qs_series,
+        "dynamic": dyn_series
+        }
+    
+
     set_plot_style()
+    fig, axes = plt.subplots(
+        len(plot_variables),
+        1,
+        sharex=True,
+        figsize=(10, 3 * len(plot_variables)),
+    )
+    axes = np.atleast_1d(axes)
+    for idx, var_name in enumerate(plot_variables):
+        ax = axes[idx]
+        ylabel = PLOT_LABELS.get(var_name, var_name)
+        for sim_key, sim_label in [
+            ("quasi_steady", "Quasi-Steady"),
+            ("dynamic", "Dynamic"),
+        ]:
+            times = aggregated_data[sim_key]["t"]
+            values = aggregated_data[sim_key][var_name]
+            ax.plot(times, values, label=sim_label)
+        ax.set_ylabel(ylabel)
+        ax.grid(True, linestyle="--", alpha=0.3)
+    axes[-1].set_xlabel("Time [s]")
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        axes[0].legend(loc="best")
     plt.tight_layout()
-    # plt.savefig("./results/figures/reelout_cst.pdf", bbox_inches="tight")
     plt.show()
 
-    metrics = dynamic_phase.energy_metrics(qs_phase)
-    print("\n--- V9 ---")
-    print(
-        f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
-    )
-    print(
-        f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
-    )
-    print(f"Delta Power: {metrics['power_diff_percent']:.2f}%")
-    print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
-    print(f"Delta F_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
-    print(f"Delta F_t,max: {metrics['delta_ft_max_percent']:.2f}%")
-    print(f"Delta F_t,min: {metrics['delta_ft_min_percent']:.2f}%")
-    print(f"Delta v_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
-    print(f"Delta v_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
-    print(f"Delta s_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
-    print(f"Delta s_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
-    plt.show()
+    fig3d = plt.figure(figsize=(8, 6))
+    ax3d = fig3d.add_subplot(111, projection="3d")
+    plotted_any = False
+    for sim_key, sim_label in [
+        ("quasi_steady", "Quasi-Steady"),
+        ("dynamic", "Dynamic"),
+    ]:
+        times = aggregated_data[sim_key]["t"]
 
-    return phaseQS, phaseDyn
+        r_vals = np.asarray(aggregated_data[sim_key].get("distance_radial", []), dtype=float)
+        beta_vals = np.asarray(aggregated_data[sim_key].get("angle_elevation", []), dtype=float)
+        phi_vals = np.asarray(aggregated_data[sim_key].get("angle_azimuth", []), dtype=float)
+        if (
+            r_vals.size == times.size
+            and beta_vals.size == times.size
+            and phi_vals.size == times.size
+        ):
+            x_vals = r_vals * np.cos(beta_vals) * np.cos(phi_vals)
+            y_vals = r_vals * np.cos(beta_vals) * np.sin(phi_vals)
+            z_vals = r_vals * np.sin(beta_vals)
+        else:
+            x_vals = np.full(times.shape, np.nan, dtype=float)
+            y_vals = np.full(times.shape, np.nan, dtype=float)
+            z_vals = np.full(times.shape, np.nan, dtype=float)
+
+        aggregated_data[sim_key]["x_position"].extend(x_vals.tolist())
+        aggregated_data[sim_key]["y_position"].extend(y_vals.tolist())
+        aggregated_data[sim_key]["z_position"].extend(z_vals.tolist())
+
+        x_vals = np.asarray(aggregated_data[sim_key]["x_position"], dtype=float)
+        y_vals = np.asarray(aggregated_data[sim_key]["y_position"], dtype=float)
+        z_vals = np.asarray(aggregated_data[sim_key]["z_position"], dtype=float)
+        finite_mask = (
+            np.isfinite(x_vals) & np.isfinite(y_vals) & np.isfinite(z_vals)
+        )
+        if finite_mask.any():
+            ax3d.plot(
+                x_vals[finite_mask],
+                y_vals[finite_mask],
+                z_vals[finite_mask],
+                label=sim_label,
+            )
+            plotted_any = True
+    if plotted_any:
+        ax3d.set_xlabel(PLOT_LABELS.get("x", "x"))
+        ax3d.set_ylabel(PLOT_LABELS.get("y", "y"))
+        ax3d.set_zlabel(PLOT_LABELS.get("z", "z"))
+        x_combined = []
+        y_combined = []
+        z_combined = []
+        for sim_key in ["quasi_steady", "dynamic"]:
+            x_arr = np.asarray(aggregated_data[sim_key]["x_position"], dtype=float)
+            y_arr = np.asarray(aggregated_data[sim_key]["y_position"], dtype=float)
+            z_arr = np.asarray(aggregated_data[sim_key]["z_position"], dtype=float)
+            finite = np.isfinite(x_arr) & np.isfinite(y_arr) & np.isfinite(z_arr)
+            if finite.any():
+                x_combined.append(x_arr[finite])
+                y_combined.append(y_arr[finite])
+                z_combined.append(z_arr[finite])
+        if x_combined:
+            x_all = np.concatenate(x_combined)
+            y_all = np.concatenate(y_combined)
+            z_all = np.concatenate(z_combined)
+            ranges = np.array([np.ptp(x_all), np.ptp(y_all), np.ptp(z_all)])
+            overall = np.nanmax(ranges) if ranges.size else 0.0
+            if overall > 0:
+                mid_x = 0.5 * (np.nanmax(x_all) + np.nanmin(x_all))
+                mid_y = 0.5 * (np.nanmax(y_all) + np.nanmin(y_all))
+                mid_z = 0.5 * (np.nanmax(z_all) + np.nanmin(z_all))
+                half = overall / 2.0
+                ax3d.set_xlim(mid_x - half, mid_x + half)
+                ax3d.set_ylim(mid_y - half, mid_y + half)
+                ax3d.set_zlim(mid_z - half, mid_z + half)
+                ax3d.set_box_aspect([1, 1, 1])
+        ax3d.legend(loc="best")
+        plt.tight_layout()
+        plt.show()
+    else:
+        plt.close(fig3d)
+
+    output_dir = Path("results/timeseries")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / "aggregated_timeseries.csv"
+    header = ["simulation", "time"] + variables_to_save + derived_variables
+    with csv_path.open("w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(header)
+        for sim_key, sim_label in [
+            ("quasi_steady", "quasi_steady"),
+            ("dynamic", "dynamic"),
+        ]:
+            times = aggregated_data[sim_key]["t"]
+            if times is None:
+                continue
+            for idx in range(len(times)):
+                row = [sim_label, times[idx]]
+                row.extend(
+                    aggregated_data[sim_key][var][idx] for var in variables_to_save
+                )
+                row.extend(
+                    aggregated_data[sim_key][var][idx] for var in derived_variables
+                )
+                writer.writerow(row)
+    print(f"Saved aggregated timeseries to {csv_path}")
+
+    total_qs_time = aggregated_data["quasi_steady"]["t"][-1] if len(aggregated_data["quasi_steady"]["t"]) > 0 else 0.0
+
+    total_dyn_time = aggregated_data["dynamic"]["t"][-1] if len(aggregated_data["dynamic"]["t"]) > 0 else 0.0
+
+    time = max(total_qs_time, total_dyn_time)
+    if total_qs_time is not None:
+        print(f"Total quasi-steady time: {total_qs_time:.3f} s")
+    if total_dyn_time is not None:
+        print(f"Total dynamic time: {total_dyn_time:.3f} s")
+    print("Total time:", time)
+
+    return phaseQS, phaseDyn, aggregated_data
 
 
-phaseQS, phaseDyn = main()
+phaseQS, phaseDyn, aggregated_data_RO = main()

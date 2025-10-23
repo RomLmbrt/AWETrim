@@ -389,24 +389,24 @@ def main():
         # # plt.savefig("./results/figures/reelout_cst.pdf", bbox_inches="tight")
         # plt.show()
 
-        metrics = dynamic_phase.energy_metrics(qs_phase)
-        print("\n--- V9 ---")
-        print(
-            f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
-        )
-        print(
-            f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
-        )
-        print(f"Δ Power: {metrics['power_diff_percent']:.2f}%")
-        print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
-        print(f"ΔF_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
-        print(f"ΔF_t,max: {metrics['delta_ft_max_percent']:.2f}%")
-        print(f"ΔF_t,min: {metrics['delta_ft_min_percent']:.2f}%")
-        print(f"Δv_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
-        print(f"Δv_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
-        print(f"Δs_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
-        print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
-        plt.show()
+    #     metrics = dynamic_phase.energy_metrics(qs_phase)
+    #     print("\n--- V9 ---")
+    #     print(
+    #         f"Power QS: {metrics['avg_power_other']:.2f}, Power Dyn: {metrics['avg_power_self']:.2f}."
+    #     )
+    #     print(
+    #         f"Mean power QS: {metrics['mean_power_other']:.2f}, Mean power Dyn: {metrics['mean_power_self']:.2f}"
+    #     )
+    #     print(f"Δ Power: {metrics['power_diff_percent']:.2f}%")
+    #     print(f"Estimated time lag: {metrics['best_time_lag']:.3f} s")
+    #     print(f"ΔF_t,mean: {metrics['delta_ft_mean_percent']:.2f}%")
+    #     print(f"ΔF_t,max: {metrics['delta_ft_max_percent']:.2f}%")
+    #     print(f"ΔF_t,min: {metrics['delta_ft_min_percent']:.2f}%")
+    #     print(f"Δv_tau,max: {metrics['delta_vtau_max_percent']:.2f}%")
+    #     print(f"Δv_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
+    #     print(f"Δs_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
+    #     print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
+    #     plt.show()
 
     has_timeseries_data = bool(aggregated_data["quasi_steady"]["t"]) or bool(
         aggregated_data["dynamic"]["t"]
@@ -541,7 +541,8 @@ def main():
     return (
         init_condit_QS_dict[-1],
         init_condit_Dyn_dict[-1],
+        aggregated_data,
     )  # Return the last state as initial condition for further use in the reelout_Lissajous segment
 
 
-init_conditions_QS, init_conditions_Dyn = main()
+init_conditions_QS, init_conditions_Dyn, aggregated_data_RI = main()
