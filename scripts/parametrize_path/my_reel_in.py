@@ -57,7 +57,7 @@ def run_sim(
         dof=3, quasi_steady=quasi_steady, kite=kite, tether=tether, wind_model=wind
     )
 
-    model.input_depower = depower  # depower is given in percentage
+    model.input_depower = depower
     if sim_type == "no_mass":
         model.mass_wing = 0
         start_state["input_steering"] = 0
