@@ -117,7 +117,7 @@ def main():
         {
             "t": 0,
             "s": 0,
-            "s_dot": 0.2,
+            "s_dot": 0.05,
             "s_ddot": 0,
             "input_steering": 0,
             "tension_tether_ground": 1e8,
@@ -131,7 +131,7 @@ def main():
         {
             "t": 0,
             "s": 0,
-            "s_dot": 0.2,
+            "s_dot": 0.05,
             "s_ddot": 0,
             "input_steering": 0,
             "tension_tether_ground": 1e8,
@@ -143,6 +143,8 @@ def main():
 
     quasi_steady_s_ends = []
     dynamic_s_ends = []
+    globalstatesQS = []
+    time = 0
     for phase_idx in range(len(winch_depower_data)):
 
         f_max = winch_depower_data[phase_idx]["max_tether_force"]
@@ -162,7 +164,7 @@ def main():
 
         depower_norm = (
             (depower / 100) - 0.4
-        ) / 0.2  # normalize depower between 0 and 1 for V9
+        ) / 0.28  # normalize depower between 0 and 1 for V9
 
         Realistic_RI_eg = {
             "reeling_strategy": "force",  # "force" or "constant"
@@ -189,15 +191,13 @@ def main():
                 "s_norm_el": s_norm_el,
             },
             "radial_parameters": Realistic_RI_eg,
-            "start_time": 0,
-            "end_time": 60,
             "start_angle": s_start,
             "end_angle": s_end,
-            "n_points": 500,
+            "n_points": 100,
             "optimization_parameters": [],
         }
 
-        base_start_state_QS = State(**init_condit_QS_dict[phase_idx])
+        base_start_state_QS = State(**init_condit_QS_dict[0])
         base_start_state_Dyn = State(**init_condit_Dyn_dict[phase_idx])
 
         phaseQS, stateQS = run_sim(
@@ -213,7 +213,7 @@ def main():
             wind,
             "quasi_steady",
         )
-
+        globalstatesQS.append(stateQS)
         base_start_state_Dyn = stateQS[0]
 
         phaseDyn, stateDyn = run_sim(
@@ -232,26 +232,26 @@ def main():
 
         quasi_steady_s_ends.append(stateQS[-1]["s"])
         dynamic_s_ends.append(stateDyn[-1]["s"])
-
-        init_condit_QS_dict.append(
-            {
-                "t": stateQS[-1]["t"],
-                "s": stateQS[-1]["s"],
-                "s_dot": stateQS[-1]["s_dot"],
-                "s_ddot": (
-                    stateQS[-1]["s_ddot"] if stateQS[-1]["s_ddot"] is not None else 0
-                ),
-                "input_steering": stateQS[-1]["input_steering"],
-                "tension_tether_ground": stateQS[-1]["tension_tether_ground"],
-                "input_depower": (
-                    stateQS[-1]["input_depower"]
-                    if stateQS[-1]["input_depower"] is not None
-                    else 0
-                ),
-                "speed_radial": stateQS[-1]["speed_radial"],
-                "distance_radial": stateQS[-1]["distance_radial"],
-            }
-        )
+        time += stateDyn[-1]["t"]
+        # init_condit_QS_dict.append(
+        #     {
+        #         "t": stateQS[-1]["t"],
+        #         "s": stateQS[-1]["s"],
+        #         "s_dot": stateQS[-1]["s_dot"],
+        #         "s_ddot": (
+        #             stateQS[-1]["s_ddot"] if stateQS[-1]["s_ddot"] is not None else 0
+        #         ),
+        #         "input_steering": stateQS[-1]["input_steering"],
+        #         "tension_tether_ground": stateQS[-1]["tension_tether_ground"],
+        #         "input_depower": (
+        #             stateQS[-1]["input_depower"]
+        #             if stateQS[-1]["input_depower"] is not None
+        #             else 0
+        #         ),
+        #         "speed_radial": stateQS[-1]["speed_radial"],
+        #         "distance_radial": stateQS[-1]["distance_radial"],
+        #     }
+        # )
 
         init_condit_Dyn_dict.append(
             {
@@ -284,7 +284,7 @@ def main():
             variables=[
                 "speed_tangential",
                 "tension_tether_ground",
-                "input_steering",
+                "lift_coefficient",
                 "speed_radial",
             ],
             x_param="t",
@@ -298,7 +298,7 @@ def main():
             variables=[
                 "speed_tangential",
                 "tension_tether_ground",
-                "input_steering",
+                "lift_coefficient",
                 "speed_radial",
             ],
             x_param="t",
@@ -329,6 +329,45 @@ def main():
         print(f"Δv_tau,min: {metrics['delta_vtau_min_percent']:.2f}%")
         print(f"Δs_v_tau,max: {metrics['s_lag_vtau_max_deg']:.2f} deg")
         print(f"Δs_v_tau,min: {metrics['s_lag_vtau_min_deg']:.2f} deg")
+        plt.show()
+    print("Total time:", time)
+    if globalstatesQS:
+        set_plot_style()
+        combined_time = []
+        tension_series = []
+        tangential_series = []
+        radial_series = []
+        time_offset = 0.0
+
+        for phase_states in globalstatesQS:
+            if not phase_states:
+                continue
+            phase_start = phase_states[0]["t"]
+            phase_end = phase_states[-1]["t"]
+            for state in phase_states:
+                current_time = time_offset + (state["t"] - phase_start)
+                combined_time.append(current_time)
+                tension_series.append(state.get("tension_tether_ground"))
+                tangential_series.append(state.get("speed_tangential"))
+                radial_series.append(state.get("speed_radial"))
+            time_offset += phase_end - phase_start
+
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+        plot_config = [
+            ("tension_tether_ground", tension_series, "Tether tension"),
+            ("speed_tangential", tangential_series, "Tangential speed"),
+            ("speed_radial", radial_series, "Radial speed"),
+        ]
+
+        for ax, (key, series, fallback_label) in zip(axes, plot_config):
+            label = PLOT_LABELS.get(key, fallback_label)
+            ax.plot(combined_time, series, label=label)
+            ax.set_ylabel(label)
+            ax.grid(True, linestyle="--", alpha=0.3)
+            ax.legend(loc="best")
+
+        axes[-1].set_xlabel("Time [s]")
+        plt.tight_layout()
         plt.show()
 
     print("Quasi-steady end s values for each phase:", quasi_steady_s_ends)

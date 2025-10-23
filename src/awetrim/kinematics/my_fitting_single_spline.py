@@ -35,13 +35,15 @@ class Fitting(DataProcessing):
     def _setup_spline_segment(self):
         """Prepare data for spline fitting based on segment."""
 
-        self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.data_r = (self.Single_Spline_az, 
-                                                                                  self.Single_Spline_el, 
-                                                                                  self.Single_Spline_u_vals, 
-                                                                                  self.Single_Spline_r0, 
-                                                                                  self.Single_Spline_r1, 
-                                                                                  self.Single_Spline_r)
- 
+        self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.data_r = (
+            self.Single_Spline_az,
+            self.Single_Spline_el,
+            self.Single_Spline_u_vals,
+            self.Single_Spline_r0,
+            self.Single_Spline_r1,
+            self.Single_Spline_r,
+        )
+
         # Initial control points
         self.indices0 = np.linspace(0, len(self.data_az) - 1, self.n_ctrl, dtype=int)[
             1:-1
@@ -87,7 +89,9 @@ class Fitting(DataProcessing):
             ([0], params[3 * n :].astype(int), [len(self.data_az) - 1])
         )
 
-        if not np.all(np.diff(self.u_vals[indices_az]) >= 0) or not np.all(np.diff(self.u_vals[indices_el]) >= 0):
+        if not np.all(np.diff(self.u_vals[indices_az]) >= 0) or not np.all(
+            np.diff(self.u_vals[indices_el]) >= 0
+        ):
             return np.full(2 * len(self.data_az), 1e7)
 
         try:
@@ -100,7 +104,7 @@ class Fitting(DataProcessing):
         except Exception as e:
             print("Error creating spline:", e)
             return np.full(2 * len(self.data_az), 1e7)
-    
+
         az_fit = np.array(self.spline.azimuth(1.0, self.u_vals).full()).ravel()
         el_fit = np.array(self.spline.elevation(1.0, self.u_vals).full()).ravel()
         return np.concatenate([az_fit - self.data_az, el_fit - self.data_el])
@@ -127,14 +131,22 @@ class Fitting(DataProcessing):
         )
 
         self.final_spline = CasadiSpline(
-            C_az=np.concatenate(([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])),
-            C_el=np.concatenate(([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])),
+            C_az=np.concatenate(
+                ([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])
+            ),
+            C_el=np.concatenate(
+                ([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])
+            ),
             s_norm_az=self.u_vals[self.fitted_indices_az],
             s_norm_el=self.u_vals[self.fitted_indices_el],
         )
 
-        self.az_fit = np.array(self.final_spline.azimuth(1.0, self.u_vals).full()).ravel()
-        self.el_fit = np.array(self.final_spline.elevation(1.0, self.u_vals).full()).ravel()
+        self.az_fit = np.array(
+            self.final_spline.azimuth(1.0, self.u_vals).full()
+        ).ravel()
+        self.el_fit = np.array(
+            self.final_spline.elevation(1.0, self.u_vals).full()
+        ).ravel()
 
         print(f"✅ Spline fitting completed.")
 
@@ -203,20 +215,20 @@ class Fitting(DataProcessing):
         """Save fitted spline or Lissajous results to pickle."""
         filename = f"fit_results_Single_Spline.pkl"
         fitted_data = {
-                "n_ctrl": self.n_ctrl,
-                "s_norm_az": self.u_vals[self.fitted_indices_az],
-                "s_norm_el": self.u_vals[self.fitted_indices_el],
-                "r0": self.r0,
-                "r1": self.r1,
-                "data_az": self.data_az,
-                "data_el": self.data_el,
-                "C_az": np.concatenate(
-                    ([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])
-                ),
-                "C_el": np.concatenate(
-                    ([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])
-                ),
-            }
+            "n_ctrl": self.n_ctrl,
+            "s_norm_az": self.u_vals[self.fitted_indices_az],
+            "s_norm_el": self.u_vals[self.fitted_indices_el],
+            "r0": self.r0,
+            "r1": self.r1,
+            "data_az": self.data_az,
+            "data_el": self.data_el,
+            "C_az": np.concatenate(
+                ([self.data_az[0]], self.fitted_params_az, [self.data_az[-1]])
+            ),
+            "C_el": np.concatenate(
+                ([self.data_el[0]], self.fitted_params_el, [self.data_el[-1]])
+            ),
+        }
         with open(filename, "wb") as f:
             pickle.dump(fitted_data, f)
         print(f"💾 Saved Single_Spline results to {filename}")
@@ -234,53 +246,81 @@ class Fitting(DataProcessing):
         x, y, z = self._sph2cart(self.az_fit, self.el_fit, self.data_r)
 
         fig = plt.figure(figsize=(12, 10))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # Plot full cycle trajectory - solid line, light blue
-        ax.plot(x_cyc, y_cyc, z_cyc, color='lightblue', linewidth=2, 
-                label='Full Cycle Trajectory', linestyle='-')
+        ax = fig.add_subplot(111, projection="3d")
 
-        
+        # Plot full cycle trajectory - solid line, light blue
+        ax.plot(
+            x_cyc,
+            y_cyc,
+            z_cyc,
+            color="lightblue",
+            linewidth=2,
+            label="Full Cycle Trajectory",
+            linestyle="-",
+        )
+
         # Plot spline as dashed line
-        ax.plot(x, y, z, color="r", 
-                label="Spline", linewidth=2, linestyle='--')
-        
+        ax.plot(x, y, z, color="r", label="Spline", linewidth=2, linestyle="--")
+
         # Plot start point
-        ax.scatter(x[0], y[0], z[0], 
-                    color="g", s=80, marker='o', edgecolors='black', 
-                    label='Spline Start')
-        
+        ax.scatter(
+            x[0],
+            y[0],
+            z[0],
+            color="g",
+            s=80,
+            marker="o",
+            edgecolors="black",
+            label="Spline Start",
+        )
+
         # Plot end point
-        ax.scatter(x[-1], y[-1], z[-1], 
-                    color="b", s=80, marker='s', edgecolors='black',
-                    label='Spline End')
-        
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.set_zlabel('Z (m)')
-        ax.set_title('3D Trajectory with Fitted Spline Segments')
-        ax.legend(loc='best', bbox_to_anchor=(1.05, 1), borderaxespad=0)
+        ax.scatter(
+            x[-1],
+            y[-1],
+            z[-1],
+            color="b",
+            s=80,
+            marker="s",
+            edgecolors="black",
+            label="Spline End",
+        )
+
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
+        ax.set_title("3D Trajectory with Fitted Spline Segments")
+        ax.legend(loc="best", bbox_to_anchor=(1.05, 1), borderaxespad=0)
         plt.tight_layout()
         plt.show()
 
     def plot_spline_sph(self):
         fig, axes = plt.subplots(2, 1, figsize=(10, 12))
-        axes[0].plot(self.u_vals, self.az_fit, 'r-', label='Fitted Azimuth', linewidth=2)
-        axes[0].plot(self.u_vals, self.data_az, 'b--', label='Data Azimuth', linewidth=2)
-        axes[0].set_title('Azimuth vs u parameter')
-        axes[0].set_xlabel('u parameter')
-        axes[0].set_ylabel('Azimuth (rad)')
+        axes[0].plot(
+            self.u_vals, self.az_fit, "r-", label="Fitted Azimuth", linewidth=2
+        )
+        axes[0].plot(
+            self.u_vals, self.data_az, "b--", label="Data Azimuth", linewidth=2
+        )
+        axes[0].set_title("Azimuth vs u parameter")
+        axes[0].set_xlabel("u parameter")
+        axes[0].set_ylabel("Azimuth (rad)")
         axes[0].grid(True, alpha=0.3)
 
-        axes[1].plot(self.u_vals, self.el_fit, 'g-', label='Fitted Elevation', linewidth=2)
-        axes[1].plot(self.u_vals, self.data_el, 'b--', label='Data Elevation', linewidth=2)
-        axes[1].set_title('Elevation vs u parameter')
-        axes[1].set_xlabel('u parameter')
-        axes[1].set_ylabel('Elevation (rad)')
+        axes[1].plot(
+            self.u_vals, self.el_fit, "g-", label="Fitted Elevation", linewidth=2
+        )
+        axes[1].plot(
+            self.u_vals, self.data_el, "b--", label="Data Elevation", linewidth=2
+        )
+        axes[1].set_title("Elevation vs u parameter")
+        axes[1].set_xlabel("u parameter")
+        axes[1].set_ylabel("Elevation (rad)")
         axes[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.show()
+
 
 # =============================================================================
 # MAIN SCRIPT
@@ -295,15 +335,13 @@ if __name__ == "__main__":
     figs = []
     axes_list = []
 
-    fit = Fitting(
-            full_path, cycle_path, waypoint_path, cyc_idx=0, n_ctrl_pts=35
-        )
+    fit = Fitting(full_path, cycle_path, waypoint_path, cyc_idx=0, n_ctrl_pts=25)
 
     fit._setup_spline_segment()
     fit.FitSpline()
     fit.save_data()
     fit.plot_spline_cart()
-    
+
     print(fit.u_vals[-1])
 
     fit.plot_spline_sph()
@@ -315,7 +353,7 @@ if __name__ == "__main__":
         print(fit.az_fit[-1], fit.data_az[-1])
 
     if fit.el_fit[-1] == fit.data_el[-1]:
-        print("Max s check passed: final elevation matches data elevation.")   
+        print("Max s check passed: final elevation matches data elevation.")
     else:
         print("Max s check failed: final elevation does not match data elevation.")
         print(fit.el_fit[-1], fit.data_el[-1])
@@ -331,17 +369,17 @@ if __name__ == "__main__":
     print("Done evaluating final spline at high resolution.")
 
     plt.figure()
-    plt.plot(s, az, 'r-', label='Fitted Azimuth')
-    plt.plot(fit.u_vals, fit.data_az, 'b--', label='Data Azimuth')
+    plt.plot(s, az, "r-", label="Fitted Azimuth")
+    plt.plot(fit.u_vals, fit.data_az, "b--", label="Data Azimuth")
     plt.show()
 
     plt.figure()
-    plt.plot(s, el, 'r-', label='Fitted Elevation')
-    plt.plot(fit.u_vals, fit.data_el, 'b--', label='Data Elevation')
+    plt.plot(s, el, "r-", label="Fitted Elevation")
+    plt.plot(fit.u_vals, fit.data_el, "b--", label="Data Elevation")
     plt.show()
-    
+
     # ---------- Load precomputed fit data ----------
-    segment_name = 'Single_Spline'
+    segment_name = "Single_Spline"
 
     filename = f"fit_results_{segment_name}.pkl"
     with open(filename, "rb") as f:
@@ -376,19 +414,19 @@ if __name__ == "__main__":
     # # print(el)
 
     plt.figure()
-    plt.plot(s, az, 'r-', label='Fitted Azimuth')
+    plt.plot(s, az, "r-", label="Fitted Azimuth")
     # plt.plot(fit.u_vals, fit.data_az, 'b--', label='Data Azimuth')
-    plt.title('Azimuth vs u parameter from loaded spline')
-    plt.xlabel('u parameter')
-    plt.ylabel('Azimuth (rad)')
+    plt.title("Azimuth vs u parameter from loaded spline")
+    plt.xlabel("u parameter")
+    plt.ylabel("Azimuth (rad)")
     plt.grid(True, alpha=0.3)
-    plt.show()  
+    plt.show()
 
     plt.figure()
-    plt.plot(s, el, 'g-', label='Fitted Elevation')  
+    plt.plot(s, el, "g-", label="Fitted Elevation")
     # plt.plot(fit.u_vals, fit.data_el, 'b--', label='Data Elevation')
-    plt.title('Elevation vs u parameter from loaded spline')
-    plt.xlabel('u parameter')
-    plt.ylabel('Elevation (rad)')
+    plt.title("Elevation vs u parameter from loaded spline")
+    plt.xlabel("u parameter")
+    plt.ylabel("Elevation (rad)")
     plt.grid(True, alpha=0.3)
     plt.show()
