@@ -11,7 +11,9 @@ from awetrim.utils.color_palette import set_plot_style, get_color_list
 from awetrim.utils.defaults import PLOT_LABELS
 from my_reel_in import init_conditions_QS as Single_Spline_final_state_QS
 from my_reel_in import init_conditions_Dyn as Single_Spline_final_state_Dyn
-from awetrim.kinematics.find_Lissajous_RO_start_end_angles import find_Lissajous_RO_start_end_angles
+from awetrim.kinematics.find_Lissajous_RO_start_end_angles import (
+    find_Lissajous_RO_start_end_angles,
+)
 
 # ---------- Config ----------
 mass_wing = 61
@@ -19,7 +21,9 @@ mass_kcu = 30
 area_wing = 46.85
 tether_diameter = 0.01
 
-speed_wind_at_100 = 7.6374  # m/s (6 m/s at reference height of 6 m) got from KP software for LOG
+speed_wind_at_100 = (
+    7.6374  # m/s (6 m/s at reference height of 6 m) got from KP software for LOG
+)
 wind = Wind(
     wind_model="logarithmic",
     z0=0.0002,
@@ -50,24 +54,26 @@ beta0 = fit_data["best_params"]["beta0"]
 
 pattern_type = "cst_lissajous"
 parameters = {
-        "omega": 1.0,
-        "r0": r0,
-        "az_amp0": az_amp0,
-        "beta_amp0": beta_amp0,
-        "width_phi": 0.5,
-        "width_beta": 0.5,
-        "left_first": True,
-        "normalize_bumps": False,
-        "repeat_phi": True,
-        "repeat_beta": True,    
-        "beta_coeffs": np.array(beta_coeffs),
-        "az_coeffs": az_coeffs,
-        "kbeta": 0,
-        "beta0": beta0,
-        "kappa": 0,
-    }
+    "omega": 1.0,
+    "r0": r0,
+    "az_amp0": az_amp0,
+    "beta_amp0": beta_amp0,
+    "width_phi": 0.5,
+    "width_beta": 0.5,
+    "left_first": True,
+    "normalize_bumps": False,
+    "repeat_phi": True,
+    "repeat_beta": True,
+    "beta_coeffs": np.array(beta_coeffs),
+    "az_coeffs": az_coeffs,
+    "kbeta": 0,
+    "beta0": beta0,
+    "kappa": 0,
+}
 
-s_start_opt, range_opt, cycles = find_Lissajous_RO_start_end_angles(pattern_type, parameters)
+s_start_opt, range_opt, cycles = find_Lissajous_RO_start_end_angles(
+    pattern_type, parameters
+)
 # cycles is by default 1
 
 # ---------Load winch and depower data ----------
@@ -78,7 +84,7 @@ with open("fit_winch_results_RO_phase_settings.pkl", "rb") as f:
 f_max = winch_depower_data[0]["max_tether_force"]
 f_min = winch_depower_data[0]["min_tether_force"]
 beta_plus = winch_depower_data[0]["softplus_beta"]
-beta_minus= winch_depower_data[0]["softminus_beta"]
+beta_minus = winch_depower_data[0]["softminus_beta"]
 slope = winch_depower_data[0]["slope"]
 offset = winch_depower_data[0]["offset"]
 # s_start = winch_depower_data[0]["s"]
@@ -87,7 +93,7 @@ depower = winch_depower_data[0]["depower"]
 
 depower_norm = (
     (depower / 100) - 0.4
-) / 0.2  # normalize depower between 0 and 1 for V9
+) / 0.28  # normalize depower between 0 and 1 for V9
 
 Realistic_RO_eg = {
     "reeling_strategy": "force",  # "force" or "constant"
@@ -110,14 +116,14 @@ pattern_config = {
     "start_time": 0,
     "end_time": duration + 1,
     "start_angle": s_start_opt,
-    "end_angle": s_start_opt + range_opt + cycles * (2*np.pi),
+    "end_angle": s_start_opt + range_opt + cycles * (2 * np.pi),
     "n_points": 500,
     "optimization_parameters": [],
 }
 
 # ---------- Starting state ----------
 Single_Spline_final_state_QS["s"] = s_start_opt
-Single_Spline_final_state_Dyn["s_dot"] = 2
+Single_Spline_final_state_QS["s_dot"] = 2
 Single_Spline_final_state_QS["tension_tether_ground"] = 1e8
 
 Single_Spline_final_state_Dyn["s"] = s_start_opt
@@ -131,12 +137,14 @@ print("\n")
 
 base_start_state_QS = State(**Single_Spline_final_state_QS)
 
+
 print("\n")
 for key in Single_Spline_final_state_Dyn.keys():
     print(f"{key}:              {Single_Spline_final_state_Dyn[key]}")
 print("\n")
 
 base_start_state_Dyn = State(**Single_Spline_final_state_Dyn)
+
 
 def run_sim(
     aero_input,
@@ -195,13 +203,34 @@ def run_sim(
 
     return phase, states
 
-phaseQS, stateQS = run_sim(
-    aero_input_v9, pattern_config, "V9", mass_wing, area_wing, mass_kcu, tether_diameter, depower_norm, base_start_state_QS, wind, "quasi_steady"
-)
 
+phaseQS, stateQS = run_sim(
+    aero_input_v9,
+    pattern_config,
+    "V9",
+    mass_wing,
+    area_wing,
+    mass_kcu,
+    tether_diameter,
+    depower_norm,
+    base_start_state_QS,
+    wind,
+    "quasi_steady",
+)
+base_start_state_Dyn = stateQS[0]
 phaseDyn, stateDyn = run_sim(
-    aero_input_v9, pattern_config, "V9", mass_wing, area_wing, mass_kcu, tether_diameter, depower_norm, base_start_state_Dyn, wind, "dynamic"
-)   
+    aero_input_v9,
+    pattern_config,
+    "V9",
+    mass_wing,
+    area_wing,
+    mass_kcu,
+    tether_diameter,
+    depower_norm,
+    base_start_state_Dyn,
+    wind,
+    "dynamic",
+)
 
 QS_tension = []
 for i in stateQS:
