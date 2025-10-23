@@ -85,7 +85,9 @@ offset = winch_depower_data[0]["offset"]
 depower = winch_depower_data[0]["depower"]
 # s_end = 2*np.pi
 
-depower_norm = ((depower / 100)-0.4)/0.2 # normalize depower between 0 and 1 for V9
+depower_norm = (
+    (depower / 100) - 0.4
+) / 0.2  # normalize depower between 0 and 1 for V9
 
 Realistic_RO_eg = {
     "reeling_strategy": "force",  # "force" or "constant"
@@ -115,10 +117,12 @@ pattern_config = {
 
 # ---------- Starting state ----------
 Single_Spline_final_state_QS["s"] = s_start_opt
-Single_Spline_final_state_QS["tension_tether_ground"] = 1e10
+Single_Spline_final_state_Dyn["s_dot"] = 2
+Single_Spline_final_state_QS["tension_tether_ground"] = 1e8
 
 Single_Spline_final_state_Dyn["s"] = s_start_opt
-Single_Spline_final_state_Dyn["tension_tether_ground"] = 1e10
+Single_Spline_final_state_Dyn["s_dot"] = 2
+Single_Spline_final_state_Dyn["tension_tether_ground"] = 1e8
 
 print("\n")
 for key in Single_Spline_final_state_QS.keys():
@@ -180,18 +184,16 @@ def run_sim(
         dof=3, quasi_steady=quasi_steady, kite=kite, tether=tether, wind_model=wind
     )
 
-    model.input_depower = depower/100 # depower is given in percentage
+    model.input_depower = depower
     if sim_type == "no_mass":
         model.mass_wing = 0
         start_state["input_steering"] = 0
     phase = PhaseParameterized(
         model, quasi_steady=quasi_steady, pattern_config=pattern_config
     )
-    state = phase.run_simulation_phase(start_state=start_state, return_states=True)
-    s_dot = phase.return_variable("s_dot")
-    start_state.s_dot = s_dot[0]
+    states = phase.run_simulation_phase(start_state=start_state, return_states=True)
 
-    return phase, state
+    return phase, states
 
 phaseQS, stateQS = run_sim(
     aero_input_v9, pattern_config, "V9", mass_wing, area_wing, mass_kcu, tether_diameter, depower_norm, base_start_state_QS, wind, "quasi_steady"
