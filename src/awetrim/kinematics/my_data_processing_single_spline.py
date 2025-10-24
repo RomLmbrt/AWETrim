@@ -46,7 +46,7 @@ class DataProcessing:
         self.CD = self.full_df["drag_coeff"].astype(float).to_numpy()
         self.Mech_Power = self.full_df["ground_mech_power"].astype(float).to_numpy()
         self.Vtan = self.full_df["kite_tangential_velocity_mps"].astype(float).to_numpy() # m/s
-        self.Vr = np.gradient(self.r_full, self.time_full)  # m/s
+        self.Vr = self.full_df["ground_tether_reelout_speed"].astype(float).to_numpy() # m/s
 
         self.wp_names = self.wp_df["waypoint_name"].astype(str).to_numpy()
 
