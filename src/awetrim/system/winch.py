@@ -1,4 +1,5 @@
 import casadi as ca
+import numpy as np
 from awetrim.utils.defaults import DEFAULT_WINCH_CONFIG
 
 
@@ -10,6 +11,8 @@ class Winch:
         self.min_speed = config["min_speed"]
         self.max_acceleration = config["max_acceleration"]
         self.min_acceleration = config["min_acceleration"]
+        self.v_knots = pattern_config["v_knots"]
+        self.C_coeffs = pattern_config["C_fitted"]
 
         self.pattern_config = pattern_config
 
@@ -29,9 +32,15 @@ class Winch:
         min_tf = self.pattern_config.get("min_tether_force", 0)
 
         if max_tf is None:
-            raise ValueError(
-                "pattern_config must define 'max_tether_force' for tension_curve"
-            )
+            if model != "custom_spline":
+                raise ValueError(
+                    "pattern_config must define 'max_tether_force' for tension_curve"
+                )
+        if min_tf is None:
+            if model != "custom_spline":
+                raise ValueError(
+                    "pattern_config must define 'min_tether_force' for tension_curve"
+                )
 
         if model == "linear":
             T = self.pattern_config["slope"] * (
@@ -43,6 +52,12 @@ class Winch:
                 * (speed_radial - self.pattern_config.get("offset", 0))
                 * ca.fabs(speed_radial - self.pattern_config.get("offset", 0))
             )
+        elif model == "custom_spline":
+            # User-defined spline model
+            if "v_knots" not in self.pattern_config or "C_fitted" not in self.pattern_config:
+                raise ValueError("pattern_config must define 'v_knots' and 'C_fitted' for custom_spline force_model")
+            spline_model = ca.interpolant("custom_T_spline", "bspline", [self.v_knots], np.array(self.C_coeffs))
+            T = spline_model(speed_radial)
         else:
             raise ValueError(f"Unknown force_model '{model}' in pattern_config")
 

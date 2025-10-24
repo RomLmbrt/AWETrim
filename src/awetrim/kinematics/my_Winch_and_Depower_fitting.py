@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import pickle
+import casadi as ca
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 from awetrim.kinematics.my_Winch_and_Depower_data_processing import Winch_and_Depower_data_processing
@@ -9,6 +10,7 @@ from awetrim.kinematics.winch_force_curve import (
     WinchControllerCharacteristics,
     WinchControllerParameters,
 )
+
 
 class WinchCurveFitter:
     def __init__(self, json_path, base_path):
@@ -23,6 +25,7 @@ class WinchCurveFitter:
     # Data loading and preparation
     # ----------------------------
     def _load_data(self):
+        """Load logger CSVs and JSON trajectory."""
         with open(self.json_path) as f:
             data = json.load(f)
 
@@ -32,6 +35,7 @@ class WinchCurveFitter:
         full_path = f"{self.base_path}/2025-10-23_09-43-50_ProtoLogger.csv"
         cycle_path = f"{self.base_path}/cycle_data_sheet_lines.csv"
 
+        # custom data-processing class
         self.processed = Winch_and_Depower_data_processing(
             full_path, cycle_path, waypoint_path, json_trajectory
         )
@@ -39,48 +43,66 @@ class WinchCurveFitter:
     # ----------------------------
     # Residuals for least squares
     # ----------------------------
-    def residuals(self, params, v_m_data, force_data):
-        pattern_config = {
-            "force_model": "quadratic",
-            "max_tether_force": params[0],
-            "min_tether_force": params[1],
-            "softplus": True,
-            "softplus_beta": params[2],
-            "softminus": True,
-            "softminus_beta": params[3],
-            "slope": params[4],
-            "offset": params[5],
-        }
+    def residuals(self, params, v_m_data, force_data, v_knots):
+        """
+        Compute residuals between spline tension and measured force data.
+        """
 
-        winch = Winch(pattern_config=pattern_config)
+        C = params  # tension values at knots
 
-        T_fun = winch.tension_curve
-        T_vals = np.array([float(T_fun(v)) for v in v_m_data])
-
+        spline = ca.interpolant("T_spline", "bspline", [v_knots], np.array(C))
+        T_vals = np.array([float(spline(v)) for v in v_m_data])  # predicted tension values
         return T_vals - force_data
 
     # ----------------------------
     # Fit function
     # ----------------------------
-    def fit_winch_curve(self, v_m_data, force_data):
-        initial_guess = [
-            max(force_data),  # max_tether_force
-            min(force_data),  # min_tether_force
-            1e-4,  # softplus_beta
-            1e-3,  # softminus_beta
-            1400.0,  # slope
-            -2.8,  # offset
-        ]
+    def fit_winch_curve(self, v_m_data, force_data, n_knots=25):
+        """
+        Fit a CasADi spline to measured (v_m, force) data.
+        n_knots: number of spline nodes used for fitting
+        """
+        # Define knot positions evenly spaced across the velocity range
+        v_knots = np.linspace(np.min(v_m_data), np.max(v_m_data), n_knots)
 
-        result = least_squares(self.residuals, initial_guess, args=(v_m_data, force_data))
-        return result.x
+        # Initial guess for tension values at each knot
+        C_init = np.linspace(np.min(force_data), np.max(force_data), n_knots)
+
+        initial_guess = C_init
+
+        # Run least squares optimization
+        result = least_squares(
+            self.residuals,
+            initial_guess,
+            args=(v_m_data, force_data, v_knots),
+            method="trf",
+            loss="soft_l1",
+            f_scale=0.5,
+        )
+
+        # Build final spline model with fitted parameters
+        fitted_params = result.x
+        C_fitted = fitted_params
+        fitted_spline = ca.interpolant("T_spline", "bspline", [v_knots], np.array(C_fitted))
+
+        print("✅ Winch spline fit completed.")
+        print(f"Fitted parameters: {np.round(fitted_params, 3)}")
+
+        # Save for later use
+        self.v_knots = v_knots
+        self.C_fitted = C_fitted
+        self.fitted_spline = fitted_spline
+        return fitted_spline, self.v_knots, self.C_fitted
 
     # --------------------------------------------
     # Run fitting for all Single_Spline phases
     # --------------------------------------------
     def run(self):
-        curve_data_stored = []
-        final_fitted_params = []
+        curve_data_stored_SS = []
+        final_params_SS = []
+
+        curve_data_stored_RO = []
+        final_params_RO = []
 
         for settings in self.processed.Single_Spline_phase_settings: 
 
@@ -115,7 +137,7 @@ class WinchCurveFitter:
             )
             winch_curve_velocity_data = KP_winch.v_m_list
 
-            curve_data_stored.append(
+            curve_data_stored_SS.append(
                 {
                     "force": winch_curve_force_data,
                     "velocity": winch_curve_velocity_data,
@@ -124,31 +146,28 @@ class WinchCurveFitter:
             )
 
             # Fit parameters to reproduce the true curve
-            fitted_params = self.fit_winch_curve(
+            fitted_spline, v_knots, C_fitted = self.fit_winch_curve(
                 winch_curve_velocity_data, winch_curve_force_data
             )
 
-            final_fitted_params.append(
-                {
-                    "max_tether_force": fitted_params[0],
-                    "min_tether_force": fitted_params[1],
-                    "softplus_beta": fitted_params[2],
-                    "softminus_beta": fitted_params[3],
-                    "slope": fitted_params[4],
-                    "offset": fitted_params[5],
-                    "s": s,
-                    "depower": depower,
-                }
-            )
+            final_params_SS.append({                                 
+                                    "s": s,
+                                    "v_knots": v_knots,
+                                    "C_fitted": C_fitted,
+                                    "depower": depower
+                                    })
 
         # Save the list to a pickle file
         with open("fit_winch_results_Single_Spline_phase_settings.pkl", "wb") as f:
-            pickle.dump(final_fitted_params, f)
+            pickle.dump(final_params_SS, f)
 
-        self.SS_curve_data_stored = curve_data_stored
-        self.SS_final_fitted_params = final_fitted_params
-        
-        # Save the RO winch data
+        self.SS_curve_data_stored = curve_data_stored_SS
+        self.SS_final_params = final_params_SS
+
+        # --------------------------------------------
+        # Run fitting for RO phase
+        # --------------------------------------------
+
         settings = self.processed.RO_phase_settings
 
         s = settings["s"]
@@ -182,7 +201,7 @@ class WinchCurveFitter:
         )
         winch_curve_velocity_data = KP_winch.v_m_list
 
-        curve_data_stored.append(
+        curve_data_stored_RO.append(
             {
                 "force": winch_curve_force_data,
                 "velocity": winch_curve_velocity_data,
@@ -191,56 +210,42 @@ class WinchCurveFitter:
         )
 
         # Fit parameters to reproduce the true curve
-        fitted_params = self.fit_winch_curve(
+        fitted_spline, v_knots, C_fitted = self.fit_winch_curve(
             winch_curve_velocity_data, winch_curve_force_data
         )
 
-        final_fitted_params.append(
-            {
-                "max_tether_force": fitted_params[0],
-                "min_tether_force": fitted_params[1],
-                "softplus_beta": fitted_params[2],
-                "softminus_beta": fitted_params[3],
-                "slope": fitted_params[4],
-                "offset": fitted_params[5],
-                "s": s,
-                "depower": depower,
-            }
-        )
+        final_params_RO.append({"s": s,
+                                "v_knots": v_knots,
+                                "C_fitted": C_fitted,
+                                "depower": depower
+                                })
 
         # Save the list to a pickle file
         with open("fit_winch_results_RO_phase_settings.pkl", "wb") as f:
-            pickle.dump(final_fitted_params, f)
+            pickle.dump(final_params_RO, f)
 
-        self.RO_curve_data_stored = curve_data_stored
-        self.RO_final_fitted_params = final_fitted_params
+        self.RO_curve_data_stored = curve_data_stored_RO
+        self.RO_final_params = final_params_RO
 
-        return self.SS_curve_data_stored, self.SS_final_fitted_params, self.RO_curve_data_stored, self.RO_final_fitted_params
+        return self.SS_curve_data_stored, self.SS_final_params, self.RO_curve_data_stored, self.RO_final_params
 
     # ----------------------------
     # Plot example comparison
     # ----------------------------
-    def plot_example(self, curve_data, fitted_params, phase_index=0):
+    def plot_example(self, curve_data, params, phase_index=0):
         data = curve_data[phase_index]
-        fitted = fitted_params[phase_index]
+        fitted = params[phase_index]
 
         v_data = data["velocity"]
         f_true = data["force"]
 
-        pattern_config = {
-            "force_model": "quadratic",
-            "max_tether_force": fitted["max_tether_force"],
-            "min_tether_force": fitted["min_tether_force"],
-            "softplus": True,
-            "softplus_beta": fitted["softplus_beta"],
-            "softminus": True,
-            "softminus_beta": fitted["softminus_beta"],
-            "slope": fitted["slope"],
-            "offset": fitted["offset"],
-        }
+        T_fun_fit = ca.interpolant(
+            "T_spline_fit",
+            "bspline",
+            [fitted["v_knots"]],
+            np.array(fitted["C_fitted"]),
+        )
 
-        winch_fit = Winch(pattern_config=pattern_config)
-        T_fun_fit = winch_fit.tension_curve
         f_fit = np.array([float(T_fun_fit(v)) for v in v_data])
 
         plt.figure(figsize=(8, 5))
@@ -265,7 +270,7 @@ if __name__ == "__main__":
     fitter.run()
 
     for i in range(len(fitter.processed.Single_Spline_phase_settings)):
-        fitter.plot_example(fitter.SS_curve_data_stored, fitter.SS_final_fitted_params, phase_index=i)
+        fitter.plot_example(fitter.SS_curve_data_stored, fitter.SS_final_params, phase_index=i)
 
     # RO phase example
-    fitter.plot_example(fitter.RO_curve_data_stored, fitter.RO_final_fitted_params, phase_index=0)
+    fitter.plot_example(fitter.RO_curve_data_stored, fitter.RO_final_params, phase_index=0)

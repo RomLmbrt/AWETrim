@@ -139,12 +139,9 @@ def main(run_plots=True, save_csv=True):
     with open("fit_winch_results_RO_phase_settings.pkl", "rb") as f:
         winch_depower_data = pickle.load(f)
 
-    f_max = winch_depower_data[0]["max_tether_force"]
-    f_min = winch_depower_data[0]["min_tether_force"]
-    beta_plus = winch_depower_data[0]["softplus_beta"]
-    beta_minus = winch_depower_data[0]["softminus_beta"]
-    slope = winch_depower_data[0]["slope"]
-    offset = winch_depower_data[0]["offset"]
+    v_knots = winch_depower_data[0]["v_knots"]
+    C_fitted = winch_depower_data[0]["C_fitted"]
+    s = winch_depower_data[0]["s"]
     depower = winch_depower_data[0]["depower"]
 
     depower_norm = (
@@ -153,16 +150,10 @@ def main(run_plots=True, save_csv=True):
 
     Realistic_RO_eg = {
         "reeling_strategy": "force",  # "force" or "constant"
-        "force_model": "quadratic",  # "linear" or "quadratic"
+        "force_model": "custom_spline",  # "linear" or "quadratic"
         "reeling_speed": 0,  # m/s, only for constant reeling
-        "max_tether_force": f_max,  # N, only for force reeling
-        "min_tether_force": f_min,  # N, only for force reeling
-        "softplus": True,
-        "softplus_beta": beta_plus,
-        "softminus": True,
-        "softminus_beta": beta_minus,
-        "slope": slope,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-        "offset": offset,  # m/s
+        "v_knots": v_knots,
+        "C_fitted": C_fitted,
     }
 
     pattern_config = {
@@ -387,5 +378,4 @@ def get_results(run_if_needed=True):
         main(run_plots=False, save_csv=False)
     return AGGREGATED_RESULTS
 
-if __name__ == "__main__":
-    main()
+main()

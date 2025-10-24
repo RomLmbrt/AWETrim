@@ -250,12 +250,8 @@ def main(run_plots=True, save_csv=True):
     time = 0
     for phase_idx in range(len(winch_depower_data)):
 
-        f_max = winch_depower_data[phase_idx]["max_tether_force"]
-        f_min = winch_depower_data[phase_idx]["min_tether_force"]
-        beta_plus = winch_depower_data[phase_idx]["softplus_beta"]
-        beta_minus = winch_depower_data[phase_idx]["softminus_beta"]
-        slope = winch_depower_data[phase_idx]["slope"]
-        offset = winch_depower_data[phase_idx]["offset"]
+        v_knots = winch_depower_data[phase_idx]["v_knots"]
+        C_fitted = winch_depower_data[phase_idx]["C_fitted"]
         s_start = winch_depower_data[phase_idx]["s"]
         depower = winch_depower_data[phase_idx]["depower"]
         if phase_idx == len(winch_depower_data) - 1:
@@ -271,16 +267,10 @@ def main(run_plots=True, save_csv=True):
 
         Realistic_RI_eg = {
             "reeling_strategy": "force",  # "force" or "constant"
-            "force_model": "quadratic",  # "linear" or "quadratic"
+            "force_model": "custom_spline",  # "linear" or "quadratic"
             "reeling_speed": 0,  # m/s, only for constant reeling
-            "max_tether_force": f_max,  # N, only for force reeling
-            "min_tether_force": f_min,  # N, only for force reeling
-            "softplus": True,
-            "softplus_beta": beta_plus,
-            "softminus": True,
-            "softminus_beta": beta_minus,
-            "slope": slope,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-            "offset": offset,  # m/s
+            "v_knots": v_knots,
+            "C_fitted": C_fitted,
         }
 
         pattern_config["start_angle"] = s_start
@@ -567,5 +557,4 @@ def get_initial_conditions(run_if_needed=True):
         main(run_plots=False, save_csv=False)
     return init_conditions_QS, init_conditions_Dyn
 
-if __name__ == "__main__":
-    main()
+main()
