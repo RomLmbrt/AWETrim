@@ -149,7 +149,7 @@ def main(run_plots=True, save_csv=True):
 
     depower_norm = (
         (depower / 100) - 0.4
-    ) / 0.25  # normalize depower between 0 and 1 for V9
+    ) / 0.28  # normalize depower between 0 and 1 for V9
 
     Realistic_RO_eg = {
         "reeling_strategy": "force",  # "force" or "constant"
