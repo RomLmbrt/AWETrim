@@ -149,7 +149,7 @@ def main(run_plots=True, save_csv=True):
 
     depower_norm = (
         (depower / 100) - 0.4
-    ) / 0.28  # normalize depower between 0 and 1 for V9
+    ) / 0.25  # normalize depower between 0 and 1 for V9
 
     Realistic_RO_eg = {
         "reeling_strategy": "force",  # "force" or "constant"
@@ -290,6 +290,8 @@ def main(run_plots=True, save_csv=True):
     extend_phase(phaseDyn, "dynamic", "reel_out")
 
     AGGREGATED_RESULTS = aggregated_data
+    print("Aggregated reel-out timeseries data.")
+    print(aggregated_data.keys())
 
     if save_csv:
         REEL_OUT_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -384,7 +386,6 @@ def get_results(run_if_needed=True):
     if run_if_needed and AGGREGATED_RESULTS is None:
         main(run_plots=False, save_csv=False)
     return AGGREGATED_RESULTS
-
 
 if __name__ == "__main__":
     main()

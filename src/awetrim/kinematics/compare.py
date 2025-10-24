@@ -1,26 +1,115 @@
 from awetrim.kinematics.my_data_processing_single_spline import DataProcessing
+import importlib.util
+import sys
+from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+from awetrim.kinematics.my_data_processing_single_spline import DataProcessing
+
+
 class Compare(DataProcessing):
-    def __init__(self, full_path, cycle_path, waypoint_path):
+    def __init__(self, full_path, cycle_path, waypoint_path, csv_path):
         super().__init__(full_path, cycle_path, waypoint_path)
+        self.csv_path = Path(csv_path)
+        self.df = None
 
-    def plot_CSV_data(self):
+        # Load and process CSV automatically
+        self._import_csv_data()
+        self._set_attributes_from_csv()
 
-        # Example setup
-        segments = ["RO", "Single_Spline"]
-        variables = ["CL", "CD", "Mech_Power", "Vr", "Vtan", "tension_tether_ground"]
+    def _import_csv_data(self):
+        """Read the CSV into a pandas DataFrame."""
+        self.df = pd.read_csv(self.csv_path)
+        print(f"✅ Loaded CSV with {len(self.df)} rows and {len(self.df.columns)} columns")
 
-        # Plot loop
-        for seg in segments:
+    def _set_attributes_from_csv(self):
+        """Extract quasi-steady reel_in/out data and store as class attributes with consistent names."""
+        if self.df is None:
+            raise ValueError("CSV not loaded. Call _import_csv_data first.")
+
+        # Filter only quasi_steady simulation
+        df_qs = self.df[self.df["simulation"] == "quasi_steady"]
+
+        segments_to_extract = ["reel_in", "reel_out"]
+
+        # Mapping from CSV columns → DataProcessing variable names
+        name_map = {
+            "lift_coefficient": "CL",
+            "drag_coefficient": "CD",
+            "mechanical_power": "Mech_Power",
+            "speed_radial": "Vr",
+            "speed_tangential": "Vtan",
+            "tension_tether_ground": "tension_tether_ground",
+            "time": "time",
+        }
+
+        for segment in segments_to_extract:
+            df_seg = df_qs[df_qs["segment"] == segment]
+
+            if df_seg.empty:
+                print(f"⚠️ No data found for segment: {segment}")
+                continue
+
+            for csv_col, var_name in name_map.items():
+                values = df_seg[csv_col].values
+                setattr(self, f"{segment}_{var_name}", values)
+
+            print(f"✅ Stored attributes for segment '{segment}' with mapped variable names.")        
+
+    def _plot_all_data_overlayed(self):
+        """Overlay quasi_steady vs single-spline results for both reel_in and reel_out."""
+        overlay_pairs = [
+            ("reel_in", "Single_Spline"),
+            ("reel_out", "RO"),
+        ]
+
+        variables = [
+            "CL",
+            "CD",
+            "Mech_Power",
+            "Vr",
+            "Vtan",
+            "tension_tether_ground",
+        ]
+
+        for (seg_qs, seg_ref) in overlay_pairs:
             fig, axes = plt.subplots(len(variables), 1, figsize=(8, 12), sharex=True)
-            fig.suptitle(f"{seg} Segment Results", fontsize=14, weight="bold")
+            fig.suptitle(f"Overlay: {seg_qs} (quasi_steady) vs {seg_ref} (reference)", fontsize=14, weight="bold")
+
+            t_qs = getattr(self, f"{seg_qs}_time")
+            t_ref = getattr(self, f"{seg_ref}_time")
+
+            t_diff = t_qs[0] - t_ref[0]
+            print(f"Time offset for {seg_qs} vs {seg_ref}: {t_diff:.4f} s")
+
+            if t_qs[0] < t_ref[0]:
+                t_qs = t_qs - t_diff
+                print(f"Adjusted t_qs start time to {t_qs[0]:.4f} s")
+                print(f"t_ref start time remains {t_ref[0]:.4f} s")
+
+            elif t_ref[0] < t_qs[0]:
+                t_ref = t_ref + t_diff
+                print(f"Adjusted t_ref start time to {t_ref[0]:.4f} s")
+                print(f"t_qs start time remains {t_qs[0]:.4f} s")
 
             for ax, var in zip(axes, variables):
-                y = getattr(self, f"{seg}_{var}")
-                time = getattr(self, f"{seg}_time")
-                ax.plot(time, y, label=f"{seg}_{var}")
+                # quasi steady data
+                y_qs = getattr(self, f"{seg_qs}_{var}")
+                
+
+                # reference data from DataProcessing
+                if var == 'tension_tether_ground':
+                    y_ref = getattr(self, f"{seg_ref}_{var}") * 9.81 # Convert from kgf to N
+                else:
+                    y_ref = getattr(self, f"{seg_ref}_{var}")
+
+                ax.plot(t_qs, y_qs, label=f"{seg_qs} (quasi_steady)", linewidth=1.8)
+                ax.plot(t_ref, y_ref, label=f"{seg_ref} (reference)", linestyle="--", linewidth=1.3)
                 ax.set_ylabel(var)
                 ax.grid(True, linestyle="--", alpha=0.6)
                 ax.legend(loc="upper right", fontsize=8)
@@ -29,13 +118,6 @@ class Compare(DataProcessing):
             plt.tight_layout(rect=[0, 0, 1, 0.97])
             plt.show()
 
-    def plot_QS_data(self):
-        # Placeholder for QS data plotting method
-        pass
-
-    def plot_overlayed_data(self):
-        # Placeholder for overlayed data plotting method
-        pass
 
 if __name__ == "__main__":
     # File paths
@@ -43,6 +125,7 @@ if __name__ == "__main__":
     waypoint_path = f"{base_path}/2025-10-23_09-43-50_ProtoLogger_waypoints.csv"
     full_path = f"{base_path}/2025-10-23_09-43-50_ProtoLogger.csv"
     cycle_path = f"{base_path}/cycle_data_sheet_lines.csv"
+    csv_path = "./results/timeseries/cycle_timeseries.csv"
 
-    compare = Compare(full_path, cycle_path, waypoint_path)
-    compare.plot_CSV_data()
+    compare = Compare(full_path, cycle_path, waypoint_path, csv_path)
+    compare._plot_all_data_overlayed()

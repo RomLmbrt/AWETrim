@@ -21,6 +21,7 @@ PLOT_VARIABLES = [
     "tension_tether_ground",
     "lift_coefficient",
     "drag_coefficient",
+    "mechanical_power",
 ]
 BASE_VARIABLES = PLOT_VARIABLES + [
     "angle_elevation",
@@ -186,9 +187,8 @@ def main(run_plots=True, save_csv=True):
     with open(filename, "rb") as f:
         fit_data = pickle.load(f)
 
-    r0 = fit_data["r1"]
-    r1 = fit_data["r0"]
-    print(r1, r0)
+    r0 = fit_data["r0"]
+    r1 = fit_data["r1"]
     C_az = fit_data["C_az"]
     C_el = fit_data["C_el"]
     s_norm_az = fit_data["s_norm_az"]
@@ -267,7 +267,7 @@ def main(run_plots=True, save_csv=True):
 
         depower_norm = (
             (depower / 100) - 0.4
-        ) / 0.28  # normalize depower between 0 and 1 for V9
+        ) / 0.25  # normalize depower between 0 and 1 for V9
 
         Realistic_RI_eg = {
             "reeling_strategy": "force",  # "force" or "constant"
@@ -558,7 +558,7 @@ def main(run_plots=True, save_csv=True):
 
     init_conditions_QS = init_condit_QS_dict[-1]
     init_conditions_Dyn = init_condit_Dyn_dict[-1]
-    return init_conditions_QS, init_conditions_Dyn
+    return init_conditions_QS, init_conditions_Dyn, AGGREGATED_RESULTS
 
 
 def get_initial_conditions(run_if_needed=True):
@@ -566,7 +566,6 @@ def get_initial_conditions(run_if_needed=True):
     if run_if_needed and (init_conditions_QS is None or init_conditions_Dyn is None):
         main(run_plots=False, save_csv=False)
     return init_conditions_QS, init_conditions_Dyn
-
 
 if __name__ == "__main__":
     main()

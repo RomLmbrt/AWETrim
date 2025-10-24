@@ -185,10 +185,12 @@ def main():
     combined_rows = combine_rows(reel_out_rows, reel_in_rows)
 
     aggregated = aggregate_rows(combined_rows)
+    print(aggregated.keys())
     plot_timeseries(aggregated)
     plot_trajectory(aggregated)
     write_cycle_csv(combined_rows)
 
+    return aggregated
 
 if __name__ == "__main__":
     main()

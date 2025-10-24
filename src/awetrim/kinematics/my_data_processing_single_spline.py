@@ -338,7 +338,7 @@ class DataProcessing:
     def _Single_Spline_segment(self):
         self._assign_transition("pref1", self.RO_RI_idx0, len(self.phase_cyc)-1)
         self._assign_transition("pref2", 0, self.RI_RO_idxf)
-        self._combine_slices("pref1", "pref2", self.RI_RO_idxf, self.RO_RI_idx0, prefix="Single_Spline")
+        self._combine_slices("pref1", "pref2", self.RO_RI_idx0, self.RI_RO_idxf, prefix="Single_Spline")
 
     def _RO_segment(self):
         self._assign_transition("RO", self.RI_RO_idxf, self.RO_RI_idx0)
