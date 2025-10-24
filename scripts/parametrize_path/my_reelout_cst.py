@@ -9,8 +9,8 @@ from pathlib import Path
 
 from awetrim import SystemModel, State
 from awetrim.environment.Wind import Wind
-from awetrim.kinematics.find_Lissajous_RO_start_end_angles import (
-    find_Lissajous_RO_start_end_angles,
+from awetrim.kinematics.find_RO_start_end_angles import (
+    find_RO_start_end_angles,
 )
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
@@ -98,8 +98,8 @@ def main(run_plots=True, save_csv=True):
     with open("./data/LEI-V9-KITE/v9_aero_input.json", "r") as file:
         aero_input_v9 = json.load(file)
 
-    # ---------- Load precomputed Lissajous fit data ----------
-    segment_name = "LISSAJOUS"
+    # ---------- Load precomputed L_shape fit data ----------
+    segment_name = "L_shape"
     filename = f"fit_results_{segment_name}.pkl"
     with open(filename, "rb") as f:
         fit_data = pickle.load(f)
@@ -131,7 +131,7 @@ def main(run_plots=True, save_csv=True):
         "kappa": 0,
     }
 
-    s_start_opt, range_opt, cycles = find_Lissajous_RO_start_end_angles(
+    s_start_opt, range_opt, cycles = find_RO_start_end_angles(
         pattern_type, parameters
     )
 

@@ -1,4 +1,4 @@
-from awetrim.kinematics.my_data_processing_single_spline import DataProcessing
+from awetrim.kinematics.my_DP import DataProcessing
 import importlib.util
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
-from awetrim.kinematics.my_data_processing_single_spline import DataProcessing
+from awetrim.kinematics.my_DP import DataProcessing
 
 
 class Compare(DataProcessing):
@@ -64,7 +64,7 @@ class Compare(DataProcessing):
     def _plot_all_data_overlayed(self):
         """Overlay results for both reel_in and reel_out."""
         overlay_pairs = [
-            ("reel_in", "Single_Spline"),
+            ("reel_in", "RI_Spline"),
             ("reel_out", "RO"),
         ]
 

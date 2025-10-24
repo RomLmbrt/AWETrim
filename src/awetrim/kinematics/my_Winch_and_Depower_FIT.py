@@ -4,7 +4,7 @@ import pickle
 import casadi as ca
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
-from awetrim.kinematics.my_Winch_and_Depower_data_processing import Winch_and_Depower_data_processing
+from awetrim.kinematics.my_Winch_and_Depower_DP import Winch_and_Depower_data_processing
 from awetrim.system.winch import Winch
 from awetrim.kinematics.winch_force_curve import (
     WinchControllerCharacteristics,
@@ -78,6 +78,7 @@ class WinchCurveFitter:
             method="trf",
             loss="soft_l1",
             f_scale=0.5,
+            verbose=2,
         )
 
         # Build final spline model with fitted parameters
@@ -95,7 +96,7 @@ class WinchCurveFitter:
         return fitted_spline, self.v_knots, self.C_fitted
 
     # --------------------------------------------
-    # Run fitting for all Single_Spline phases
+    # Run fitting for all RI_Spline phases
     # --------------------------------------------
     def run(self):
         curve_data_stored_SS = []
@@ -104,7 +105,7 @@ class WinchCurveFitter:
         curve_data_stored_RO = []
         final_params_RO = []
 
-        for settings in self.processed.Single_Spline_phase_settings: 
+        for settings in self.processed.RI_Spline_phase_settings: 
 
             s = settings["s"]
             depower = settings["depower"]
@@ -158,7 +159,7 @@ class WinchCurveFitter:
                                     })
 
         # Save the list to a pickle file
-        with open("fit_winch_results_Single_Spline_phase_settings.pkl", "wb") as f:
+        with open("fit_winch_results_RI_Spline_phase_settings.pkl", "wb") as f:
             pickle.dump(final_params_SS, f)
 
         self.SS_curve_data_stored = curve_data_stored_SS
@@ -269,7 +270,7 @@ if __name__ == "__main__":
     fitter = WinchCurveFitter(json_path, base_path)
     fitter.run()
 
-    for i in range(len(fitter.processed.Single_Spline_phase_settings)):
+    for i in range(len(fitter.processed.RI_Spline_phase_settings)):
         fitter.plot_example(fitter.SS_curve_data_stored, fitter.SS_final_params, phase_index=i)
 
     # RO phase example

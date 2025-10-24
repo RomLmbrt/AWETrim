@@ -4,7 +4,7 @@ import pickle
 from scipy.optimize import least_squares
 
 from awetrim.kinematics.parametrized_patterns import CasadiSpline, CST_Lissajous
-from awetrim.kinematics.my_data_processing_single_spline import (
+from awetrim.kinematics.my_DP import (
     DataProcessing,
 )  # Your refactored DataProcessing class
 
@@ -28,6 +28,84 @@ class Fitting(DataProcessing):
         # Initialize DataProcessing parent class
         super().__init__(file_path_full, file_path_cycle, file_path_waypoints, cyc_idx)
         self.n_ctrl = n_ctrl_pts
+    
+    # -------------------------------------------------------------------------
+    # ------------------------ Lissajous Segment Setup ------------------------
+    # -------------------------------------------------------------------------
+    def _setup_lissajous_segment(self):
+        """Prepare data for Lissajous fitting from RO Lissajous."""
+        self.L_shape_r0 = self.L_shape_r[0]
+        self.L_shape_u_vals = np.linspace(0, 2 * np.pi, len(self.L_shape_az))
+
+    def FitLissajous(self):
+        """Run least-squares Lissajous fitting."""
+        fixed_params = {
+            "omega": 1,
+            "r0": self.L_shape_r0,
+            "kappa": 0.0,
+            "kbeta": 0.0,
+            "width_phi": 0.5,
+            "width_beta": 0.5,
+            "left_first": True,
+            "normalize_bumps": False,
+            "repeat_phi": True,
+            "repeat_beta": True,
+            "k_vr": 2716,
+        }
+        n_coeffs = 5
+        params_init = {
+            "az_amp0": 0.34,
+            "beta_amp0": 0.08,
+            "beta0": 0.48,
+            "beta_coeffs": list(np.random.uniform(-1, 1, n_coeffs)),
+            "az_coeffs": list(np.random.uniform(-1, 1, n_coeffs)),
+        }
+        x0 = np.concatenate(
+            [
+                [params_init["az_amp0"]],
+                [params_init["beta_amp0"]],
+                [params_init["beta0"]],
+                params_init["beta_coeffs"],
+                params_init["az_coeffs"],
+            ]
+        )
+        lower_bounds = [0, 0, 0] + [-2] * n_coeffs + [-2] * n_coeffs
+        upper_bounds = [2, 1, 1] + [2] * n_coeffs + [2] * n_coeffs
+
+        def unpack_params(x):
+            return {
+                "az_amp0": x[0],
+                "beta_amp0": x[1],
+                "beta0": x[2],
+                "beta_coeffs": x[3 : 3 + n_coeffs].tolist(),
+                "az_coeffs": x[3 + n_coeffs :].tolist(),
+                **fixed_params,
+            }
+
+        def residual(x):
+            params = unpack_params(x)
+            obj = CST_Lissajous(**params)
+            az_model = obj.azimuth(params["r0"], self.L_shape_u_vals)
+            el_model = obj.elevation(params["r0"], self.L_shape_u_vals)
+            return np.concatenate(
+                (self.L_shape_az - az_model, self.L_shape_el - el_model)
+            ).ravel()
+
+        res = least_squares(
+            residual,
+            x0,
+            bounds=(lower_bounds, upper_bounds),
+            ftol=1e-8,
+            xtol=1e-8,
+            gtol=1e-8,
+            verbose=2,
+        )
+
+        self.best_params = unpack_params(res.x)
+        obj = CST_Lissajous(**self.best_params)
+        self.L_shape_az_fit = obj.azimuth(self.best_params["r0"], self.L_shape_u_vals)
+        self.L_shape_el_fit = obj.elevation(self.best_params["r0"], self.L_shape_u_vals)
+        print("✅ Lissajous fitting completed.")
 
     # -------------------------------------------------------------------------
     # ------------------------- Spline Segment Setup --------------------------
@@ -36,12 +114,12 @@ class Fitting(DataProcessing):
         """Prepare data for spline fitting based on segment."""
 
         self.data_az, self.data_el, self.u_vals, self.r0, self.r1, self.data_r = (
-            self.Single_Spline_az,
-            self.Single_Spline_el,
-            self.Single_Spline_u_vals,
-            self.Single_Spline_r0,
-            self.Single_Spline_r1,
-            self.Single_Spline_r,
+            self.RI_Spline_az,
+            self.RI_Spline_el,
+            self.RI_Spline_u_vals,
+            self.RI_Spline_r0,
+            self.RI_Spline_r1,
+            self.RI_Spline_r,
         )
 
         # Initial control points
@@ -141,10 +219,10 @@ class Fitting(DataProcessing):
             s_norm_el=self.u_vals[self.fitted_indices_el],
         )
 
-        self.az_fit = np.array(
+        self.spline_az_fit = np.array(
             self.final_spline.azimuth(1.0, self.u_vals).full()
         ).ravel()
-        self.el_fit = np.array(
+        self.spline_el_fit = np.array(
             self.final_spline.elevation(1.0, self.u_vals).full()
         ).ravel()
 
@@ -170,7 +248,7 @@ class Fitting(DataProcessing):
         )
 
         axes[0].plot(self.u_vals, self.data_az, "b-", label="Data", linewidth=2)
-        axes[0].plot(self.u_vals, self.az_fit, "r--", label="Fitted", linewidth=2)
+        axes[0].plot(self.u_vals, self.spline_az_fit, "r--", label="Fitted", linewidth=2)
         if show_control_points:
             axes[0].scatter(
                 self.u_vals[self.fitted_indices_az],
@@ -188,7 +266,7 @@ class Fitting(DataProcessing):
         axes[0].grid(True, alpha=0.3)
 
         axes[1].plot(self.u_vals, self.data_el, "b-", label="Data", linewidth=2)
-        axes[1].plot(self.u_vals, self.el_fit, "r--", label="Fitted", linewidth=2)
+        axes[1].plot(self.u_vals, self.spline_el_fit, "r--", label="Fitted", linewidth=2)
         if show_control_points:
             axes[1].scatter(
                 self.u_vals[self.fitted_indices_el],
@@ -211,9 +289,9 @@ class Fitting(DataProcessing):
     # -------------------------------------------------------------------------
     # ------------------------- Unified Save ---------------------------------
     # -------------------------------------------------------------------------
-    def save_data(self):
-        """Save fitted spline or Lissajous results to pickle."""
-        filename = f"fit_results_Single_Spline.pkl"
+    def save_data_RI_spline(self):
+        """Save fitted spline results to pickle."""
+        filename = f"fit_results_RI_Spline.pkl"
         fitted_data = {
             "n_ctrl": self.n_ctrl,
             "s_norm_az": self.u_vals[self.fitted_indices_az],
@@ -231,7 +309,27 @@ class Fitting(DataProcessing):
         }
         with open(filename, "wb") as f:
             pickle.dump(fitted_data, f)
-        print(f"💾 Saved Single_Spline results to {filename}")
+        print(f"💾 Saved RI_Spline results to {filename}")
+    
+    def save_data_L_shape(self):
+        """Save fitted spline or L_shape results to pickle."""
+        self.segment = "L_shape"
+        filename = f"fit_results_{self.segment}.pkl"
+
+        fitted_data = {
+            "segment_name": self.segment,
+            "best_params": self.best_params,
+            "u_vals": self.L_shape_u_vals,
+            "r0": self.L_shape_r0,
+            "duration": self.L_shape_duration,
+            "data_az": self.L_shape_az,
+            "data_el": self.L_shape_el,
+            "az_fit": self.L_shape_az_fit,
+            "el_fit": self.L_shape_el_fit,
+        }
+        with open(filename, "wb") as f:
+            pickle.dump(fitted_data, f)
+        print(f"💾 Saved {self.segment} results to {filename}")
 
     # -----------------------------------------------------------------------------
     # Function to plot the 3 splines on one 3D cycle trajectory for validation
@@ -243,7 +341,7 @@ class Fitting(DataProcessing):
         y_cyc = self.y_cyc
         z_cyc = self.z_cyc
 
-        x, y, z = self._sph2cart(self.az_fit, self.el_fit, self.data_r)
+        x, y, z = self._sph2cart(self.spline_az_fit, self.spline_el_fit, self.data_r)
 
         fig = plt.figure(figsize=(12, 10))
         ax = fig.add_subplot(111, projection="3d")
@@ -297,7 +395,7 @@ class Fitting(DataProcessing):
     def plot_spline_sph(self):
         fig, axes = plt.subplots(2, 1, figsize=(10, 12))
         axes[0].plot(
-            self.u_vals, self.az_fit, "r-", label="Fitted Azimuth", linewidth=2
+            self.u_vals, self.spline_az_fit, "r-", label="Fitted Azimuth", linewidth=2
         )
         axes[0].plot(
             self.u_vals, self.data_az, "b--", label="Data Azimuth", linewidth=2
@@ -308,7 +406,7 @@ class Fitting(DataProcessing):
         axes[0].grid(True, alpha=0.3)
 
         axes[1].plot(
-            self.u_vals, self.el_fit, "g-", label="Fitted Elevation", linewidth=2
+            self.u_vals, self.spline_el_fit, "g-", label="Fitted Elevation", linewidth=2
         )
         axes[1].plot(
             self.u_vals, self.data_el, "b--", label="Data Elevation", linewidth=2
@@ -320,6 +418,18 @@ class Fitting(DataProcessing):
 
         plt.tight_layout()
         plt.show()
+
+    def plot_fit_L_shape(self, title_prefix=""):
+        fig = plt.figure()
+        plt.plot(self.L_shape_az_fit, self.L_shape_el_fit, "r-", label="Fitted Lissajous")
+        plt.plot(self.L_shape_az, self.L_shape_el, "b--", label="Data")
+        plt.xlabel("Azimuth (rad)")
+        plt.ylabel("Elevation (rad)")
+        plt.title(f"{title_prefix} Lissajous Fit")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        return fig, None
 
 
 # =============================================================================
@@ -337,96 +447,102 @@ if __name__ == "__main__":
 
     fit = Fitting(full_path, cycle_path, waypoint_path, cyc_idx=0, n_ctrl_pts=25)
 
+    fit._setup_lissajous_segment()
     fit._setup_spline_segment()
+
     fit.FitSpline()
-    fit.save_data()
+    fit.save_data_RI_spline()
     fit.plot_spline_cart()
 
-    print(fit.u_vals[-1])
+    fit.FitLissajous()
+    fit.save_data_L_shape()
+    fit.plot_fit_L_shape()
 
-    fit.plot_spline_sph()
+    # print(fit.u_vals[-1])
 
-    if fit.az_fit[-1] == fit.data_az[-1]:
-        print("Max s check passed: final azimuth matches data azimuth.")
-    else:
-        print("Max s check failed: final azimuth does not match data azimuth.")
-        print(fit.az_fit[-1], fit.data_az[-1])
+    # fit.plot_spline_sph()
 
-    if fit.el_fit[-1] == fit.data_el[-1]:
-        print("Max s check passed: final elevation matches data elevation.")
-    else:
-        print("Max s check failed: final elevation does not match data elevation.")
-        print(fit.el_fit[-1], fit.data_el[-1])
+    # if fit.az_fit[-1] == fit.data_az[-1]:
+    #     print("Max s check passed: final azimuth matches data azimuth.")
+    # else:
+    #     print("Max s check failed: final azimuth does not match data azimuth.")
+    #     print(fit.az_fit[-1], fit.data_az[-1])
 
-    s = np.linspace(0, 1, len(fit.data_az))
-    az = []
-    el = []
-    for i in s:
-        a = np.array(fit.final_spline.azimuth(1.0, i).full()).ravel()[0]
-        e = np.array(fit.final_spline.elevation(1.0, i).full()).ravel()[0]
-        az.append(a)
-        el.append(e)
-    print("Done evaluating final spline at high resolution.")
+    # if fit.el_fit[-1] == fit.data_el[-1]:
+    #     print("Max s check passed: final elevation matches data elevation.")
+    # else:
+    #     print("Max s check failed: final elevation does not match data elevation.")
+    #     print(fit.el_fit[-1], fit.data_el[-1])
 
-    plt.figure()
-    plt.plot(s, az, "r-", label="Fitted Azimuth")
-    plt.plot(fit.u_vals, fit.data_az, "b--", label="Data Azimuth")
-    plt.show()
+    # s = np.linspace(0, 1, len(fit.data_az))
+    # az = []
+    # el = []
+    # for i in s:
+    #     a = np.array(fit.final_spline.azimuth(1.0, i).full()).ravel()[0]
+    #     e = np.array(fit.final_spline.elevation(1.0, i).full()).ravel()[0]
+    #     az.append(a)
+    #     el.append(e)
+    # print("Done evaluating final spline at high resolution.")
 
-    plt.figure()
-    plt.plot(s, el, "r-", label="Fitted Elevation")
-    plt.plot(fit.u_vals, fit.data_el, "b--", label="Data Elevation")
-    plt.show()
+    # plt.figure()
+    # plt.plot(s, az, "r-", label="Fitted Azimuth")
+    # plt.plot(fit.u_vals, fit.data_az, "b--", label="Data Azimuth")
+    # plt.show()
 
-    # ---------- Load precomputed fit data ----------
-    segment_name = "Single_Spline"
+    # plt.figure()
+    # plt.plot(s, el, "r-", label="Fitted Elevation")
+    # plt.plot(fit.u_vals, fit.data_el, "b--", label="Data Elevation")
+    # plt.show()
 
-    filename = f"fit_results_{segment_name}.pkl"
-    with open(filename, "rb") as f:
-        fit_data = pickle.load(f)
+    # # ---------- Load precomputed fit data ----------
+    # segment_name = "RI_Spline"
 
-    r0 = fit_data["r0"]
-    r1 = fit_data["r1"]
-    C_az = fit_data["C_az"]
-    C_el = fit_data["C_el"]
-    s_norm_az = fit_data["s_norm_az"]
-    s_norm_el = fit_data["s_norm_el"]
+    # filename = f"fit_results_{segment_name}.pkl"
+    # with open(filename, "rb") as f:
+    #     fit_data = pickle.load(f)
 
-    # r0=None, r1=None, C_az=None, C_el=None, s_norm_az=None, s_norm_el=None
+    # r0 = fit_data["r0"]
+    # r1 = fit_data["r1"]
+    # C_az = fit_data["C_az"]
+    # C_el = fit_data["C_el"]
+    # s_norm_az = fit_data["s_norm_az"]
+    # s_norm_el = fit_data["s_norm_el"]
 
-    obj = CasadiSpline(
-        r0=r0,
-        r1=r1,
-        C_az=C_az,
-        C_el=C_el,
-        s_norm_az=s_norm_az,
-        s_norm_el=s_norm_el,
-    )
+    # # r0=None, r1=None, C_az=None, C_el=None, s_norm_az=None, s_norm_el=None
 
-    s = np.linspace(0, 1, len(fit.data_az))
-    az = []
-    el = []
-    for i in s:
-        az_spline = az.append((obj.azimuth(1, i).full().ravel()[0]))
-        el_spline = el.append((obj.elevation(1, i).full().ravel()[0]))
+    # obj = CasadiSpline(
+    #     r0=r0,
+    #     r1=r1,
+    #     C_az=C_az,
+    #     C_el=C_el,
+    #     s_norm_az=s_norm_az,
+    #     s_norm_el=s_norm_el,
+    # )
 
-    # print(az)
-    # # print(el)
+    # s = np.linspace(0, 1, len(fit.data_az))
+    # az = []
+    # el = []
+    # for i in s:
+    #     az_spline = az.append((obj.azimuth(1, i).full().ravel()[0]))
+    #     el_spline = el.append((obj.elevation(1, i).full().ravel()[0]))
 
-    plt.figure()
-    plt.plot(s, az, "r-", label="Fitted Azimuth")
-    # plt.plot(fit.u_vals, fit.data_az, 'b--', label='Data Azimuth')
-    plt.title("Azimuth vs u parameter from loaded spline")
-    plt.xlabel("u parameter")
-    plt.ylabel("Azimuth (rad)")
-    plt.grid(True, alpha=0.3)
-    plt.show()
+    # # print(az)
+    # # # print(el)
 
-    plt.figure()
-    plt.plot(s, el, "g-", label="Fitted Elevation")
-    # plt.plot(fit.u_vals, fit.data_el, 'b--', label='Data Elevation')
-    plt.title("Elevation vs u parameter from loaded spline")
-    plt.xlabel("u parameter")
-    plt.ylabel("Elevation (rad)")
-    plt.grid(True, alpha=0.3)
-    plt.show()
+    # plt.figure()
+    # plt.plot(s, az, "r-", label="Fitted Azimuth")
+    # # plt.plot(fit.u_vals, fit.data_az, 'b--', label='Data Azimuth')
+    # plt.title("Azimuth vs u parameter from loaded spline")
+    # plt.xlabel("u parameter")
+    # plt.ylabel("Azimuth (rad)")
+    # plt.grid(True, alpha=0.3)
+    # plt.show()
+
+    # plt.figure()
+    # plt.plot(s, el, "g-", label="Fitted Elevation")
+    # # plt.plot(fit.u_vals, fit.data_el, 'b--', label='Data Elevation')
+    # plt.title("Elevation vs u parameter from loaded spline")
+    # plt.xlabel("u parameter")
+    # plt.ylabel("Elevation (rad)")
+    # plt.grid(True, alpha=0.3)
+    # plt.show()

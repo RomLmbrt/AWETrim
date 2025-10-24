@@ -2,7 +2,7 @@ from awetrim.kinematics.parametrized_patterns import create_pattern_from_dict
 import numpy as np
 from scipy.optimize import least_squares
 
-def find_Lissajous_RO_start_end_angles(pattern_type, parameters):
+def find_RO_start_end_angles(pattern_type, parameters):
     s_start_init = 1.36 * np.pi
     range_init = 1.45 * np.pi
     cycles = 1

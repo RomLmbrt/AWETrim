@@ -72,16 +72,16 @@ class DataProcessing:
 
         self._extract_cycle_slice()
 
-        self._extract_RO_segment()
+        self._extract_csv_RO_segment()
 
-        # --- Find Lissajous bounds on RO data ---
-        self._find_lissajous_bounds()
+        self._find_lissajous_shape_bounds()
 
-        # --- Find transitions and compute normalized distances (u) ---
         self._find_RI_RO_transition()
+
         self._find_RO_RI_transition()
 
-        self._Single_Spline_segment()
+        self._RI_Spline_segment()
+
         self._RO_segment()
 
     # -------------------------
@@ -152,65 +152,87 @@ class DataProcessing:
         self.Mech_Power_cyc = self.Mech_Power[s:f]
 
     # -------------------------
-    # Reel-Out (RO_) extraction
+    # CSV Reel-Out extraction
     # -------------------------
-    def _extract_RO_segment(self):
+    def _extract_csv_RO_segment(self):
         """RO is cycle portion before RI start (indices relative to cycle)."""
 
-        self.RO_idxf = next(
+        self.csv_RO_idxf = next(
             (i for i, tag in enumerate(self.phase_cyc) if tag.lower() in ["pp-rori"]),
             None,
         )
 
-        s, f = 0, self.RO_idxf
-        self.RO_az = self.az_cyc[s:f]
-        self.RO_el = self.el_cyc[s:f]
-        self.RO_r = self.r_cyc[s:f]
-        self.RO_x = self.x_cyc[s:f]
-        self.RO_y = self.y_cyc[s:f]
-        self.RO_z = self.z_cyc[s:f]
-        # derivatives on RO signals (used in Lissajous detection / transition heuristics)
-        self.daz_RO = np.gradient(self.RO_az)
-        self.del_RO = np.gradient(self.RO_el)
-        self.RO_r0 = self.RO_r[0]
+        self.csv_RO_idx0 = 0
 
-    # -------------------------
-    # Lissajous detection on RO
-    # -------------------------
-    def _find_lissajous_bounds(self):
+        self._assign_transition("csv_RO", self.csv_RO_idx0, self.csv_RO_idxf)
+
+        self.csv_RO_daz = np.gradient(self.csv_RO_az)
+        self.csv_RO_del = np.gradient(self.csv_RO_el)
+
+    # ----------------------------------
+    # Lissajous loop detection on CSV RO
+    # ----------------------------------
+    def _find_lissajous_shape_bounds(self):
         """
-        Find start and end indices for a consistent Lissajous loop on RO data.
+        Find start and end indices for a single consistent Lissajous loop on CSV RO data.
         Heuristic: small azimuth near zero, positive derivatives, limited elevation.
         """
-        self.Lissajous_p0 = []
-        self.Lissajous_pf = []
+        self.L_shape_p0 = []
+        self.L_shape_pf = []
         start_found = False
-        self.Lissajous_idx0 = None
-        self.Lissajous_idxf = None
+        self.L_shape_idx0 = None
+        self.L_shape_idxf = None
 
-        for i in range(self.RO_idxf+1):
+        for i in range(self.csv_RO_idxf+1):
             cond = (
-                self.daz_RO[i] > 0
-                and self.del_RO[i] > 0
-                and -0.01 <= self.RO_az[i] <= 0.01
-                and self.RO_el[i] <= 0.5
+                self.csv_RO_daz[i] > 0
+                and self.csv_RO_del[i] > 0
+                and -0.01 <= self.csv_RO_az[i] <= 0.01
+                and self.csv_RO_el[i] <= 0.5
             )
             if cond and not start_found:
-                self.Lissajous_idx0 = i
-                self.Lissajous_p0.append((self.RO_az[i], self.RO_el[i]))
+                self.L_shape_idx0 = i
+                self.L_shape_p0.append((self.csv_RO_az[i], self.csv_RO_el[i]))
                 start_found = True
-            elif cond and start_found and i > self.Lissajous_idx0 + 10:
-                self.Lissajous_idxf = i
-                self.Lissajous_pf.append((self.RO_az[i], self.RO_el[i]))
+            elif cond and start_found and i > self.L_shape_idx0 + 10:
+                self.L_shape_idxf = i
+                self.L_shape_pf.append((self.csv_RO_az[i], self.csv_RO_el[i]))
                 break
 
-        if not start_found or self.Lissajous_idxf is None:
+        if not start_found or self.L_shape_idxf is None:
             raise ValueError("No valid Lissajous pattern found in Reel-Out data")
 
         # store truncated Lissajous signals (azimuth / elevation)
-        self.Lissajous_az = self.RO_az[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
-        self.Lissajous_el = self.RO_el[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
-        self.Lissajous_r = self.RO_r[self.Lissajous_idx0 : self.Lissajous_idxf + 1]
+        self.L_shape_az = self.csv_RO_az[self.L_shape_idx0 : self.L_shape_idxf + 1]
+        self.L_shape_el = self.csv_RO_el[self.L_shape_idx0 : self.L_shape_idxf + 1]
+        self.L_shape_r = self.csv_RO_r[self.L_shape_idx0 : self.L_shape_idxf + 1]
+        self.L_shape_duration = self.csv_RO_time[self.L_shape_idxf] - self.csv_RO_time[self.L_shape_idx0]
+
+    def _find_RI_RO_transition(self):
+        """
+        Find end index of RI->RO transition (search before L_shape_idx0).
+        Original heuristic: az_cyc[i] < 0 and csv_RO_del[i] < 0 and csv_RO_daz[i] < 0
+        """
+        self.RI_RO_idxf = None
+        for i in range(self.L_shape_idx0):
+            if self.az_cyc[i] < 0 and self.csv_RO_del[i] < 0 and self.csv_RO_daz[i] < 0:
+                self.RI_RO_idxf = i
+                break
+        if self.RI_RO_idxf is None:
+            raise ValueError("No valid end point found for the RI->RO transition in the reel-out data.")
+
+    def _find_RO_RI_transition(self):
+        """
+        Find start index of RO->RI transition (search between L_shape_idxf and RI_idx0).
+        Heuristic: az_cyc[i] > 0.1 and csv_RO_del[i] > 0 and csv_RO_daz[i] < 0 and el_cyc[i] < 0.25
+        """
+        self.RO_RI_idx0 = None
+        for i in range(self.L_shape_idxf, len(self.phase_cyc)-1):
+            if self.az_cyc[i] > 0.1 and self.csv_RO_del[i] > 0 and self.csv_RO_daz[i] < 0 and self.el_cyc[i] < 0.25:
+                self.RO_RI_idx0 = i
+                break
+        if self.RO_RI_idx0 is None:
+            raise ValueError("No valid start point found for the RO->RI transition in the reel-out data.")
 
     # -------------------------
     # Transitions detection & assignment helpers
@@ -262,7 +284,7 @@ class DataProcessing:
         setattr(self, f"{prefix}_vf", np.array([dx_slice[-1], dy_slice[-1], dz_slice[-1]]))
         setattr(self, f"{prefix}_u_vals", self._compute_u(x_slice, y_slice, z_slice))
 
-    def _combine_slices(self, slice1, slice2, i0, i1, prefix = "Single_Spline"):
+    def _combine_slices(self, slice1, slice2, i0, i1, prefix = "RI_Spline"):
         # Combine the slices for the RI_RO transition
         az_combined = np.concatenate((getattr(self, f"{slice1}_az"), getattr(self, f"{slice2}_az")))
         el_combined = np.concatenate((getattr(self, f"{slice1}_el"), getattr(self, f"{slice2}_el")))
@@ -309,39 +331,17 @@ class DataProcessing:
         setattr(self, f"{prefix}_vf", np.array([dx_combined[-1], dy_combined[-1], dz_combined[-1]]))
         setattr(self, f"{prefix}_u_vals", self._compute_u(x_combined, y_combined, z_combined))
 
-    def _find_RI_RO_transition(self):
-        """
-        Find end index of RI->RO transition (search before Lissajous_idx0).
-        Original heuristic: az_cyc[i] < 0 and del_RO[i] < 0 and daz_RO[i] < 0
-        """
-        self.RI_RO_idxf = None
-        for i in range(self.Lissajous_idx0):
-            if self.az_cyc[i] < 0 and self.del_RO[i] < 0 and self.daz_RO[i] < 0:
-                self.RI_RO_idxf = i
-                break
-        if self.RI_RO_idxf is None:
-            raise ValueError("No valid end point found for the RI->RO transition in the reel-out data.")
-
-    def _find_RO_RI_transition(self):
-        """
-        Find start index of RO->RI transition (search between Lissajous_idxf and RI_idx0).
-        Heuristic: az_cyc[i] > 0.1 and del_RO[i] > 0 and daz_RO[i] < 0 and el_cyc[i] < 0.25
-        """
-        self.RO_RI_idx0 = None
-        for i in range(self.Lissajous_idxf, len(self.phase_cyc)-1):
-            if self.az_cyc[i] > 0.1 and self.del_RO[i] > 0 and self.daz_RO[i] < 0 and self.el_cyc[i] < 0.25:
-                self.RO_RI_idx0 = i
-                break
-        if self.RO_RI_idx0 is None:
-            raise ValueError("No valid start point found for the RO->RI transition in the reel-out data.")
-
-    def _Single_Spline_segment(self):
+    def _RI_Spline_segment(self):
         self._assign_transition("pref1", self.RO_RI_idx0, len(self.phase_cyc)-1)
         self._assign_transition("pref2", 0, self.RI_RO_idxf)
-        self._combine_slices("pref1", "pref2", self.RO_RI_idx0, self.RI_RO_idxf, prefix="Single_Spline")
+        self._combine_slices("pref1", "pref2", self.RO_RI_idx0, self.RI_RO_idxf, prefix="RI_Spline")
+        self.RI_spline_idx0 = self.RO_RI_idx0
+        self.RI_spline_idxf = self.RI_RO_idxf
 
     def _RO_segment(self):
         self._assign_transition("RO", self.RI_RO_idxf, self.RO_RI_idx0)
+        self.RO_idx0 = self.RI_RO_idxf
+        self.RO_idxf = self.RO_RI_idx0
 
     # -------------------------
     # Plotting helpers (call plt.show() automatically)
@@ -355,19 +355,66 @@ class DataProcessing:
             title="Full Cycle Path",
         )
 
-    def plot_Single_Spline_3D(self):
+    def plot_RI_Spline_3D(self):
         """Plot the cycle and highlight the Single Spline segment."""
         self._plot3d_generic(
             self.x_cyc,
             self.y_cyc,
             self.z_cyc,
-            seg=(self.Single_Spline_x, self.Single_Spline_y, self.Single_Spline_z),
+            seg=(self.RI_Spline_x, self.RI_Spline_y, self.RI_Spline_z),
             seg_label="Single Spline Fit",
-            start=self.Single_Spline_p0_cart,
-            end=self.Single_Spline_pf_cart,
+            start=self.RI_Spline_p0_cart,
+            end=self.RI_Spline_pf_cart,
             title="Single Spline Fit",
         )
 
+    def plot_Lissajous_path2D(self):
+        """
+        2D Lissajous plot (azimuth vs elevation) on the RO Lissajous segment.
+        Mirrors your original plotting style and labels.
+        """
+        plt.figure()
+        plt.plot(self.L_shape_az, self.L_shape_el, label="Lissajous (az vs el)")
+        # use stored endpoints lists (they contain tuples)
+        p0 = self.L_shape_p0[0] if self.L_shape_p0 else (self.L_shape_az[0], self.L_shape_el[0])
+        pf = self.L_shape_pf[0] if self.L_shape_pf else (self.L_shape_az[-1], self.L_shape_el[-1])
+        plt.scatter(p0[0], p0[1], color="green", label="Lissajous Start Point")
+        plt.scatter(pf[0], pf[1], color="red", label="Lissajous End Point")
+        plt.xlabel("Azimuth (rad)")
+        plt.ylabel("Elevation (rad)")
+        plt.title("Kite Path During Reel-Out Phase (Lissajous)")
+        plt.legend()
+        plt.show()
+
+    def plot_Lissajous_path3D(self):
+        """
+        3D plot of the Reel-Out path with Lissajous start/end and whole RO start/end markers.
+        """
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+        ax.plot(self.csv_RO_x, self.csv_RO_y, self.csv_RO_z, label="Reel-Out Path")
+        ax.scatter(
+            self.csv_RO_x[self.L_shape_idx0],
+            self.csv_RO_y[self.L_shape_idx0],
+            self.csv_RO_z[self.L_shape_idx0],
+            color="green",
+            label="Lissajous Start Point",
+        )
+        ax.scatter(
+            self.csv_RO_x[self.L_shape_idxf],
+            self.csv_RO_y[self.L_shape_idxf],
+            self.csv_RO_z[self.L_shape_idxf],
+            color="red",
+            label="Lissajous End Point",
+        )
+        ax.scatter(self.csv_RO_x[0], self.csv_RO_y[0], self.csv_RO_z[0], color="blue", label="RO Start Point")
+        ax.scatter(self.csv_RO_x[-1], self.csv_RO_y[-1], self.csv_RO_z[-1], color="orange", label="RO End Point")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
+        ax.set_title("3D Kite Path During Reel-Out Phase")
+        ax.legend()
+        plt.show()
 
 if __name__ == "__main__":
     # File paths
@@ -378,4 +425,6 @@ if __name__ == "__main__":
 
     dp = DataProcessing(full_path, cycle_path, waypoint_path, cyc_idx=0)
     dp.plot_cycle_3D()
-    dp.plot_Single_Spline_3D()
+    dp.plot_RI_Spline_3D()
+    dp.plot_Lissajous_path2D()
+    dp.plot_Lissajous_path3D()

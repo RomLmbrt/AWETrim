@@ -1,5 +1,5 @@
 import numpy as np
-from awetrim.kinematics.my_data_processing_single_spline import DataProcessing
+from awetrim.kinematics.my_DP import DataProcessing
 import json
 import matplotlib.pyplot as plt
 
@@ -97,10 +97,10 @@ class Winch_and_Depower_data_processing(DataProcessing):
         self.Lissajous_RO_duration_time = self.time_cyc[self.end] - self.time_cyc[self.start]
 
         # Duration Single Spline in indices
-        self.Single_Spline_duration_idx = len(self.time_cyc) - self.Lissajous_RO_duration_idx
+        self.RI_Spline_duration_idx = len(self.time_cyc) - self.Lissajous_RO_duration_idx
 
         # Duration Single Spline in time
-        self.Single_Spline_duration_time = self.time_cyc[-1] - self.Lissajous_RO_duration_time
+        self.RI_Spline_duration_time = self.time_cyc[-1] - self.Lissajous_RO_duration_time
 
         # Waypoint data
         self.time_cyc_norm = self.time_cyc - self.time_cyc[0]
@@ -347,7 +347,7 @@ class Winch_and_Depower_data_processing(DataProcessing):
         return self.phase_start_indices, self.phase_start_times
     
     def _get_winch_phase_settings(self):
-        self.Single_Spline_phase_settings =[{
+        self.RI_Spline_phase_settings =[{
                 "s": 0,
                 "f_low": self.f_low[self.start],
                 "f_high": self.f_high[self.start],
@@ -366,11 +366,11 @@ class Winch_and_Depower_data_processing(DataProcessing):
         for idx in self.phase_start_indices:
             if idx >= self.start:
                 self.rel_idx.append(idx - self.start)
-                s_value = self.Single_Spline_u_vals[idx - self.start]
+                s_value = self.RI_Spline_u_vals[idx - self.start]
                 self.rel_s.append(s_value)
             elif idx <= self.end:
                 self.rel_idx.append(idx+(len(self.time_cyc)- 1 - self.start))
-                s_value = self.Single_Spline_u_vals[idx+(len(self.time_cyc)- 1 - self.start)]
+                s_value = self.RI_Spline_u_vals[idx+(len(self.time_cyc)- 1 - self.start)]
                 self.rel_s.append(s_value)
 
             settings = {
@@ -384,11 +384,11 @@ class Winch_and_Depower_data_processing(DataProcessing):
                 "kp_f": self.kp_f[idx],
                 "depower": self.depower[idx],
             }
-            self.Single_Spline_phase_settings.append(settings)
+            self.RI_Spline_phase_settings.append(settings)
 
         self.rel_s.sort()
         self.rel_idx.sort()
-        self.Single_Spline_phase_settings.sort(key=lambda d: d["s"])
+        self.RI_Spline_phase_settings.sort(key=lambda d: d["s"])
 
         self.winch_phases_s_values = self.rel_s # All relative to single spline (excluding the reelout Lissajous portion of the cycle)
         print(f"\nWinch phases s values (Single Spline): {self.winch_phases_s_values}\n")
@@ -405,7 +405,7 @@ class Winch_and_Depower_data_processing(DataProcessing):
                 "depower": self.depower[self.end+1],
             }
 
-        return self.Single_Spline_phase_settings, self.winch_phases_s_values, self.RO_phase_settings
+        return self.RI_Spline_phase_settings, self.winch_phases_s_values, self.RO_phase_settings
 
 if __name__ == "__main__":
     # File paths

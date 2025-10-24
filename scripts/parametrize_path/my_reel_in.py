@@ -181,7 +181,7 @@ def main(run_plots=True, save_csv=True):
         wind_model,
     )
     # ---------- Load precomputed spline fit data ----------
-    segment_name = "Single_Spline"  # input("Enter segment name (e.g., 'RI' or 'RI_RO' or 'RO_RI or 'Single_Spline'): ").strip()
+    segment_name = "RI_Spline"  # input("Enter segment name (e.g., 'RI' or 'RI_RO' or 'RO_RI or 'RI_Spline'): ").strip()
 
     filename = f"fit_results_{segment_name}.pkl"
     with open(filename, "rb") as f:
@@ -213,8 +213,8 @@ def main(run_plots=True, save_csv=True):
 
     # ---------Load winch and depower data ----------
 
-    if segment_name == "Single_Spline":
-        with open("fit_winch_results_Single_Spline_phase_settings.pkl", "rb") as f:
+    if segment_name == "RI_Spline":
+        with open("fit_winch_results_RI_Spline_phase_settings.pkl", "rb") as f:
             winch_depower_data = pickle.load(f)
 
     init_condit_QS_dict = [
