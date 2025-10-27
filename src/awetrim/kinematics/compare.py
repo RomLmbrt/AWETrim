@@ -17,7 +17,7 @@ class Compare(DataProcessing):
         super().__init__(full_path, cycle_path, waypoint_path)
         self.csv_path = Path(csv_path)
         self.df = None
-        self.sim_type = "quasi_steady" 
+        self.sim_type = "quasi_steady"
         # Load and process CSV automatically
         self._import_csv_data()
         self._set_attributes_from_csv()
@@ -25,7 +25,9 @@ class Compare(DataProcessing):
     def _import_csv_data(self):
         """Read the CSV into a pandas DataFrame."""
         self.df = pd.read_csv(self.csv_path)
-        print(f"✅ Loaded CSV with {len(self.df)} rows and {len(self.df.columns)} columns")
+        print(
+            f"✅ Loaded CSV with {len(self.df)} rows and {len(self.df.columns)} columns"
+        )
 
     def _set_attributes_from_csv(self):
         """Extract quasi-steady reel_in/out data and store as class attributes with consistent names."""
@@ -59,7 +61,9 @@ class Compare(DataProcessing):
                 values = df_seg[csv_col].values
                 setattr(self, f"{segment}_{var_name}", values)
 
-            print(f"✅ Stored attributes for segment '{segment}' with mapped variable names.")        
+            print(
+                f"✅ Stored attributes for segment '{segment}' with mapped variable names."
+            )
 
     def _plot_all_data_overlayed(self):
         """Overlay results for both reel_in and reel_out."""
@@ -69,17 +73,19 @@ class Compare(DataProcessing):
         ]
 
         variables = [
-            "CL",
-            "CD",
             "Mech_Power",
             "Vr",
             "Vtan",
             "tension_tether_ground",
         ]
 
-        for (seg_qs, seg_ref) in overlay_pairs:
-            fig, axes = plt.subplots(len(variables), 1, figsize=(8, 12), sharex=True)
-            fig.suptitle(f"Overlay: {seg_qs} {self.sim_type} vs {seg_ref} (reference)", fontsize=14, weight="bold")
+        for seg_qs, seg_ref in overlay_pairs:
+            fig, axes = plt.subplots(len(variables), 1, figsize=(12, 12), sharex=True)
+            fig.suptitle(
+                f"Overlay: {seg_qs} {self.sim_type} vs {seg_ref} (reference)",
+                fontsize=14,
+                weight="bold",
+            )
 
             t_qs = getattr(self, f"{seg_qs}_time")
             t_ref = getattr(self, f"{seg_ref}_time")
@@ -100,16 +106,23 @@ class Compare(DataProcessing):
             for ax, var in zip(axes, variables):
                 # quasi steady data
                 y_qs = getattr(self, f"{seg_qs}_{var}")
-                
 
                 # reference data from DataProcessing
-                if var == 'tension_tether_ground':
-                    y_ref = getattr(self, f"{seg_ref}_{var}") * 9.81 # Convert from kgf to N
+                if var == "tension_tether_ground":
+                    y_ref = (
+                        getattr(self, f"{seg_ref}_{var}") * 9.81
+                    )  # Convert from kgf to N
                 else:
                     y_ref = getattr(self, f"{seg_ref}_{var}")
 
                 ax.plot(t_qs, y_qs, label=f"{seg_qs} {self.sim_type}", linewidth=1.8)
-                ax.plot(t_ref, y_ref, label=f"{seg_ref} (reference)", linestyle="--", linewidth=1.3)
+                ax.plot(
+                    t_ref,
+                    y_ref,
+                    label=f"{seg_ref} (reference)",
+                    linestyle="--",
+                    linewidth=1.3,
+                )
                 ax.set_ylabel(var)
                 ax.grid(True, linestyle="--", alpha=0.6)
                 ax.legend(loc="upper right", fontsize=8)

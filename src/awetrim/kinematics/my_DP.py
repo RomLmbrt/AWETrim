@@ -18,20 +18,23 @@ class DataProcessing:
     def __init__(self, file_path_full, file_path_cycle, file_path_waypoints, cyc_idx=0):
         # --- Load CSVs ---
         self.wp_df = pd.read_csv(file_path_waypoints)
-        self.full_df = pd.read_csv(file_path_full, delim_whitespace=True)
+        self.full_df = pd.read_csv(file_path_full)
         self.cycle_df = pd.read_csv(file_path_cycle)
         self.cyc_idx = cyc_idx
 
         # --- Time preprocessing (rounded to 0.1s like original) ---
         self.wp_df["time_s"] = np.round(self._to_seconds(self.wp_df["time_string"]), 1)
-        self.full_df["time_s"] = np.round(self._to_seconds(self.full_df["time_of_day"]), 1)
-        self.cycle_df["start_time_s"] = np.round(self._to_seconds(self.cycle_df["start_time_cycle_LT"]), 1)
+        self.full_df["time_s"] = np.round(
+            self._to_seconds(self.full_df["time_of_day"]), 1
+        )
+        self.cycle_df["start_time_s"] = np.round(
+            self._to_seconds(self.cycle_df["start_time_cycle_LT"]), 1
+        )
 
         # --- Full arrays ---
         self.time_waypoints = self.wp_df["time_s"].to_numpy()
         self.time_full = self.full_df["time_s"].to_numpy()
         self.time_cycles = self.cycle_df["start_time_s"].to_numpy()
-
 
         # primary spherical signals
         self.az_full = self.full_df["kite_azimuth"].astype(float).to_numpy()
@@ -41,17 +44,25 @@ class DataProcessing:
         self.crs_full = self.full_df["kite_course"].astype(float).to_numpy()
         self.depower_full = self.full_df["kite_actual_depower"].astype(float).to_numpy()
 
-        self.tension_tether_ground_full = self.full_df["ground_tether_force"].astype(float).to_numpy() # Kg
+        self.tension_tether_ground_full = (
+            self.full_df["ground_tether_force"].astype(float).to_numpy()
+        )  # Kg
         self.CL = self.full_df["lift_coeff"].astype(float).to_numpy()
         self.CD = self.full_df["drag_coeff"].astype(float).to_numpy()
         self.Mech_Power = self.full_df["ground_mech_power"].astype(float).to_numpy()
-        self.Vtan = self.full_df["kite_tangential_velocity_mps"].astype(float).to_numpy() # m/s
-        self.Vr = self.full_df["ground_tether_reelout_speed"].astype(float).to_numpy() # m/s
+        self.Vtan = (
+            self.full_df["kite_tangential_velocity_mps"].astype(float).to_numpy()
+        )  # m/s
+        self.Vr = (
+            self.full_df["ground_tether_reelout_speed"].astype(float).to_numpy()
+        )  # m/s
 
         self.wp_names = self.wp_df["waypoint_name"].astype(str).to_numpy()
 
         # Cartesian & derivatives for full dataset
-        self.x_full, self.y_full, self.z_full = self._sph2cart(self.az_full, self.el_full, self.r_full)
+        self.x_full, self.y_full, self.z_full = self._sph2cart(
+            self.az_full, self.el_full, self.r_full
+        )
         self.dx_full, self.dy_full, self.dz_full = (
             np.gradient(self.x_full),
             np.gradient(self.y_full),
@@ -59,7 +70,9 @@ class DataProcessing:
         )
 
         # --- Cycle selection (cyc_) ---
-        start_indices = [i for i, t in enumerate(self.time_full) if t in self.time_cycles]
+        start_indices = [
+            i for i, t in enumerate(self.time_full) if t in self.time_cycles
+        ]
         if self.cyc_idx >= len(start_indices) - 1:
             raise IndexError("cyc_idx out of range")
         self.cyc_idx0 = start_indices[self.cyc_idx]
@@ -90,7 +103,10 @@ class DataProcessing:
     def _to_seconds(self, series):
         """Convert HH:MM:SS.sss strings to seconds."""
         return np.array(
-            [float(h) * 3600 + float(m) * 60 + float(s) for h, m, s in (str(t).split(":") for t in series)]
+            [
+                float(h) * 3600 + float(m) * 60 + float(s)
+                for h, m, s in (str(t).split(":") for t in series)
+            ]
         )
 
     def _sph2cart(self, az, el, r):
@@ -101,13 +117,24 @@ class DataProcessing:
         return x, y, z
 
     def _compute_u(self, x, y, z):
-        """Return normalized cumulative distance along (x,y,z)."""        
+        """Return normalized cumulative distance along (x,y,z)."""
         cart = np.vstack([x, y, z]).T
         dist = np.cumsum(np.linalg.norm(np.diff(cart, axis=0), axis=1))
         dist = np.insert(dist, 0, 0.0)
         return dist / dist[-1]
 
-    def _plot3d_generic(self, x, y, z, seg=None, seg_label=None, seg_color="orange", start=None, end=None, title=None):
+    def _plot3d_generic(
+        self,
+        x,
+        y,
+        z,
+        seg=None,
+        seg_label=None,
+        seg_color="orange",
+        start=None,
+        end=None,
+        title=None,
+    ):
         """Small helper to plot a main path and an optional highlighted segment."""
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
@@ -118,7 +145,9 @@ class DataProcessing:
             ax.scatter(*start, color="g", label="Start")
         if end is not None:
             ax.scatter(*end, color="r", label="End")
-        ax.set_xlabel("X (m)"); ax.set_ylabel("Y (m)"); ax.set_zlabel("Z (m)")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
         if title:
             ax.set_title(title)
         ax.legend()
@@ -183,7 +212,7 @@ class DataProcessing:
         self.L_shape_idx0 = None
         self.L_shape_idxf = None
 
-        for i in range(self.csv_RO_idxf+1):
+        for i in range(self.csv_RO_idxf + 1):
             cond = (
                 self.csv_RO_daz[i] > 0
                 and self.csv_RO_del[i] > 0
@@ -206,7 +235,9 @@ class DataProcessing:
         self.L_shape_az = self.csv_RO_az[self.L_shape_idx0 : self.L_shape_idxf + 1]
         self.L_shape_el = self.csv_RO_el[self.L_shape_idx0 : self.L_shape_idxf + 1]
         self.L_shape_r = self.csv_RO_r[self.L_shape_idx0 : self.L_shape_idxf + 1]
-        self.L_shape_duration = self.csv_RO_time[self.L_shape_idxf] - self.csv_RO_time[self.L_shape_idx0]
+        self.L_shape_duration = (
+            self.csv_RO_time[self.L_shape_idxf] - self.csv_RO_time[self.L_shape_idx0]
+        )
 
     def _find_RI_RO_transition(self):
         """
@@ -219,7 +250,9 @@ class DataProcessing:
                 self.RI_RO_idxf = i
                 break
         if self.RI_RO_idxf is None:
-            raise ValueError("No valid end point found for the RI->RO transition in the reel-out data.")
+            raise ValueError(
+                "No valid end point found for the RI->RO transition in the reel-out data."
+            )
 
     def _find_RO_RI_transition(self):
         """
@@ -227,12 +260,19 @@ class DataProcessing:
         Heuristic: az_cyc[i] > 0.1 and csv_RO_del[i] > 0 and csv_RO_daz[i] < 0 and el_cyc[i] < 0.25
         """
         self.RO_RI_idx0 = None
-        for i in range(self.L_shape_idxf, len(self.phase_cyc)-1):
-            if self.az_cyc[i] > 0.1 and self.csv_RO_del[i] > 0 and self.csv_RO_daz[i] < 0 and self.el_cyc[i] < 0.25:
+        for i in range(self.L_shape_idxf, len(self.phase_cyc) - 1):
+            if (
+                self.az_cyc[i] > 0.1
+                and self.csv_RO_del[i] > 0
+                and self.csv_RO_daz[i] < 0
+                and self.el_cyc[i] < 0.25
+            ):
                 self.RO_RI_idx0 = i
                 break
         if self.RO_RI_idx0 is None:
-            raise ValueError("No valid start point found for the RO->RI transition in the reel-out data.")
+            raise ValueError(
+                "No valid start point found for the RO->RI transition in the reel-out data."
+            )
 
     # -------------------------
     # Transitions detection & assignment helpers
@@ -274,34 +314,81 @@ class DataProcessing:
         setattr(self, f"{prefix}_tension_tether_ground", tension_slice)
         setattr(self, f"{prefix}_p0_sph", np.array([az_slice[0], el_slice[0]]))
         setattr(self, f"{prefix}_pf_sph", np.array([az_slice[-1], el_slice[-1]]))
-        setattr(self, f"{prefix}_p0_cart", np.array([x_slice[0], y_slice[0], z_slice[0]]))
-        setattr(self, f"{prefix}_pf_cart", np.array([x_slice[-1], y_slice[-1], z_slice[-1]]))
+        setattr(
+            self, f"{prefix}_p0_cart", np.array([x_slice[0], y_slice[0], z_slice[0]])
+        )
+        setattr(
+            self, f"{prefix}_pf_cart", np.array([x_slice[-1], y_slice[-1], z_slice[-1]])
+        )
         setattr(self, f"{prefix}_r0", self.r_cyc[i0])
         setattr(self, f"{prefix}_r1", self.r_cyc[i1])
         setattr(self, f"{prefix}_crs0", self.crs_cyc[i0])
         setattr(self, f"{prefix}_crsf", self.crs_cyc[i1])
         setattr(self, f"{prefix}_v0", np.array([dx_slice[0], dy_slice[0], dz_slice[0]]))
-        setattr(self, f"{prefix}_vf", np.array([dx_slice[-1], dy_slice[-1], dz_slice[-1]]))
+        setattr(
+            self, f"{prefix}_vf", np.array([dx_slice[-1], dy_slice[-1], dz_slice[-1]])
+        )
         setattr(self, f"{prefix}_u_vals", self._compute_u(x_slice, y_slice, z_slice))
 
-    def _combine_slices(self, slice1, slice2, i0, i1, prefix = "RI_Spline"):
+    def _combine_slices(self, slice1, slice2, i0, i1, prefix="RI_Spline"):
         # Combine the slices for the RI_RO transition
-        az_combined = np.concatenate((getattr(self, f"{slice1}_az"), getattr(self, f"{slice2}_az")))
-        el_combined = np.concatenate((getattr(self, f"{slice1}_el"), getattr(self, f"{slice2}_el")))
-        x_combined = np.concatenate((getattr(self, f"{slice1}_x"), getattr(self, f"{slice2}_x")))
-        y_combined = np.concatenate((getattr(self, f"{slice1}_y"), getattr(self, f"{slice2}_y")))
-        z_combined = np.concatenate((getattr(self, f"{slice1}_z"), getattr(self, f"{slice2}_z")))
-        dx_combined = np.concatenate((getattr(self, f"{slice1}_dx"), getattr(self, f"{slice2}_dx")))
-        dy_combined = np.concatenate((getattr(self, f"{slice1}_dy"), getattr(self, f"{slice2}_dy")))
-        dz_combined = np.concatenate((getattr(self, f"{slice1}_dz"), getattr(self, f"{slice2}_dz")))
-        r_combined = np.concatenate((getattr(self, f"{slice1}_r"), getattr(self, f"{slice2}_r")))
-        CL_combined = np.concatenate((getattr(self, f"{slice1}_CL"), getattr(self, f"{slice2}_CL")))
-        CD_combined = np.concatenate((getattr(self, f"{slice1}_CD"), getattr(self, f"{slice2}_CD")))
-        time_combined = np.concatenate((getattr(self, f"{slice1}_time"), getattr(self, f"{slice2}_time")+(getattr(self, f"{slice1}_time")[-1])))
-        Vr_combined = np.concatenate((getattr(self, f"{slice1}_Vr"), getattr(self, f"{slice2}_Vr")))
-        Vtan_combined = np.concatenate((getattr(self, f"{slice1}_Vtan"), getattr(self, f"{slice2}_Vtan")))
-        Mech_Power_combined = np.concatenate((getattr(self, f"{slice1}_Mech_Power"), getattr(self, f"{slice2}_Mech_Power")))
-        tension_combined = np.concatenate((getattr(self, f"{slice1}_tension_tether_ground"), getattr(self, f"{slice2}_tension_tether_ground")))
+        az_combined = np.concatenate(
+            (getattr(self, f"{slice1}_az"), getattr(self, f"{slice2}_az"))
+        )
+        el_combined = np.concatenate(
+            (getattr(self, f"{slice1}_el"), getattr(self, f"{slice2}_el"))
+        )
+        x_combined = np.concatenate(
+            (getattr(self, f"{slice1}_x"), getattr(self, f"{slice2}_x"))
+        )
+        y_combined = np.concatenate(
+            (getattr(self, f"{slice1}_y"), getattr(self, f"{slice2}_y"))
+        )
+        z_combined = np.concatenate(
+            (getattr(self, f"{slice1}_z"), getattr(self, f"{slice2}_z"))
+        )
+        dx_combined = np.concatenate(
+            (getattr(self, f"{slice1}_dx"), getattr(self, f"{slice2}_dx"))
+        )
+        dy_combined = np.concatenate(
+            (getattr(self, f"{slice1}_dy"), getattr(self, f"{slice2}_dy"))
+        )
+        dz_combined = np.concatenate(
+            (getattr(self, f"{slice1}_dz"), getattr(self, f"{slice2}_dz"))
+        )
+        r_combined = np.concatenate(
+            (getattr(self, f"{slice1}_r"), getattr(self, f"{slice2}_r"))
+        )
+        CL_combined = np.concatenate(
+            (getattr(self, f"{slice1}_CL"), getattr(self, f"{slice2}_CL"))
+        )
+        CD_combined = np.concatenate(
+            (getattr(self, f"{slice1}_CD"), getattr(self, f"{slice2}_CD"))
+        )
+        time_combined = np.concatenate(
+            (
+                getattr(self, f"{slice1}_time"),
+                getattr(self, f"{slice2}_time") + (getattr(self, f"{slice1}_time")[-1]),
+            )
+        )
+        Vr_combined = np.concatenate(
+            (getattr(self, f"{slice1}_Vr"), getattr(self, f"{slice2}_Vr"))
+        )
+        Vtan_combined = np.concatenate(
+            (getattr(self, f"{slice1}_Vtan"), getattr(self, f"{slice2}_Vtan"))
+        )
+        Mech_Power_combined = np.concatenate(
+            (
+                getattr(self, f"{slice1}_Mech_Power"),
+                getattr(self, f"{slice2}_Mech_Power"),
+            )
+        )
+        tension_combined = np.concatenate(
+            (
+                getattr(self, f"{slice1}_tension_tether_ground"),
+                getattr(self, f"{slice2}_tension_tether_ground"),
+            )
+        )
 
         setattr(self, f"{prefix}_az", az_combined)
         setattr(self, f"{prefix}_el", el_combined)
@@ -321,20 +408,42 @@ class DataProcessing:
         setattr(self, f"{prefix}_tension_tether_ground", tension_combined)
         setattr(self, f"{prefix}_p0_sph", np.array([az_combined[0], el_combined[0]]))
         setattr(self, f"{prefix}_pf_sph", np.array([az_combined[-1], el_combined[-1]]))
-        setattr(self, f"{prefix}_p0_cart", np.array([x_combined[0], y_combined[0], z_combined[0]]))
-        setattr(self, f"{prefix}_pf_cart", np.array([x_combined[-1], y_combined[-1], z_combined[-1]]))
+        setattr(
+            self,
+            f"{prefix}_p0_cart",
+            np.array([x_combined[0], y_combined[0], z_combined[0]]),
+        )
+        setattr(
+            self,
+            f"{prefix}_pf_cart",
+            np.array([x_combined[-1], y_combined[-1], z_combined[-1]]),
+        )
         setattr(self, f"{prefix}_r0", self.r_cyc[i0])
         setattr(self, f"{prefix}_r1", self.r_cyc[i1])
         setattr(self, f"{prefix}_crs0", self.crs_cyc[i0])
         setattr(self, f"{prefix}_crsf", self.crs_cyc[i1])
-        setattr(self, f"{prefix}_v0", np.array([dx_combined[0], dy_combined[0], dz_combined[0]]))
-        setattr(self, f"{prefix}_vf", np.array([dx_combined[-1], dy_combined[-1], dz_combined[-1]]))
-        setattr(self, f"{prefix}_u_vals", self._compute_u(x_combined, y_combined, z_combined))
+        setattr(
+            self,
+            f"{prefix}_v0",
+            np.array([dx_combined[0], dy_combined[0], dz_combined[0]]),
+        )
+        setattr(
+            self,
+            f"{prefix}_vf",
+            np.array([dx_combined[-1], dy_combined[-1], dz_combined[-1]]),
+        )
+        setattr(
+            self,
+            f"{prefix}_u_vals",
+            self._compute_u(x_combined, y_combined, z_combined),
+        )
 
     def _RI_Spline_segment(self):
-        self._assign_transition("pref1", self.RO_RI_idx0, len(self.phase_cyc)-1)
+        self._assign_transition("pref1", self.RO_RI_idx0, len(self.phase_cyc) - 1)
         self._assign_transition("pref2", 0, self.RI_RO_idxf)
-        self._combine_slices("pref1", "pref2", self.RO_RI_idx0, self.RI_RO_idxf, prefix="RI_Spline")
+        self._combine_slices(
+            "pref1", "pref2", self.RO_RI_idx0, self.RI_RO_idxf, prefix="RI_Spline"
+        )
         self.RI_spline_idx0 = self.RO_RI_idx0
         self.RI_spline_idxf = self.RI_RO_idxf
 
@@ -376,8 +485,16 @@ class DataProcessing:
         plt.figure()
         plt.plot(self.L_shape_az, self.L_shape_el, label="Lissajous (az vs el)")
         # use stored endpoints lists (they contain tuples)
-        p0 = self.L_shape_p0[0] if self.L_shape_p0 else (self.L_shape_az[0], self.L_shape_el[0])
-        pf = self.L_shape_pf[0] if self.L_shape_pf else (self.L_shape_az[-1], self.L_shape_el[-1])
+        p0 = (
+            self.L_shape_p0[0]
+            if self.L_shape_p0
+            else (self.L_shape_az[0], self.L_shape_el[0])
+        )
+        pf = (
+            self.L_shape_pf[0]
+            if self.L_shape_pf
+            else (self.L_shape_az[-1], self.L_shape_el[-1])
+        )
         plt.scatter(p0[0], p0[1], color="green", label="Lissajous Start Point")
         plt.scatter(pf[0], pf[1], color="red", label="Lissajous End Point")
         plt.xlabel("Azimuth (rad)")
@@ -407,14 +524,27 @@ class DataProcessing:
             color="red",
             label="Lissajous End Point",
         )
-        ax.scatter(self.csv_RO_x[0], self.csv_RO_y[0], self.csv_RO_z[0], color="blue", label="RO Start Point")
-        ax.scatter(self.csv_RO_x[-1], self.csv_RO_y[-1], self.csv_RO_z[-1], color="orange", label="RO End Point")
+        ax.scatter(
+            self.csv_RO_x[0],
+            self.csv_RO_y[0],
+            self.csv_RO_z[0],
+            color="blue",
+            label="RO Start Point",
+        )
+        ax.scatter(
+            self.csv_RO_x[-1],
+            self.csv_RO_y[-1],
+            self.csv_RO_z[-1],
+            color="orange",
+            label="RO End Point",
+        )
         ax.set_xlabel("X (m)")
         ax.set_ylabel("Y (m)")
         ax.set_zlabel("Z (m)")
         ax.set_title("3D Kite Path During Reel-Out Phase")
         ax.legend()
         plt.show()
+
 
 if __name__ == "__main__":
     # File paths
