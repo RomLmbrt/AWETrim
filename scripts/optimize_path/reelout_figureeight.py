@@ -16,7 +16,7 @@ file_path = "./data/LEI-V9-KITE/v9_aero_input.json"
 with open(file_path, "r") as file:
     aero_input = json.load(file)
 
-speed_wind_at_100 = 10  # m/s
+speed_wind_at_100 = 7  # m/s
 
 wind = Wind(
     wind_model="uniform",  # logarithmic
@@ -63,7 +63,7 @@ N = 1
 mass_wing = 60
 mass_kcu = 30
 area_wing = 46.85
-tension_min = 3000
+tension_min = 4000
 tension_max = 25000
 tether_diameter = 0.01
 tether = RigidLumpedTether(diameter=tether_diameter)
@@ -75,8 +75,8 @@ for i in range(N):
         "path_parameters": {
             "omega": 1.0,
             "r0": 230.0,
-            "az_amp0": 0.698,
-            "beta_amp0": 0.2,
+            "az_amp0": 0.51,
+            "beta_amp0": 0.15,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
@@ -86,7 +86,7 @@ for i in range(N):
             "beta_coeffs": np.array([0, 0, 0, 0, 0]),
             "az_coeffs": [0, 0, 0, 0, 0],
             "kbeta": 0,
-            "beta0": 0.6,
+            "beta0": 0.56,
             "kappa": 0,
         },
         "radial_parameters": {
@@ -113,7 +113,7 @@ for i in range(N):
             "beta0",
             "beta_coeffs",
             # "kappa",
-            # "slope",
+            "slope",
             # "offset",
         ],
     }
@@ -191,10 +191,10 @@ fig, axes_map, _ = phases_qs[0].plot_overview_3d(
     color=colors[0],
     linestyle="--",
     variables=[
-        "speed_tangential",
+        "s_dot",
         "tension_tether_ground",
         "input_steering",
-        "mechanical_power",
+        "speed_radial",
     ],
     x_param="s",
 )
@@ -203,10 +203,10 @@ phases_qs[-1].plot_overview_3d(
     color=colors[1] if len(colors) > 1 else None,
     linestyle="-",
     variables=[
-        "speed_tangential",
+        "s_dot",
         "tension_tether_ground",
         "input_steering",
-        "mechanical_power",
+        "speed_radial",
     ],
     x_param="s",
     axes=axes_map,

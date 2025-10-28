@@ -114,7 +114,7 @@ DEFAULT_OPTI_LIMITS = {
     "rz": (60, 180),  # Range for rz: 0 to 100
     "ky": (0.5, 1),  # Range for ky: 0 to 100
     "kz": (0.5, 1),  # Range for kz: 0 to 100
-    "vr": (0.5, 4),  # Range for vr: 0 to 100
+    "vr": (-2, 6),  # Range for vr: 0 to 100
     "az_amp0": (
         np.radians(0),
         np.radians(50),
@@ -125,7 +125,7 @@ DEFAULT_OPTI_LIMITS = {
     ),  # Range for beta amplitude: 5 to 20 degrees
     "beta_coeffs": (-1, 1),  # Range for beta coefficients: -1 to 1
     "az_coeffs": (-1, 1),  # Range for azimuth coefficients: -1 to 1
-    "speed_radial": (0.2, 6),
+    "speed_radial": (-2, 6),
     "distance_radial": (100, 2000),
     "k_vr": (0.5, 1.5),
     "slope": (100, 8000),  # Range for slope in winch model
@@ -139,10 +139,14 @@ DEFAULT_SPLINE_PATTERN_CONFIG = {
     "parameters": {
         "r0": 300,
         "r1": 150,
-        "C_az": np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)),
-        "C_el": np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)),
+        "C_az": np.deg2rad(
+            np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)
+        ),
+        "C_el": np.deg2rad(
+            np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)
+        ),
         "s_norm_az": np.linspace(0, 1, 10),
-            "s_norm_el": np.linspace(0,1,10),
-        },
-        "optimization_parameters": {}
+        "s_norm_el": np.linspace(0, 1, 10),
+    },
+    "optimization_parameters": {},
 }

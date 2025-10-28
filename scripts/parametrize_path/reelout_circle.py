@@ -17,7 +17,7 @@ mass_kcu = 10
 area_wing = 19.75
 tether_diameter = 0.01
 
-speed_wind_at_100 = 7.6374
+speed_wind_at_100 = 10
 wind = Wind(
     wind_model="logarithmic",
     z0=0.0002,
@@ -52,9 +52,9 @@ pattern_config = {
         "kappa": 0,
     },
     "radial_parameters": {
-        "reeling_strategy": "force",  # "force" or "constant"
+        "reeling_strategy": "constant",  # "force" or "constant"
         "force_model": "quadratic",  # "linear" or "quadratic"
-        "reeling_speed": 0.0,  # m/s, only for constant reeling
+        "reeling_speed": 1.0,  # m/s, only for constant reeling
         "max_tether_force": 2e4,  # N, only for force reeling
         "min_tether_force": 2000.0,  # N, only for force reeling
         "softplus": True,

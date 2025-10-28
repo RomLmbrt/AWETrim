@@ -12,7 +12,7 @@ from awetrim.system.tether import RigidLinkTether
 from awetrim import State
 from awetrim.system.kite import Kite
 from awetrim.system.winch import Winch
-
+from awetrim.utils.sparsity_analysis import stiffness_report
 import logging
 
 
@@ -392,7 +392,6 @@ class PhaseParameterized(TimeSeries):
             self.states.append(new_state.to_dict())
 
     def run_simulation_opti_phase(self, start_state):
-        # warm-start with a simulated trajectory (QS uses dt = ds / s_dot)
 
         opti = ca.Opti()
         self.run_simulation_phase(start_state, return_states=True)
@@ -404,7 +403,6 @@ class PhaseParameterized(TimeSeries):
         )
         # Replace optimized parameters with symbolic variables
         path_params = copy.deepcopy(self.pattern_config.get("path_parameters", {}))
-        optimization_params = self.pattern_config.get("optimization_parameters", [])
         radial_params = copy.deepcopy(self.pattern_config.get("radial_parameters", {}))
 
         pattern = create_pattern_from_dict(
@@ -430,6 +428,7 @@ class PhaseParameterized(TimeSeries):
         winch_model = Winch(pattern_config=radial_params)
         km_copy = self.substitute_parametrized_kinematics(pattern)
         self.km_param = km_copy
+
         # --- Decision variables per node (N nodes for intervals 0..N-1)
         opti_vars = {
             "s_dot": opti.variable(N),  # tangential speed
@@ -442,7 +441,7 @@ class PhaseParameterized(TimeSeries):
         for var in self.optimization_vars:
             opti_vars[var] = self.optimization_vars[var]
 
-        # Warm starts from simulation
+        # --- Warm starts from simulation
         opti.set_initial(opti_vars["s_dot"], self.return_variable("s_dot"))
         opti.set_initial(
             opti_vars["input_steering"], self.return_variable("input_steering")
@@ -457,15 +456,20 @@ class PhaseParameterized(TimeSeries):
             opti_vars["tension_tether_ground"],
             self.return_variable("tension_tether_ground"),
         )
+
         # Fix initial radius
         opti.subject_to(
             opti_vars["distance_radial"][0]
             == self.return_variable("distance_radial")[0]
         )
 
-        # Build model functions
+        # --- Build model functions
         km_copy.establish_residual()
-        flat = [ca.vertcat(*self.optimization_vars.values())]
+        flat_syms = (
+            [ca.vertcat(*self.optimization_vars.values())]
+            if self.optimization_vars
+            else []
+        )
 
         residual = ca.Function(
             "residual",
@@ -477,7 +481,7 @@ class PhaseParameterized(TimeSeries):
                 km_copy.speed_radial,
                 km_copy.distance_radial,
             ]
-            + flat,
+            + flat_syms,
             [km_copy.residual],
         )
         tether_tension_eq = ca.Function(
@@ -490,25 +494,49 @@ class PhaseParameterized(TimeSeries):
                 km_copy.distance_radial,
                 km_copy.tension_tether_ground,
             ]
-            + flat,
+            + flat_syms,
             [km_copy.tension_tether_equation],
         )
 
-        # Safety / geometry constraint
+        # --- Safety / geometry constraint
         height = pattern.z(opti_vars["distance_radial"], s_grid[:-1])  # N entries
         opti.subject_to(height >= 50)
 
         # --- Power scale based on the simulated trajectory (LEFT RULE, consistent)
-        P_scale = opti.parameter()
         t_hist = self.return_variable("t")  # length N (QS) or N+1
         P_hist = self.return_variable("mechanical_power")  # same length
         dt_hist = np.diff(t_hist)  # length N-1
         E0 = float(np.sum(P_hist[:-1] * dt_hist))  # left Riemann sum
         T0 = float(np.sum(dt_hist))
         P0 = E0 / (T0 + 1e-12)
-        opti.set_value(P_scale, max(abs(P0), 1.0))
+        P_scale = max(abs(P0), 1.0)
         print(f"Initial P0: {P0}")
-        # Helpful bounds to keep NLP well-posed
+
+        # --- Auto scales from warm start (robust to outliers)
+        def _scale(x, floor=1.0):
+            x = np.asarray(x).ravel()
+            if x.size == 0:
+                return float(floor)
+            s = np.percentile(np.abs(x), 90)  # “typical large” value
+            return float(max(s, floor))
+
+        r_hist = self.return_variable("distance_radial")
+        vr_hist = self.return_variable("speed_radial")
+        sd_hist = self.return_variable("s_dot")
+        T_hist = self.return_variable("tension_tether_ground")
+        u_hist = self.return_variable("input_steering")
+
+        S = {
+            "r": _scale(r_hist, floor=1.0),
+            "vr": _scale(vr_hist, floor=1.0),
+            "sd": _scale(sd_hist, floor=1.0),
+            "T": _scale(T_hist, floor=1.0),
+            "u": _scale(u_hist, floor=1.0),
+        }
+        # Residual equation scales (fallback: tie to tension scale)
+        S_res = [max(S["T"], 1.0)] * 3
+
+        # --- Helpful bounds to keep NLP well-posed
         sdot_min = 1e-2  # ensures dt>0
         opti.subject_to(opti_vars["s_dot"] >= sdot_min)
         if "speed_radial" in DEFAULT_OPTI_LIMITS:
@@ -527,7 +555,7 @@ class PhaseParameterized(TimeSeries):
         for i in range(N):
             # Current parameter pack (MX)
             opt_par_values = [opti_vars[var] for var in self.optimization_vars]
-            flat = [ca.vertcat(*opt_par_values)]
+            flat = [ca.vertcat(*opt_par_values)] if opt_par_values else []
 
             # Model tension at node i
             T_i = tether_tension_eq(
@@ -539,12 +567,12 @@ class PhaseParameterized(TimeSeries):
                 opti_vars["tension_tether_ground"][i],
                 *flat,
             )
-
             T_model = winch_model.tension_curve(opti_vars["speed_radial"][i])
 
-            opti.subject_to(T_i == T_model)
+            # Scale the tether law residual
+            opti.subject_to((T_i - T_model) / S["T"] == 0)
 
-            # Residual equations (unscaled)
+            # Residual equations (scaled)
             res_i = residual(
                 s_grid[i],
                 opti_vars["s_dot"][i],
@@ -554,20 +582,25 @@ class PhaseParameterized(TimeSeries):
                 opti_vars["distance_radial"][i],
                 *flat,
             )
-            opti.subject_to(res_i[0] == 0)
-            opti.subject_to(res_i[1] == 0)
-            opti.subject_to(res_i[2] == 0)
+            opti.subject_to(res_i[0] / S_res[0] == 0)
+            opti.subject_to(res_i[1] / S_res[1] == 0)
+            opti.subject_to(res_i[2] / S_res[2] == 0)
 
-            # Left-rule dt_i = Δs_i / s_dot[i]
+            # Left-rule dt_i = Δs_i / s_dot[i], guarded to avoid blow-up
             if i < N - 1:
                 ds_i = s_grid[i + 1] - s_grid[i]
-                dt_i = ds_i / (opti_vars["s_dot"][i] + 1e-12)
+                sd_safe = ca.fmax(opti_vars["s_dot"][i], max(sdot_min, S["sd"] * 1e-3))
+                dt_i = ds_i / sd_safe
 
-                # r_{i+1} propagation
+                # r_{i+1} propagation (scaled residual)
                 opti.subject_to(
-                    opti_vars["distance_radial"][i + 1]
-                    == opti_vars["distance_radial"][i]
-                    + opti_vars["speed_radial"][i] * dt_i
+                    (
+                        opti_vars["distance_radial"][i + 1]
+                        - opti_vars["distance_radial"][i]
+                        - opti_vars["speed_radial"][i] * dt_i
+                    )
+                    / S["r"]
+                    == 0
                 )
 
                 # Accumulate energy and time: power_i = T_i * v_r_i
@@ -575,9 +608,19 @@ class PhaseParameterized(TimeSeries):
                 t_eff += dt_i
 
         power = energy / (t_eff + 1e-12)
-        opti.minimize(-power / P_scale)
 
-        # --- Solver
+        # --- Tiny Tikhonov regularization in scaled variables (stabilizes curvature)
+        eps = 1e-6
+        reg = eps * (
+            ca.sumsqr(opti_vars["input_steering"] / S["u"])
+            + ca.sumsqr(opti_vars["s_dot"] / S["sd"])
+            + ca.sumsqr(opti_vars["speed_radial"] / S["vr"])
+        )
+
+        # Keep your solver choice; just add reg to the objective
+        opti.minimize(-power / P_scale + reg)
+
+        # --- Solver (UNCHANGED as requested)
         opti.solver(
             "ipopt",
             {
@@ -594,7 +637,7 @@ class PhaseParameterized(TimeSeries):
             },
         )
 
-        # Initials for optimization parameters
+        # --- Initials for optimization parameters
         for var, mx in self.optimization_vars.items():
             if var in self.pattern_config["path_parameters"]:
                 init_val = self.pattern_config["path_parameters"][var]
@@ -607,12 +650,11 @@ class PhaseParameterized(TimeSeries):
                     f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
                 )
 
-        # Default limits for vector vars (if provided)
+        # --- Default limits for vector vars (if provided)
         for var_name, mx in opti_vars.items():
             if isinstance(mx, ca.MX) and var_name in DEFAULT_OPTI_LIMITS:
                 print(f"Applying constraints for {var_name}")
                 lb, ub = DEFAULT_OPTI_LIMITS[var_name]
-                # vector decisions:
                 if mx.shape[0] == N:
                     opti.subject_to(lb <= mx[:])
                     opti.subject_to(mx[:] <= ub)
@@ -622,6 +664,8 @@ class PhaseParameterized(TimeSeries):
 
         try:
             solution = opti.solve()
+
+            # stiffness_report(opti, solution, name="My OCP")
             print("Optimized average power:", solution.value(power))
             print("\nOptimized Pattern Variables:")
             for var_name, mx in self.optimization_vars.items():
@@ -635,7 +679,7 @@ class PhaseParameterized(TimeSeries):
                 elif var_name in optimized_config["radial_parameters"]:
                     optimized_config["radial_parameters"][var_name] = solution.value(mx)
                 self.pattern_config = optimized_config
-                # self.substitute_parametrized_kinematics()
+
         except Exception as e:
             print("Debug optimization information:")
             for var_name, mx in self.optimization_vars.items():

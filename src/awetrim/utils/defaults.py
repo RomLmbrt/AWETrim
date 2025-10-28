@@ -107,14 +107,14 @@ DEFAULT_OPTI_LIMITS = {
     # HElix
     "kappa": (0, 1),  # Range for kappa: 0 to 1
     # "vr": (-10, 10),      # Range for vr: 0 to 100
-    "beta0": (0.25, 0.5),  # Range for beta: 20 ot 50 degrees
+    "beta0": (0.25, 0.6),  # Range for beta: 20 ot 50 degrees
     "d0": (40, 500),  # Range for d0: 0 to 100
     # Figure Eight
     "ry": (60, 180),  # Range for ry: 0 to 100
     "rz": (60, 180),  # Range for rz: 0 to 100
     "ky": (0.5, 1),  # Range for ky: 0 to 100
     "kz": (0.5, 1),  # Range for kz: 0 to 100
-    "vr": (0.5, 4),  # Range for vr: 0 to 100
+    "vr": (-2, 6),  # Range for vr: 0 to 100
     "az_amp0": (
         np.radians(5),
         np.radians(50),
@@ -125,7 +125,7 @@ DEFAULT_OPTI_LIMITS = {
     ),  # Range for beta amplitude: 5 to 20 degrees
     "beta_coeffs": (-1, 1),  # Range for beta coefficients: -1 to 1
     "az_coeffs": (-1, 1),  # Range for azimuth coefficients: -1 to 1
-    "speed_radial": (0.2, 6),
+    "speed_radial": (-2, 6),
     "distance_radial": (100, 2000),
     "k_vr": (0.5, 1.5),
     "slope": (100, 8000),  # Range for slope in winch model
