@@ -1,6 +1,5 @@
 import time
 from awetrim.timeseries.phase_parametrized import PhaseParameterized
-from awetrim.timeseries.reelin_phase_old import ReelinPhase
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
 from awetrim import SystemModel, State

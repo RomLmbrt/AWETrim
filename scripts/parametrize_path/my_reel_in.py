@@ -263,7 +263,7 @@ def main(run_plots=True, save_csv=True, depower_denom=0.28):
 
         def depower_norm(denom):
             return ((depower / 100) - 0.4) / denom
-        
+
         depower_normalized = depower_norm(depower_denom)
 
         Realistic_RI_eg = {
@@ -557,6 +557,7 @@ def get_initial_conditions(run_if_needed=True):
     if run_if_needed and (init_conditions_QS is None or init_conditions_Dyn is None):
         main(run_plots=False, save_csv=False)
     return init_conditions_QS, init_conditions_Dyn
+
 
 if __name__ == "__main__":
     main()

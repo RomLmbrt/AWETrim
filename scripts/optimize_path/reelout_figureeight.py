@@ -16,7 +16,7 @@ file_path = "./data/LEI-V9-KITE/v9_aero_input.json"
 with open(file_path, "r") as file:
     aero_input = json.load(file)
 
-speed_wind_at_100 = 7  # m/s
+speed_wind_at_100 = 10  # m/s
 
 wind = Wind(
     wind_model="uniform",  # logarithmic
@@ -75,18 +75,20 @@ for i in range(N):
         "path_parameters": {
             "omega": 1.0,
             "r0": 230.0,
-            "az_amp0": 0.51,
-            "beta_amp0": 0.15,
+            "az_amp0": 0.4785941041623598,
+            "beta_amp0": 0.08726648368043392,
             "width_phi": 0.5,
             "width_beta": 0.5,
             "left_first": True,
             "normalize_bumps": False,
             "repeat_phi": True,
             "repeat_beta": True,
-            "beta_coeffs": np.array([0, 0, 0, 0, 0]),
+            "beta_coeffs": np.array(
+                [0.26689736, -0.99999995, 0.04902545, -0.84708337, 0.4426069]
+            ),
             "az_coeffs": [0, 0, 0, 0, 0],
             "kbeta": 0,
-            "beta0": 0.56,
+            "beta0": 0.45030399611963495,
             "kappa": 0,
         },
         "radial_parameters": {
@@ -96,24 +98,26 @@ for i in range(N):
             "max_tether_force": tension_max,  # N, only for force reeling
             "min_tether_force": tension_min,  # N, only for force reeling
             "softplus": True,
-            "softplus_beta": 1e-4,
+            "softplus_beta": 5e-5,
             "softminus": True,
             "softminus_beta": 1e-3,
             "slope": 2700,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-            "offset": 0,  # m/s
+            "offset": -1.18,  # m/s
         },
-        "start_time": 0,
-        "end_time": 35,
-        "start_angle": np.pi / 2,
-        "end_angle": 2 * np.pi + np.pi / 2,
-        "n_points": 600,
+        "sim_parameters": {
+            "start_time": 0,
+            "end_time": 35,
+            "start_angle": np.pi / 2,
+            "end_angle": 4 * np.pi + np.pi / 2,
+            "n_points": 600,
+        },
         "optimization_parameters": [
             "az_amp0",
             "beta_amp0",
             "beta0",
             "beta_coeffs",
             # "kappa",
-            "slope",
+            # "slope",
             # "offset",
         ],
     }
@@ -158,7 +162,15 @@ for i in range(N):
     phases_qs.append(copy.deepcopy(phase_base))
 
     # Optimized
-    phase.run_simulation_opti_phase(start_state=start_state)
+    opti, opti_vars, objective_dict = phase.opti_phase(start_state=start_state)
+    objective = -(
+        objective_dict["energy"]
+        / (objective_dict["total_time"] + 1e-12)
+        / objective_dict["power_scale"]
+    )
+    sol = phase.run_simulation_opti(opti, objective)
+    print("Energy:", sol.value(objective_dict["energy"]))
+    print("Reelout time:", sol.value(objective_dict["total_time"]))
     pattern_config = phase.pattern_config
     print("Optimized pattern configuration:")
     print(pattern_config)

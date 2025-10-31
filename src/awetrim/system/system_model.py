@@ -47,7 +47,7 @@ class SystemModel(KiteKinematics):
         #     self.acceleration_angle_roll = 0
         #     self.acceleration_angle_pitch = 0
         #     self.acceleration_angle_yaw = 0
-        #     self.timeder_length_tether = self.speed_radial
+        self.timeder_length_tether = self.speed_radial
         #     self.timeder_speed_tangential = 0
         #     if neglect_radial_acceleration:
         #         self.timeder_speed_radial = 0
@@ -307,22 +307,33 @@ class SystemModel(KiteKinematics):
             self.timeder_length_tether,
         )
 
-    def integrator(self, time_step, inputs=None):
-
+    def integrator(self, time_step, quasi_steady=True, inputs=None):
+        if quasi_steady:
+            self.timeder_speed_radial = 0
+            self.timeder_speed_tangential = 0
         if self.ode is None:
             self.establish_ode_function()
         if self.algebraic is None:
             self.establish_algebraic()
 
-        if self.quasi_steady:
+        if quasi_steady:
 
             p = ca.vertcat(
                 self.timeder_angle_course, self.input_depower, self.speed_radial
             )
 
-            x = ca.vertcat(self.state_vector[0:3], self.state_vector[4])
-            ode = ca.vertcat(self._ode[0:3], self._ode[4])
-            # p = ca.vertcat(self.timeder_angle_course, self.input_depower, self.speed_radial)
+            x = ca.vertcat(
+                self.distance_radial,
+                self.angle_elevation,
+                self.angle_azimuth,
+                self.angle_course,
+            )
+            ode = ca.vertcat(
+                self._ode[0],
+                self._ode[1],
+                self._ode[2],
+                self._ode[4],
+            )
             if self.is_tether_rigid:
                 z = ca.vertcat(
                     self.speed_tangential,
@@ -331,9 +342,10 @@ class SystemModel(KiteKinematics):
                 )
             else:
                 z = ca.vertcat(
-                    self.speed_tangential, self.input_steering, self.length_tether
+                    self.speed_tangential,
+                    self.input_steering,
+                    self.length_tether,
                 )
-
             alg = self.algebraic
 
             dae = {"x": x, "p": p, "z": z, "p": p, "ode": ode, "alg": alg}

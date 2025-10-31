@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from awetrim.utils.my_defaults import DEFAULT_SPLINE_PATTERN_CONFIG
 
 
-
 class ParametrizedPatterns(ABC):
 
     def __init__(self, **kwargs):
@@ -359,7 +358,9 @@ class FigureEightAngles(ParametrizedPatternsAngles):
             1 + self.kz * ca.sin(self.omega * s) ** 2
         ) + self.beta(t)
 
+
 from awetrim.kinematics.reelin_parametrization import ReelInBezier
+
 
 def create_pattern_from_dict(
     pattern_type,
@@ -399,14 +400,7 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
-        "spline": [
-            "r0", 
-            "r1", 
-            "C_az", 
-            "C_el", 
-            "s_norm_az",
-            "s_norm_el"
-            ],
+        "spline": ["r0", "r1", "C_az", "C_el", "s_norm_az", "s_norm_el"],
         "cst_helix": [
             "omega",
             "r0",
@@ -416,10 +410,8 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
-        "reel_in": [
-            "r0",
-            "r1",
-        ],
+        "reel_in_simple": ["beta0"],
+        "transition_simple": ["beta0"],
     }
 
     if pattern_type not in required_params:
@@ -443,10 +435,12 @@ def create_pattern_from_dict(
         "cst_lissajous": CST_Lissajous,
         "spline": CasadiSpline,
         "cst_helix": CST_Helix,
-        "reel_in": ReelInBezier,
+        "reel_in_simple": Reelin_Simple,
+        "transition_simple": Transition_Simple,
     }
 
     return pattern_classes[pattern_type](**parameters)
+
 
 class CST_Lissajous(ParametrizedPatternsAngles):
     def __init__(
@@ -549,26 +543,29 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         )
         return (beta_class) * N_beta
 
-class Bspline(ParametrizedPatternsAngles): 
-    
+
+class Bspline(ParametrizedPatternsAngles):
+
     # =======================================
-    """ NO COURSE ANGLE ENFORCEMENT YET """
+    """NO COURSE ANGLE ENFORCEMENT YET"""
     # =======================================
 
-    def __init__(self, 
-                 p=3, 
-                 n_ctrl=8, 
-                 r0=300, 
-                 r1=150, 
-                 crs0=(11/6)*np.pi, 
-                 crsf=np.pi/2, 
-                 phi0=0, 
-                 phif=0, 
-                 beta0=0, 
-                 betaf=0, 
-                 C_interior=None, 
-                 u_vals=None, 
-                 U_interior=None):
+    def __init__(
+        self,
+        p=3,
+        n_ctrl=8,
+        r0=300,
+        r1=150,
+        crs0=(11 / 6) * np.pi,
+        crsf=np.pi / 2,
+        phi0=0,
+        phif=0,
+        beta0=0,
+        betaf=0,
+        C_interior=None,
+        u_vals=None,
+        U_interior=None,
+    ):
 
         # Fixed attributes
         self.p = p
@@ -585,18 +582,30 @@ class Bspline(ParametrizedPatternsAngles):
 
         # Knot vector
         self.n_knots = self.n_ctrl + self.p + 1
-        self.n_interior_knots = self.n_knots - 2*(self.p+1)
+        self.n_interior_knots = self.n_knots - 2 * (self.p + 1)
         if self.n_interior_knots < 0:
             raise ValueError("Too few control points for spline order")
 
-        self.U_interior = np.linspace(0.15, 0.85, self.n_interior_knots+2)[1:-1] if U_interior is None else U_interior
-        self.U = np.concatenate(([0]*(self.p+1), self.U_interior, [1]*(self.p+1)))
+        self.U_interior = (
+            np.linspace(0.15, 0.85, self.n_interior_knots + 2)[1:-1]
+            if U_interior is None
+            else U_interior
+        )
+        self.U = np.concatenate(
+            ([0] * (self.p + 1), self.U_interior, [1] * (self.p + 1))
+        )
 
-        self.C_interior = np.ones((self.n_ctrl-2, self.dim)) if C_interior is None else C_interior
+        self.C_interior = (
+            np.ones((self.n_ctrl - 2, self.dim)) if C_interior is None else C_interior
+        )
         # Full control points (first & last fixed, interior symbolic)
-        self.C = np.vstack([np.array([self.phi0, self.beta0]),
-                            self.C_interior,
-                            np.array([self.phif, self.betaf])])
+        self.C = np.vstack(
+            [
+                np.array([self.phi0, self.beta0]),
+                self.C_interior,
+                np.array([self.phif, self.betaf]),
+            ]
+        )
 
         # Sampling
         self.u_vals = np.linspace(0, 1, 100) if u_vals is None else u_vals
@@ -614,17 +623,25 @@ class Bspline(ParametrizedPatternsAngles):
 
         def N(i, k, u):
             if k == 0:
-                return ca.if_else(ca.logic_and(U_sym[i] <= u, u <= U_sym[i+1]), 1.0, 0.0)
-            left = ca.if_else(U_sym[i+k] > U_sym[i],
-                              (u - U_sym[i]) / (U_sym[i+k]-U_sym[i]) * N(i, k-1, u),
-                              0)
-            right = ca.if_else(U_sym[i+k+1] > U_sym[i+1],
-                               (U_sym[i+k+1]-u)/(U_sym[i+k+1]-U_sym[i+1]) * N(i+1, k-1, u),
-                               0)
+                return ca.if_else(
+                    ca.logic_and(U_sym[i] <= u, u <= U_sym[i + 1]), 1.0, 0.0
+                )
+            left = ca.if_else(
+                U_sym[i + k] > U_sym[i],
+                (u - U_sym[i]) / (U_sym[i + k] - U_sym[i]) * N(i, k - 1, u),
+                0,
+            )
+            right = ca.if_else(
+                U_sym[i + k + 1] > U_sym[i + 1],
+                (U_sym[i + k + 1] - u)
+                / (U_sym[i + k + 1] - U_sym[i + 1])
+                * N(i + 1, k - 1, u),
+                0,
+            )
             return left + right
 
         Nvec_sym = ca.vertcat(*[N(i, p, u_sym) for i in range(n_ctrl)]).T
-        N_func = ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u","U"], ["Nvec"])
+        N_func = ca.Function("N_func", [u_sym, U_sym], [Nvec_sym], ["u", "U"], ["Nvec"])
         return N_func
 
     # -------------------------------
@@ -639,11 +656,13 @@ class Bspline(ParametrizedPatternsAngles):
         S_sym = ca.mtimes(N_func(u_sym, U_sym), C_sym)
         dS_sym = ca.jacobian(S_sym, u_sym).T if return_derivative else None
 
-        return ca.Function("spline_func",
-                           [C_sym, u_sym, U_sym],
-                           [S_sym, dS_sym],
-                           ["C","u","U"],
-                           ["S","dS"])
+        return ca.Function(
+            "spline_func",
+            [C_sym, u_sym, U_sym],
+            [S_sym, dS_sym],
+            ["C", "u", "U"],
+            ["S", "dS"],
+        )
 
     def evaluate_spline(self, r, s):
         """Evaluate spline and derivatives simultaneously for efficiency"""
@@ -664,61 +683,71 @@ class Bspline(ParametrizedPatternsAngles):
     def elevation_derivative(self, r, s):
         res = self.evaluate_spline(r, s)
         return res["dS"][1]
-    
+
     def curvature_using_bspline_derivatives(self, r_array, s_array):
         """Compute curvature using B-spline derivatives directly"""
         import casadi as ca
-        
+
         s = ca.MX.sym("s")
         r = ca.MX.sym("r")
-        
+
         # Get spline values and derivatives
         spline_result = self.spline_func(C=self.C, u=s, U=self.U)
-        phi = spline_result["S"][0]      # azimuth
-        beta = spline_result["S"][1]     # elevation
-        dphi_ds = spline_result["dS"][0] # azimuth derivative  
-        dbeta_ds = spline_result["dS"][1] # elevation derivative
-        
+        phi = spline_result["S"][0]  # azimuth
+        beta = spline_result["S"][1]  # elevation
+        dphi_ds = spline_result["dS"][0]  # azimuth derivative
+        dbeta_ds = spline_result["dS"][1]  # elevation derivative
+
         # Cartesian position
         x = r * ca.cos(beta) * ca.cos(phi)
         y = r * ca.cos(beta) * ca.sin(phi)
         z = r * ca.sin(beta)
-        
+
         # First derivatives using chain rule (more stable than jacobian)
-        dx_ds = r * (-ca.sin(beta) * dbeta_ds * ca.cos(phi) - ca.cos(beta) * ca.sin(phi) * dphi_ds)
-        dy_ds = r * (-ca.sin(beta) * dbeta_ds * ca.sin(phi) + ca.cos(beta) * ca.cos(phi) * dphi_ds)
+        dx_ds = r * (
+            -ca.sin(beta) * dbeta_ds * ca.cos(phi)
+            - ca.cos(beta) * ca.sin(phi) * dphi_ds
+        )
+        dy_ds = r * (
+            -ca.sin(beta) * dbeta_ds * ca.sin(phi)
+            + ca.cos(beta) * ca.cos(phi) * dphi_ds
+        )
         dz_ds = r * ca.cos(beta) * dbeta_ds
-        
+
         # Second derivatives (still need jacobian, but only once)
         d2x_ds2 = ca.jacobian(dx_ds, s)
-        d2y_ds2 = ca.jacobian(dy_ds, s)  
+        d2y_ds2 = ca.jacobian(dy_ds, s)
         d2z_ds2 = ca.jacobian(dz_ds, s)
-        
+
         # Curvature calculation
         r_s = ca.vertcat(dx_ds, dy_ds, dz_ds)
         r_ss = ca.vertcat(d2x_ds2, d2y_ds2, d2z_ds2)
-        
+
         eps = 1e-12
         cross_rs_rss = ca.cross(r_s, r_ss)
         num = ca.norm_2(cross_rs_rss)
         den = ca.power(ca.norm_2(r_s), 3) + eps
         kappa = num / den
-        
+
         kappa_fun = ca.Function("kappa_stable", [r, s], [kappa])
         return kappa_fun(r_array, s_array)
+
 
 import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 from math import comb
 
+
 class CasadiSpline(ParametrizedPatternsAngles):
 
     # =======================================
-    """ NO COURSE ANGLE ENFORCEMENT YET """
+    """NO COURSE ANGLE ENFORCEMENT YET"""
     # =======================================
 
-    def __init__(self, r0=None, r1=None, C_az=None, C_el=None, s_norm_az=None, s_norm_el=None):
+    def __init__(
+        self, r0=None, r1=None, C_az=None, C_el=None, s_norm_az=None, s_norm_el=None
+    ):
 
         if r0 is None:
             self.r0 = 322  # m
@@ -732,15 +761,19 @@ class CasadiSpline(ParametrizedPatternsAngles):
 
         # Default interior points
         if C_az is None:
-            self.C_az = np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float))
+            self.C_az = np.deg2rad(
+                np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)
+            )
         else:
-            self.C_az = C_az 
+            self.C_az = C_az
 
         if C_el is None:
-            self.C_el = np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float))
+            self.C_el = np.deg2rad(
+                np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)
+            )
         else:
             self.C_el = C_el
-        
+
         # ---------- Chord-length parameterization on [0,1] ----------
         if s_norm_az is not None:
             self.s_norm_az = s_norm_az
@@ -761,34 +794,37 @@ class CasadiSpline(ParametrizedPatternsAngles):
             if s[-1] == 0.0:
                 s[-1] = 1.0
             self.s_norm_el = s / s[-1]
-        
-        
+
         self.opts = opts = {"degree": [3]}
 
         self.build()
 
     def build(self):
-        self.spline_phi = ca.interpolant("spline_phi", "bspline", [self.s_norm_az], self.C_az, self.opts)
-        self.spline_beta = ca.interpolant("spline_beta", "bspline", [self.s_norm_el], self.C_el, self.opts)
+        self.spline_phi = ca.interpolant(
+            "spline_phi", "bspline", [self.s_norm_az], self.C_az, self.opts
+        )
+        self.spline_beta = ca.interpolant(
+            "spline_beta", "bspline", [self.s_norm_el], self.C_el, self.opts
+        )
 
-    
     # helpers to evaluate from Python (vectorized)
     def azimuth(self, r, s):
         return self.spline_phi(s)
-    
+
     def elevation(self, r, s):
         return self.spline_beta(s)
+
 
 if __name__ == "__main__":
     obj = CasadiSpline()
 
-    s = np.linspace(0,1,100)
+    s = np.linspace(0, 1, 100)
     az = obj.azimuth(1, s)
     el = obj.elevation(1, s)
 
     plt.figure()
-    plt.plot(s,az)
-    plt.plot(s,el)
+    plt.plot(s, az)
+    plt.plot(s, el)
     plt.show()
 
     plt.figure()
@@ -800,15 +836,22 @@ if __name__ == "__main__":
         {
             "r0": 300,
             "r1": 150,
-            "C_az": np.deg2rad(np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)),
-            "C_el": np.deg2rad(np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)),
-            "s_norm_az": np.linspace(0,1,10),
-            "s_norm_el": np.linspace(0,1,10),
-        }
+            "C_az": np.deg2rad(
+                np.array([-60, -45, -20, 0, 20, 35, 45, 50, 40, 20], dtype=float)
+            ),
+            "C_el": np.deg2rad(
+                np.array([10, 20, 35, 45, 55, 60, 55, 45, 30, 15], dtype=float)
+            ),
+            "s_norm_az": np.linspace(0, 1, 10),
+            "s_norm_el": np.linspace(0, 1, 10),
+        },
     )
 
-    pattern2 = create_pattern_from_dict(DEFAULT_SPLINE_PATTERN_CONFIG["pattern_type"],
-                                        DEFAULT_SPLINE_PATTERN_CONFIG["parameters"])
+    pattern2 = create_pattern_from_dict(
+        DEFAULT_SPLINE_PATTERN_CONFIG["pattern_type"],
+        DEFAULT_SPLINE_PATTERN_CONFIG["parameters"],
+    )
+
 
 class CST_Helix(ParametrizedPatternsAngles):
     def __init__(
@@ -910,3 +953,31 @@ class CST_Helix(ParametrizedPatternsAngles):
             u, self.K_beta, self.width_beta, self.beta_coeffs
         )
         return (beta_class) * N_beta
+
+
+class Reelin_Simple(ParametrizedPatternsAngles):
+    def __init__(
+        self,
+        beta0,
+    ):  # <- only flags
+        super().__init__(beta0=beta0)
+
+    def elevation(self, r, s):
+        return self.beta0 + s
+
+    def azimuth(self, r, s):
+        return 0
+
+
+class Transition_Simple(ParametrizedPatternsAngles):
+    def __init__(
+        self,
+        beta0,
+    ):  # <- only flags
+        super().__init__(beta0=beta0)
+
+    def elevation(self, r, s):
+        return self.beta0 - s
+
+    def azimuth(self, r, s):
+        return 0

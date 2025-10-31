@@ -114,7 +114,7 @@ DEFAULT_OPTI_LIMITS = {
     "rz": (60, 180),  # Range for rz: 0 to 100
     "ky": (0.5, 1),  # Range for ky: 0 to 100
     "kz": (0.5, 1),  # Range for kz: 0 to 100
-    "vr": (-2, 6),  # Range for vr: 0 to 100
+    "vr": (-10, 6),  # Range for vr: 0 to 100
     "az_amp0": (
         np.radians(5),
         np.radians(50),
@@ -125,10 +125,21 @@ DEFAULT_OPTI_LIMITS = {
     ),  # Range for beta amplitude: 5 to 20 degrees
     "beta_coeffs": (-1, 1),  # Range for beta coefficients: -1 to 1
     "az_coeffs": (-1, 1),  # Range for azimuth coefficients: -1 to 1
-    "speed_radial": (-2, 6),
+    "speed_radial": (-10, 6),
     "distance_radial": (100, 2000),
     "k_vr": (0.5, 1.5),
     "slope": (100, 8000),  # Range for slope in winch model
     "offset": (-2, 2),  # Range for offset in winch model
     "max_tether_force": (20000, 50000),  # Range for max tether force in winch model
+    "end_angle": (0.6, 2),
+}
+
+
+DEFAULT_REELIN_PATTERN_CONFIG = {
+    "n_points": 100,
+    "time_step": 0.1,
+    "reeling_speed": -5,
+    "r0": 300,
+    "r1": 200,
+    "input_depower": 1,
 }

@@ -1,6 +1,5 @@
 from matplotlib import pyplot as plt
 from awetrim.timeseries.timeseries import TimeSeries
-from awetrim.timeseries.my_reelin_phase import smooth_gate_interval
 from awetrim import SystemModel
 from awetrim.kinematics.parametrized_patterns import create_pattern_from_dict
 from awetrim.kinematics.Kinematics import ParametrizedKinematics
@@ -25,6 +24,7 @@ class PhaseParameterized(TimeSeries):
         kite_model: SystemModel,
         quasi_steady: bool = False,
         pattern_config: dict = DEFAULT_PATTERN_CONFIG,
+        pattern_config_opti: dict = None,
         sharpness_beta: float = 1e-4,
         tension_min: float = 0.0,
         tension_max: float = 1e5,
@@ -38,6 +38,10 @@ class PhaseParameterized(TimeSeries):
             kite_model=kite_model,
         )
         self.pattern_config = pattern_config
+        if not pattern_config_opti:
+            self.pattern_config_opti = copy.deepcopy(pattern_config)
+        else:
+            self.pattern_config_opti = pattern_config_opti
         self.quasi_steady = quasi_steady
 
         self.kite_model = kite_model
@@ -53,6 +57,7 @@ class PhaseParameterized(TimeSeries):
         self.winch_model = Winch(
             pattern_config=self.pattern_config["radial_parameters"]
         )
+
         pattern = create_pattern_from_dict(
             self.pattern_config["pattern_type"], self.pattern_config["path_parameters"]
         )
@@ -193,10 +198,10 @@ class PhaseParameterized(TimeSeries):
         )
 
         # grid and solver
-        N = int(self.pattern_config["n_points"])
+        N = int(self.pattern_config["sim_parameters"]["n_points"])
         s_grid = np.linspace(
-            self.pattern_config["start_angle"],
-            self.pattern_config["end_angle"],
+            self.pattern_config["sim_parameters"]["start_angle"],
+            self.pattern_config["sim_parameters"]["end_angle"],
             N + 1,
         )
         qs_solver = self.residual_solver(km_copy)
@@ -391,46 +396,73 @@ class PhaseParameterized(TimeSeries):
             t += time_step
             self.states.append(new_state.to_dict())
 
-    def run_simulation_opti_phase(self, start_state):
+    def opti_phase(self, start_state, opti=None, start_state_opti=None):
 
-        opti = ca.Opti()
+        if not opti:
+            opti = ca.Opti()
         self.run_simulation_phase(start_state, return_states=True)
         self.kite_model.reset_solver()
 
-        N = int(self.pattern_config["n_points"])
-        s_grid = np.linspace(
-            self.pattern_config["start_angle"], self.pattern_config["end_angle"], N + 1
+        if start_state_opti:
+            start_state = start_state_opti
+        # initial state object
+        state_obj = (
+            State(**start_state) if isinstance(start_state, dict) else start_state
         )
         # Replace optimized parameters with symbolic variables
-        path_params = copy.deepcopy(self.pattern_config.get("path_parameters", {}))
-        radial_params = copy.deepcopy(self.pattern_config.get("radial_parameters", {}))
+        path_params = copy.deepcopy(self.pattern_config_opti.get("path_parameters", {}))
+        radial_params = copy.deepcopy(
+            self.pattern_config_opti.get("radial_parameters", {})
+        )
+        sim_params = copy.deepcopy(self.pattern_config_opti.get("sim_parameters", {}))
 
         pattern = create_pattern_from_dict(
-            self.pattern_config["pattern_type"], path_params
+            self.pattern_config_opti["pattern_type"], path_params
         )
         self.optimization_vars = {}
 
         # --- Optimization/design parameters
-        for var in self.pattern_config["optimization_parameters"]:
-            if var in self.pattern_config["path_parameters"]:
-                val = np.atleast_1d(self.pattern_config["path_parameters"][var])
+        for var in self.pattern_config_opti["optimization_parameters"]:
+            if var in self.pattern_config_opti["path_parameters"]:
+                val = np.atleast_1d(self.pattern_config_opti["path_parameters"][var])
                 self.optimization_vars[var] = (
                     opti.variable(len(val)) if len(val) > 1 else opti.variable()
                 )
                 setattr(pattern, var, self.optimization_vars[var])
-            elif var in self.pattern_config["radial_parameters"]:
-                val = np.atleast_1d(self.pattern_config["radial_parameters"][var])
+            elif var in self.pattern_config_opti["radial_parameters"]:
+                val = np.atleast_1d(self.pattern_config_opti["radial_parameters"][var])
                 self.optimization_vars[var] = (
                     opti.variable(len(val)) if len(val) > 1 else opti.variable()
                 )
                 radial_params[var] = self.optimization_vars[var]
+            elif var in self.pattern_config_opti["sim_parameters"]:
+                val = np.atleast_1d(self.pattern_config_opti["sim_parameters"][var])
+                self.optimization_vars[var] = (
+                    opti.variable(len(val)) if len(val) > 1 else opti.variable()
+                )
+                sim_params[var] = self.optimization_vars[var]
 
+        # --- Ensure all CasADi Opti variables in pattern_config_opti are tracked
+        self.optimization_vars = register_opti_vars(
+            self.pattern_config_opti, self.optimization_vars
+        )
+
+        N = int(sim_params["n_points"])
+
+        tau = ca.DM(np.linspace(0, 1, N + 1))  # numeric grid (DM column vector)
+
+        s0 = sim_params["start_angle"]  # can be float or MX
+        s1 = sim_params["end_angle"]  # MX (Opti variable) in your case
+
+        # Symbolic affine map: s_grid is MX because s1 is MX
+        s_grid = s0 + (s1 - s0) * tau
         winch_model = Winch(pattern_config=radial_params)
         km_copy = self.substitute_parametrized_kinematics(pattern)
         self.km_param = km_copy
 
         # --- Decision variables per node (N nodes for intervals 0..N-1)
         opti_vars = {
+            "s": s_grid,
             "s_dot": opti.variable(N),  # tangential speed
             "input_steering": opti.variable(N),
             "speed_radial": opti.variable(N),  # reel speed v_r
@@ -457,11 +489,8 @@ class PhaseParameterized(TimeSeries):
             self.return_variable("tension_tether_ground"),
         )
 
-        # Fix initial radius
-        opti.subject_to(
-            opti_vars["distance_radial"][0]
-            == self.return_variable("distance_radial")[0]
-        )
+        # # Fix initial radius
+        opti.subject_to(opti_vars["distance_radial"][0] == state_obj.distance_radial)
 
         # --- Build model functions
         km_copy.establish_residual()
@@ -470,7 +499,7 @@ class PhaseParameterized(TimeSeries):
             if self.optimization_vars
             else []
         )
-
+        print(flat_syms)
         residual = ca.Function(
             "residual",
             [
@@ -617,8 +646,51 @@ class PhaseParameterized(TimeSeries):
             + ca.sumsqr(opti_vars["speed_radial"] / S["vr"])
         )
 
+        # --- Initials for optimization parameters
+        for var, mx in self.optimization_vars.items():
+
+            if var in self.pattern_config["path_parameters"]:
+                init_val = self.pattern_config["path_parameters"][var]
+                opti.set_initial(mx, init_val)
+            elif var in self.pattern_config["radial_parameters"]:
+                init_val = self.pattern_config["radial_parameters"][var]
+                opti.set_initial(mx, init_val)
+            elif var in self.pattern_config["sim_parameters"]:
+                init_val = self.pattern_config["sim_parameters"][var]
+                opti.set_initial(mx, init_val)
+
+            # else:
+            #     raise ValueError(
+            #         f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
+            #     )
+
+        # --- Default limits for vector vars (if provided)
+        for var_name, mx in opti_vars.items():
+            if isinstance(mx, ca.MX) and var_name in DEFAULT_OPTI_LIMITS:
+                print(f"Applying constraints for {var_name}")
+                lb, ub = DEFAULT_OPTI_LIMITS[var_name]
+                if mx.shape[0] == N:
+                    opti.subject_to(lb <= mx[:])
+                    opti.subject_to(mx[:] <= ub)
+                else:
+                    opti.subject_to(lb <= mx)
+                    opti.subject_to(mx <= ub)
+
+        objective_dict = {
+            "energy": energy,
+            "total_time": t_eff,
+            "power_scale": P_scale,
+            "reg": reg,
+        }
+        return (
+            opti,
+            opti_vars,
+            objective_dict,
+        )
+
+    def run_simulation_opti(self, opti, objective):
         # Keep your solver choice; just add reg to the objective
-        opti.minimize(-power / P_scale + reg)
+        opti.minimize(objective)
 
         # --- Solver (UNCHANGED as requested)
         opti.solver(
@@ -636,37 +708,11 @@ class PhaseParameterized(TimeSeries):
                 }
             },
         )
-
-        # --- Initials for optimization parameters
-        for var, mx in self.optimization_vars.items():
-            if var in self.pattern_config["path_parameters"]:
-                init_val = self.pattern_config["path_parameters"][var]
-                opti.set_initial(mx, init_val)
-            elif var in self.pattern_config["radial_parameters"]:
-                init_val = self.pattern_config["radial_parameters"][var]
-                opti.set_initial(mx, init_val)
-            else:
-                raise ValueError(
-                    f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
-                )
-
-        # --- Default limits for vector vars (if provided)
-        for var_name, mx in opti_vars.items():
-            if isinstance(mx, ca.MX) and var_name in DEFAULT_OPTI_LIMITS:
-                print(f"Applying constraints for {var_name}")
-                lb, ub = DEFAULT_OPTI_LIMITS[var_name]
-                if mx.shape[0] == N:
-                    opti.subject_to(lb <= mx[:])
-                    opti.subject_to(mx[:] <= ub)
-                else:
-                    opti.subject_to(lb <= mx)
-                    opti.subject_to(mx <= ub)
-
         try:
             solution = opti.solve()
 
             # stiffness_report(opti, solution, name="My OCP")
-            print("Optimized average power:", solution.value(power))
+
             print("\nOptimized Pattern Variables:")
             for var_name, mx in self.optimization_vars.items():
                 val = solution.value(mx)
@@ -678,7 +724,10 @@ class PhaseParameterized(TimeSeries):
                     optimized_config["path_parameters"][var_name] = solution.value(mx)
                 elif var_name in optimized_config["radial_parameters"]:
                     optimized_config["radial_parameters"][var_name] = solution.value(mx)
+                elif var_name in optimized_config["sim_parameters"]:
+                    optimized_config["sim_parameters"][var_name] = solution.value(mx)
                 self.pattern_config = optimized_config
+            return solution
 
         except Exception as e:
             print("Debug optimization information:")
@@ -851,85 +900,59 @@ class PhaseParameterized(TimeSeries):
         }
         return ca.nlpsol("solver", "ipopt", nlp, solver_options)
 
-    # def find_optimal_angle_pitch_tether(self):
-    #     copy_kite = copy.deepcopy(self.kite_model)
-    #     copy_kite.angle_elevation = 0
-    #     copy_kite.angle_azimuth = 0
-    #     copy_kite.angle_course = np.pi/2
-    #     copy_kite.timeder_speed_tangential = 0
-    #     copy_kite.distance_radial = 200
-    #     copy_kite.wind.wind_model = 'uniform'
-    #     copy_kite.wind.speed_wind_ref = 10
-    #     copy_kite.speed_radial = 0
-    #     copy_kite.timeder_angle_course = 0
-    #     # copy_kite.angle_roll = 0
-    #     copy_kite.timeder_speed_radial = 0
-    #     copy_kite.delta_pitch_depower = 0
-    #     copy_kite.input_depower = 0
-    #     copy_kite.tether = RigidLinkTether()
-    #     copy_kite.angle_pitch_tether = ca.MX.sym("angle_pitch_tether")
-    #     copy_kite.speed_tangential = ca.MX.sym("speed_tangential")
-    #     # copy_kite.aero_input["dependencies"]["u_s"] = {}
-    #     # copy_kite.input_steering = 0
-    #     # copy_kite.speed_radial = ca.MX.sym("speed_radial")
-    #     print(copy_kite.lift_coefficient)
-    #     cl_func = copy_kite.extract_function("lift_coefficient")
-    #     cd_func = copy_kite.extract_function("drag_coefficient")
-    #     aoa_func = copy_kite.extract_function("angle_of_attack")
-
-    #     copy_kite.establish_residual()
-
-    #     residual = ca.Function("residual", [copy_kite.speed_tangential, copy_kite.input_steering, copy_kite.length_tether, copy_kite.angle_pitch_tether], [copy_kite.residual], ["vtau", "steering", "length_tether", "angle_pitch"], ["residual"])
-    #     print(residual)
-
-    #     opti = ca.Opti()
-    #     vtau = opti.variable()
-    #     steering = opti.variable()
-    #     lt = opti.variable()
-    #     angle_pitch = opti.variable()
-    #     opti.subject_to(vtau >= 0)
-    #     opti.subject_to(vtau <= 300)
-    #     opti.subject_to(steering >= -np.pi/2)
-    #     opti.subject_to(steering <= np.pi/2)
-    #     opti.subject_to(lt <= copy_kite.distance_radial)
-    #     opti.subject_to(angle_pitch >= np.radians(-5))
-    #     opti.subject_to(angle_pitch <= np.radians(15))
-    #     opti.subject_to(residual(vtau = vtau, steering = steering, length_tether = lt, angle_pitch = angle_pitch)["residual"] == 0)
-
-    #     opti.set_initial(vtau, 100)
-    #     opti.set_initial(steering, 0)
-    #     opti.set_initial(lt, copy_kite.distance_radial)
-    #     opti.set_initial(angle_pitch, 0)
-
-    #     opti.minimize(-lt)
-    #     solver_opts = {"ipopt.print_level": 0, "print_time": 0}
-    #     opti.solver("ipopt", solver_opts)
-    #     try:
-    #         sol = opti.solve()
-    #         vtau = sol.value(vtau)
-    #         angle_pitch = sol.value(angle_pitch)
-    #         steering = sol.value(steering)
-    #     except:
-    #         print("Solver failed")
-    #         print(opti.debug.value(vtau))
-    #         print(opti.debug.value(steering))
-    #         print(opti.debug.value(lt))
-    #         print(opti.debug.value(angle_pitch))
-    #     print(cl_func)
-    #     if "u_s" in copy_kite.aero_input.get("dependencies", {}):
-    #         self.target_lift_coefficient = cl_func(speed_tangential=vtau, angle_pitch_tether=angle_pitch, input_steering=steering)["lift_coefficient"]
-    #         self.target_drag_coefficient = cd_func(speed_tangential=vtau, angle_pitch_tether=angle_pitch, input_steering=steering)["drag_coefficient"]
-    #     else:
-    #         self.target_lift_coefficient = cl_func(speed_tangential=vtau, angle_pitch_tether=angle_pitch)["lift_coefficient"]
-    #         self.target_drag_coefficient = cd_func(speed_tangential=vtau, angle_pitch_tether=angle_pitch)["drag_coefficient"]
-    #     self.target_angle_of_attack = aoa_func(speed_tangential=vtau, angle_pitch_tether=angle_pitch)["angle_of_attack"]
-    #     self.optimal_angle_pitch_tether = float(angle_pitch)
-    #     print(self.target_lift_coefficient, self.target_drag_coefficient, self.target_angle_of_attack*180/np.pi)
-
-    # # def set_optimal_angle_pitch_tether(self):
-    # #     print(f"Angle respect to the tether set to: {np.degrees(self.optimal_angle_pitch_tether)}")
-    # #     self.kite_model.angle_pitch_tether = self.optimal_angle_pitch_tether
-
     def get_boundaries(self, state_obj, unknown_vars, km_copy):
         lbx, ubx, lbg, ubg = km_copy.get_boundaries(state_obj, unknown_vars)
         return lbx, ubx, lbg, ubg
+
+
+import casadi as ca
+import numpy as np
+
+
+def register_opti_vars(obj, store=None, *, name_prefix=None):
+    """
+    Recursively scan `obj` (dict/list/tuple/numpy/MX) for CasADi MX symbols
+    and add their leaf variables (via ca.symvar) to `store` exactly once.
+
+    Parameters
+    ----------
+    obj : any
+        Container (dict/list/tuple/ndarray) or MX expression/symbol.
+    store : dict | None
+        Mapping name -> MX to update (created if None).
+    name_prefix : str | None
+        If set, only add variables whose .name() starts with this prefix (e.g. "opti").
+
+    Returns
+    -------
+    dict : updated store
+    """
+    if store is None:
+        store = {}
+
+    def _scan(x):
+        # Base cases
+        if isinstance(x, ca.MX):
+            # collect leaf symbols from the expression/symbol
+            for v in ca.symvar(x):
+                nm = v.name()
+                if (
+                    name_prefix is None or nm.startswith(name_prefix)
+                ) and nm not in store:
+                    store[nm] = v
+            return
+
+        # Recurse into common containers
+        if isinstance(x, dict):
+            for v in x.values():
+                _scan(v)
+        elif isinstance(x, (list, tuple, set)):
+            for v in x:
+                _scan(v)
+        elif isinstance(x, np.ndarray):
+            for v in x.flat:
+                _scan(v)
+        # else: ignore scalars/others
+
+    _scan(obj)
+    return store

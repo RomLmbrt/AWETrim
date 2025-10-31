@@ -96,11 +96,7 @@ class TimeSeries:
                 beta_val = _lookup_optional(state, "angle_elevation")
                 phi_val = _lookup_optional(state, "angle_azimuth")
 
-                if (
-                    r_val is not None
-                    and beta_val is not None
-                    and phi_val is not None
-                ):
+                if r_val is not None and beta_val is not None and phi_val is not None:
                     if variable == "x":
                         computed = r_val * np.cos(beta_val) * np.cos(phi_val)
                     elif variable == "y":
@@ -113,16 +109,14 @@ class TimeSeries:
             try:
                 var_func = self.kite_model.extract_function(variable)
                 input_dict = {
-                    name: _lookup_required(state, name)
-                    for name in var_func.name_in()
+                    name: _lookup_required(state, name) for name in var_func.name_in()
                 }
                 output = var_func(**input_dict)[variable]
                 var.append(float(output))
             except Exception:
                 var_func = self.km_param.extract_function(variable)
                 input_dict = {
-                    name: _lookup_required(state, name)
-                    for name in var_func.name_in()
+                    name: _lookup_required(state, name) for name in var_func.name_in()
                 }
                 output = var_func(**input_dict)[variable]
                 var.append(float(output))
@@ -581,6 +575,8 @@ class TimeSeries:
         for ax, var in zip(axes, variables):
             y = self.return_variable(var)
             scale = y_scaling.get(var, 1.0) if isinstance(y_scaling, dict) else 1.0
+            if "angle" in var:
+                y = np.degrees(y)
             ax.plot(x, y * scale, label=label, color=color, linestyle=linestyle)
             ax.set_ylabel(y_labels.get(var, PLOT_LABELS.get(var, var)))
 
