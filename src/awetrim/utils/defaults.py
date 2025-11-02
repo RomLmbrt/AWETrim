@@ -131,7 +131,7 @@ DEFAULT_OPTI_LIMITS = {
     "slope": (100, 8000),  # Range for slope in winch model
     "offset": (-2, 2),  # Range for offset in winch model
     "max_tether_force": (20000, 50000),  # Range for max tether force in winch model
-    "end_angle": (0.6, 2),
+    "end_angle": (0.6, 10),
 }
 
 
@@ -142,4 +142,19 @@ DEFAULT_REELIN_PATTERN_CONFIG = {
     "r0": 300,
     "r1": 200,
     "input_depower": 1,
+}
+
+
+DEFAULT_RADIAL_PARAMETERS = {
+    "reeling_strategy": "force",
+    "force_model": "quadratic",
+    "reeling_speed": 1.0,
+    "max_tether_force": 2e4,
+    "min_tether_force": 5000.0,
+    "softplus": True,
+    "softplus_beta": 1e-4,
+    "softminus": True,
+    "softminus_beta": 1e-3,
+    "slope": 2716,
+    "offset": -3,
 }

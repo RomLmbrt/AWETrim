@@ -410,8 +410,8 @@ def create_pattern_from_dict(
             "beta_coeffs",
             "az_coeffs",
         ],
-        "reel_in_simple": ["beta0"],
-        "transition_simple": ["beta0"],
+        "reel_in_simple": ["elevation_start_ri", "elevation_start_riro"],
+        "transition_simple": ["elevation_start_riro", "elevation_start_ro"],
     }
 
     if pattern_type not in required_params:
@@ -460,7 +460,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         normalize_bumps=False,
         repeat_phi=False,
         repeat_beta=False,
-        k_vr=6300,
+        **kwargs,
     ):  # <- only flags
         super().__init__(
             omega=omega,
@@ -476,6 +476,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
             width_beta=width_beta,
             left_first=left_first,
             normalize_bumps=normalize_bumps,
+            **kwargs,
         )
 
         # Base weight vectors
@@ -958,12 +959,16 @@ class CST_Helix(ParametrizedPatternsAngles):
 class Reelin_Simple(ParametrizedPatternsAngles):
     def __init__(
         self,
-        beta0,
+        elevation_start_ri,
+        elevation_start_riro,
     ):  # <- only flags
-        super().__init__(beta0=beta0)
+        super().__init__(
+            elevation_start_ri=elevation_start_ri,
+            elevation_start_riro=elevation_start_riro,
+        )
 
     def elevation(self, r, s):
-        return self.beta0 + s
+        return self.elevation_start_ri + s
 
     def azimuth(self, r, s):
         return 0
@@ -972,12 +977,16 @@ class Reelin_Simple(ParametrizedPatternsAngles):
 class Transition_Simple(ParametrizedPatternsAngles):
     def __init__(
         self,
-        beta0,
+        elevation_start_riro,
+        elevation_start_ro,
     ):  # <- only flags
-        super().__init__(beta0=beta0)
+        super().__init__(
+            elevation_start_riro=elevation_start_riro,
+            elevation_start_ro=elevation_start_ro,
+        )
 
     def elevation(self, r, s):
-        return self.beta0 - s
+        return self.elevation_start_riro - s
 
     def azimuth(self, r, s):
         return 0

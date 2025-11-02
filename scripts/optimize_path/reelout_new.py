@@ -7,7 +7,7 @@ from awetrim import SystemModel
 from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
-from awetrim.timeseries.reelin_phase import ReelinSimple
+from awetrim.timeseries.reelout_phase import ReeloutSimple
 
 # ---------------------------------------------------------------------------
 # Configuration knobs – tweak these values to experiment with the setup.
@@ -20,30 +20,53 @@ PHYSICAL_CONFIG = {
 }
 
 PATH_PARAMETERS = {
-    "elevation_start_ri": np.radians(30),
-    "elevation_start_riro": np.radians(90),
-    "elevation_start_ro": np.radians(30),
-    "distance_radial_start": 360,
-    "distance_radial_end": 220,
+    "omega": 1.0,
+    "r0": 230.0,
+    "az_amp0": 0.4785941041623598,
+    "beta_amp0": 0.08726648368043392,
+    "width_phi": 0.5,
+    "width_beta": 0.5,
+    "left_first": True,
+    "normalize_bumps": False,
+    "repeat_phi": True,
+    "repeat_beta": True,
+    "beta_coeffs": np.array(
+        [0.26689736, -0.99999995, 0.04902545, -0.84708337, 0.4426069]
+    ),
+    "az_coeffs": [0, 0, 0, 0, 0],
+    "kbeta": 0,
+    "beta0": 0.45030399611963495,
+    "kappa": 0,
+    "distance_radial_start": 220,
 }
 
 RADIAL_PARAMETERS = {
-    "reeling_strategy": "force",
-    "force_model": "quadratic",
-    "reeling_speed": 1.0,
-    "max_tether_force": 2e4,
-    "min_tether_force": 5000.0,
+    "reeling_strategy": "force",  # "force" or "constant"
+    "force_model": "quadratic",  # "linear" or "quadratic"
+    "reeling_speed": 0.0,  # m/s, only for constant reeling
+    "max_tether_force": 4000,  # N, only for force reeling
+    "min_tether_force": 25000,  # N, only for force reeling
     "softplus": True,
-    "softplus_beta": 1e-4,
+    "softplus_beta": 5e-5,
     "softminus": True,
     "softminus_beta": 1e-3,
-    "slope": 2716,
-    "offset": -3,
+    "slope": 2700,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+    "offset": 0,  # m/s
 }
 
-REELIN_CONFIG = {
+SIM_PARAMETERS = {
+    "start_time": 0,
+    "end_time": 35,
+    "start_angle": np.pi / 2,
+    "end_angle": 2 * np.pi + np.pi / 2,
+    "n_points": 300,
+}
+
+REELOUT_CONFIG = {
+    "pattern_type": "cst_lissajous",
     "path_parameters": PATH_PARAMETERS,
     "radial_parameters": RADIAL_PARAMETERS,
+    "sim_parameters": SIM_PARAMETERS,
 }
 
 AERO_INPUT_FILE = Path("data/LEI-V9-KITE/v9_aero_input.json")
@@ -55,7 +78,7 @@ def load_aero_input(path: Path = AERO_INPUT_FILE):
         return json.load(file)
 
 
-def build_wind_model(speed_wind_at_100=7.6374, z0=0.0002, model_type="logarithmic"):
+def build_wind_model(speed_wind_at_100=10, z0=0.0002, model_type="uniform"):
     """Create a wind model using the supplied parameters."""
     wind_model = Wind(
         wind_model=model_type,
@@ -63,6 +86,7 @@ def build_wind_model(speed_wind_at_100=7.6374, z0=0.0002, model_type="logarithmi
     )
     speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind_model.z0)
     wind_model.speed_friction = speed_friction
+    wind_model.speed_wind_ref = speed_wind_at_100
     return wind_model
 
 
@@ -110,16 +134,23 @@ def create_system_model():
 
 def main(run_plots=False):
     system_model = create_system_model()
-    reelin = ReelinSimple(
+    reelout = ReeloutSimple(
         system_model=system_model,
-        pattern_config=REELIN_CONFIG,
-        depower_ri=1,
-        depower_riro=1,
+        pattern_config=REELOUT_CONFIG,
+        depower=0,
     )
-
-    solution = reelin.run_simulation_opti()
-    reelin.run_simulation(solution=solution, run_plots=run_plots)
-    return reelin
+    optimization_params = [
+        "az_amp0",
+        "beta_amp0",
+        "beta0",
+        # "beta_coeffs",
+        # "kappa",
+        # "slope",
+        # "offset",
+    ]
+    solution = reelout.run_simulation_opti(optimization_params=optimization_params)
+    reelout.run_simulation(solution=solution, run_plots=run_plots)
+    return reelout
 
 
 if __name__ == "__main__":

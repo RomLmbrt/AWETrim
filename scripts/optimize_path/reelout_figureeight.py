@@ -108,7 +108,7 @@ for i in range(N):
             "start_time": 0,
             "end_time": 35,
             "start_angle": np.pi / 2,
-            "end_angle": 4 * np.pi + np.pi / 2,
+            "end_angle": 2 * np.pi + np.pi / 2,
             "n_points": 600,
         },
         "optimization_parameters": [
@@ -118,7 +118,8 @@ for i in range(N):
             "beta_coeffs",
             # "kappa",
             # "slope",
-            # "offset",
+            "offset",
+            "end_angle",
         ],
     }
 
@@ -163,9 +164,13 @@ for i in range(N):
 
     # Optimized
     opti, opti_vars, objective_dict = phase.opti_phase(start_state=start_state)
+    # opti.subject_to(opti_vars["distance_radial"][-1] == 310)
+
+    reelin_energy = -148294.6550388753
+    reelin_time = 20
     objective = -(
-        objective_dict["energy"]
-        / (objective_dict["total_time"] + 1e-12)
+        (objective_dict["energy"] + reelin_energy)
+        / (objective_dict["total_time"] + reelin_time + 1e-12)
         / objective_dict["power_scale"]
     )
     sol = phase.run_simulation_opti(opti, objective)
@@ -206,7 +211,7 @@ fig, axes_map, _ = phases_qs[0].plot_overview_3d(
         "s_dot",
         "tension_tether_ground",
         "input_steering",
-        "speed_radial",
+        "distance_radial",
     ],
     x_param="s",
 )
@@ -218,7 +223,7 @@ phases_qs[-1].plot_overview_3d(
         "s_dot",
         "tension_tether_ground",
         "input_steering",
-        "speed_radial",
+        "distance_radial",
     ],
     x_param="s",
     axes=axes_map,

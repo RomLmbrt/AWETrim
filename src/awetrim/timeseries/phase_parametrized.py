@@ -396,7 +396,9 @@ class PhaseParameterized(TimeSeries):
             t += time_step
             self.states.append(new_state.to_dict())
 
-    def opti_phase(self, start_state, opti=None, start_state_opti=None):
+    def opti_phase(
+        self, start_state, opti=None, start_state_opti=None, opti_params=None
+    ):
 
         if not opti:
             opti = ca.Opti()
@@ -418,33 +420,6 @@ class PhaseParameterized(TimeSeries):
 
         pattern = create_pattern_from_dict(
             self.pattern_config_opti["pattern_type"], path_params
-        )
-        self.optimization_vars = {}
-
-        # --- Optimization/design parameters
-        for var in self.pattern_config_opti["optimization_parameters"]:
-            if var in self.pattern_config_opti["path_parameters"]:
-                val = np.atleast_1d(self.pattern_config_opti["path_parameters"][var])
-                self.optimization_vars[var] = (
-                    opti.variable(len(val)) if len(val) > 1 else opti.variable()
-                )
-                setattr(pattern, var, self.optimization_vars[var])
-            elif var in self.pattern_config_opti["radial_parameters"]:
-                val = np.atleast_1d(self.pattern_config_opti["radial_parameters"][var])
-                self.optimization_vars[var] = (
-                    opti.variable(len(val)) if len(val) > 1 else opti.variable()
-                )
-                radial_params[var] = self.optimization_vars[var]
-            elif var in self.pattern_config_opti["sim_parameters"]:
-                val = np.atleast_1d(self.pattern_config_opti["sim_parameters"][var])
-                self.optimization_vars[var] = (
-                    opti.variable(len(val)) if len(val) > 1 else opti.variable()
-                )
-                sim_params[var] = self.optimization_vars[var]
-
-        # --- Ensure all CasADi Opti variables in pattern_config_opti are tracked
-        self.optimization_vars = register_opti_vars(
-            self.pattern_config_opti, self.optimization_vars
         )
 
         N = int(sim_params["n_points"])
@@ -469,9 +444,9 @@ class PhaseParameterized(TimeSeries):
             "distance_radial": opti.variable(N),  # radius r
             "tension_tether_ground": opti.variable(N),  # tether tension T
         }
-        # expose design params too
-        for var in self.optimization_vars:
-            opti_vars[var] = self.optimization_vars[var]
+        # # expose design params too
+        # for var in self.optimization_vars:
+        #     opti_vars[var] = self.optimization_vars[var]
 
         # --- Warm starts from simulation
         opti.set_initial(opti_vars["s_dot"], self.return_variable("s_dot"))
@@ -494,11 +469,7 @@ class PhaseParameterized(TimeSeries):
 
         # --- Build model functions
         km_copy.establish_residual()
-        flat_syms = (
-            [ca.vertcat(*self.optimization_vars.values())]
-            if self.optimization_vars
-            else []
-        )
+        flat_syms = [ca.vertcat(*opti_params.values())] if opti_params else []
         print(flat_syms)
         residual = ca.Function(
             "residual",
@@ -582,9 +553,6 @@ class PhaseParameterized(TimeSeries):
         t_eff = 0
 
         for i in range(N):
-            # Current parameter pack (MX)
-            opt_par_values = [opti_vars[var] for var in self.optimization_vars]
-            flat = [ca.vertcat(*opt_par_values)] if opt_par_values else []
 
             # Model tension at node i
             T_i = tether_tension_eq(
@@ -594,7 +562,7 @@ class PhaseParameterized(TimeSeries):
                 opti_vars["speed_radial"][i],
                 opti_vars["distance_radial"][i],
                 opti_vars["tension_tether_ground"][i],
-                *flat,
+                *flat_syms,
             )
             T_model = winch_model.tension_curve(opti_vars["speed_radial"][i])
 
@@ -609,7 +577,7 @@ class PhaseParameterized(TimeSeries):
                 T_i,
                 opti_vars["speed_radial"][i],
                 opti_vars["distance_radial"][i],
-                *flat,
+                *flat_syms,
             )
             opti.subject_to(res_i[0] / S_res[0] == 0)
             opti.subject_to(res_i[1] / S_res[1] == 0)
@@ -647,7 +615,7 @@ class PhaseParameterized(TimeSeries):
         )
 
         # --- Initials for optimization parameters
-        for var, mx in self.optimization_vars.items():
+        for var, mx in opti_params.items():
 
             if var in self.pattern_config["path_parameters"]:
                 init_val = self.pattern_config["path_parameters"][var]
@@ -659,10 +627,10 @@ class PhaseParameterized(TimeSeries):
                 init_val = self.pattern_config["sim_parameters"][var]
                 opti.set_initial(mx, init_val)
 
-            # else:
-            #     raise ValueError(
-            #         f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
-            #     )
+            else:
+                raise ValueError(
+                    f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
+                )
 
         # --- Default limits for vector vars (if provided)
         for var_name, mx in opti_vars.items():
