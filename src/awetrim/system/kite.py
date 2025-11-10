@@ -393,6 +393,12 @@ class Kite(Wing):
     def angle_yaw(self):
         return self.angle_yaw_aerodynamic
 
+    @property
+    def velocity_wind(self):
+        """Wind velocity at the kite position in the kite frame."""
+        # Wind velocity in wind frame
+        return self.wind.velocity_wind(self)
+
 
 def project_onto_plane(v, n):
     n_norm2 = ca.dot(n, n) + 1e-12  # avoid div by zero
