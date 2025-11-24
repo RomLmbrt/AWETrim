@@ -21,9 +21,9 @@ import argparse
 
 # helper to dynamically import the script modules by path
 WIND_CONFIG = {
-    "speed_wind_at_100": 12,
-    "z0": 0.05,
-    "model_type": "uniform",
+    "speed_wind_at_200": 18,
+    "z0": 0.1,
+    "model_type": "logarithmic",
 }
 
 
@@ -50,7 +50,7 @@ def main(run_plots: bool = False):
     aero_input = reelout_mod.load_aero_input()
     # build_wind_model accepts optional args; use defaults from reelout script
     wind_model = reelout_mod.build_wind_model(
-        speed_wind_at_100=WIND_CONFIG["speed_wind_at_100"],
+        speed_wind_at_200=WIND_CONFIG["speed_wind_at_200"],
         z0=WIND_CONFIG["z0"],
         model_type=WIND_CONFIG["model_type"],
     )
@@ -101,7 +101,7 @@ def main(run_plots: bool = False):
 
     print("Running cycle simulation: reel-out -> (opt) reel-in -> transition")
     # result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
-    plt.show()
+    # plt.show()
     cycle.run_cycle_opti(optimization_params=optimization_params)
     print(cycle.reelin.pattern_config)
     result = cycle.run_cycle_simulation(optimize_reelin=False, plotting=run_plots)

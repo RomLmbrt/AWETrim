@@ -20,7 +20,7 @@ PHYSICAL_CONFIG = {
 }
 
 PATH_PARAMETERS = {
-    "r0": 180,
+    "r0": 230,
     "az_amp0": 0.251445,
     "beta_amp0": 0.0872665,
     "beta_coeffs": np.array(
@@ -31,15 +31,15 @@ PATH_PARAMETERS = {
     "beta0": 0.436688,
     "kappa": 0,
     "downloops": True,
-    "distance_radial_start": 180,
+    "distance_radial_start": 230,
 }
 
 RADIAL_PARAMETERS = {
     "reeling_strategy": "force",  # "force" or "constant"
     "force_model": "quadratic",  # "linear" or "quadratic"
     "reeling_speed": 0.0,  # m/s, only for constant reeling
-    "max_tether_force": 15000,  # N, only for force reeling
-    "min_tether_force": 1500,  # N, only for force reeling
+    "max_tether_force": 8400,  # N, only for force reeling
+    "min_tether_force": 750,  # N, only for force reeling
     "softplus": True,
     "softplus_beta": 1e-4,
     "softminus": True,
@@ -48,13 +48,13 @@ RADIAL_PARAMETERS = {
     "offset_winch_ro": 0,  # m/s
 }
 
-N = 14  # Number of half eight loops
+N = 4  # Number of half eight loops
 SIM_PARAMETERS = {
     "start_time": 0,
     "end_time": 35,
     "start_angle": 0,
     "end_angle": N * np.pi,
-    "n_points": 400,
+    "n_points": 600,
 }
 
 REELOUT_CONFIG = {
@@ -67,9 +67,9 @@ REELOUT_CONFIG = {
 AERO_INPUT_FILE = Path("data/LEI-V3-KITE/v3_aero_input.json")
 
 WIND_CONFIG = {
-    "speed_wind_at_100": 10,
-    "z0": 0.002,
-    "model_type": "uniform",
+    "speed_wind_at_200": 10,
+    "z0": 0.1,
+    "model_type": "logarithmic",
 }
 
 
@@ -79,17 +79,17 @@ def load_aero_input(path: Path = AERO_INPUT_FILE):
         return json.load(file)
 
 
-def build_wind_model(speed_wind_at_100=8, z0=0.01, model_type="uniform"):
+def build_wind_model(speed_wind_at_200=8, z0=0.01, model_type="uniform"):
     """Create a wind model using the supplied parameters."""
     wind_model = Wind(
         wind_model=model_type,
         z0=z0,
     )
-    speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind_model.z0)
+    speed_friction = 0.41 * speed_wind_at_200 / np.log(200 / wind_model.z0)
     if model_type == "logarithmic":
         wind_model.speed_friction = speed_friction
     elif model_type == "uniform":
-        wind_model.speed_wind_ref = speed_wind_at_100
+        wind_model.speed_wind_ref = speed_wind_at_200
     return wind_model
 
 
@@ -125,7 +125,7 @@ def create_system_model():
     """Assemble the system model using the configuration dictionaries above."""
     aero_input = load_aero_input()
     wind_model = build_wind_model(
-        speed_wind_at_100=WIND_CONFIG["speed_wind_at_100"],
+        speed_wind_at_200=WIND_CONFIG["speed_wind_at_200"],
         z0=WIND_CONFIG["z0"],
         model_type=WIND_CONFIG["model_type"],
     )
