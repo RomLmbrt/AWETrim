@@ -103,7 +103,7 @@ DEFAULT_OPTI_LIMITS = {
     "s_dot": (0.01, 40),  # Range for s_dot: 0 to 30
     "s_ddot": (-100, 100),  # Range for s_ddot: -100 to 100
     "s": (0, 300),  # Range for s: 0 to 10
-    "angle_elevation": (0.0, np.pi / 2),  # Range for angle_elevation: 0 to pi
+    "angle_elevation": (0.0, np.radians(120)),  # Range for angle_elevation: 0 to pi
     # HElix
     "kappa": (0, 1),  # Range for kappa: 0 to 1
     # "vr": (-10, 10),      # Range for vr: 0 to 100
@@ -128,13 +128,13 @@ DEFAULT_OPTI_LIMITS = {
     "speed_radial": (-10, 10),
     "distance_radial": (100, 360),
     "k_vr": (0.5, 1.5),
-    "slope_winch_ro": (2000, 12000),  # Range for slope in winch model
-    "offset_winch_ro": (-6, 2),  # Range for offset in winch model
+    "slope_winch_ro": (2000, 20000),  # Range for slope in winch model
+    "offset_winch_ro": (-6, 0),  # Range for offset in winch model
     "slope_winch_ri": (100, 4000),  # Range for slope in winch model
-    "offset_winch_ri": (-20, 0),  # Range for offset in winch model
+    "offset_winch_ri": (-8, 0),  # Range for offset in winch model
     # "max_tether_force": (20000, 50000),  # Range for max tether force in winch model
     "end_angle": (0.6, 10),
-    "elevation_start_riro": (np.radians(30), np.radians(140)),
+    "elevation_start_riro": (np.radians(30), np.radians(120)),
 }
 
 

@@ -21,7 +21,7 @@ PHYSICAL_CONFIG = {
 
 PATH_PARAMETERS = {
     "elevation_start_ri": np.radians(30),
-    "elevation_start_riro": np.radians(80),
+    "elevation_start_riro": np.radians(70),
     "elevation_start_ro": np.radians(30),
     "distance_radial_start": 360,
     "distance_radial_end": 230,
@@ -38,7 +38,7 @@ RADIAL_PARAMETERS = {
     "softminus": True,
     "softminus_beta": 1e-3,
     "slope_winch_ri": 1000,
-    "offset_winch_ri": -5,
+    "offset_winch_ri": -7,
 }
 
 REELIN_CONFIG = {

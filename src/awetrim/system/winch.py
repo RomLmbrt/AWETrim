@@ -182,13 +182,13 @@ if __name__ == "__main__":
         "reeling_strategy": "force",  # "force" or "constant"
         "force_model": "quadratic",  # "linear" or "quadratic"
         "reeling_speed": 0,  # m/s, only for constant reeling
-        "max_tether_force": 25e4,  # N, only for force reeling
+        "max_tether_force": 25e3,  # N, only for force reeling
         "min_tether_force": 4000.0,  # N, only for force reeling
         "softplus": True,
-        "softplus_beta": 1e-5,  # bigger is sharper
+        "softplus_beta": 1e-4,  # bigger is sharper
         "softminus": True,
         "softminus_beta": 1e-3,  # bigger is sharper
-        "slope_winch_force": 40000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+        "slope_winch_force": 10000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
         "offset_winch_force": -0,  # m/s
     }
 
@@ -200,14 +200,14 @@ if __name__ == "__main__":
         "reeling_strategy": "force",  # "force" or "constant"
         "force_model": "quadratic",  # "linear" or "quadratic"
         "reeling_speed": 0,  # m/s, only for constant reeling
-        "max_tether_force": 25e4,  # N, only for force reeling
+        "max_tether_force": 25e3,  # N, only for force reeling
         "min_tether_force": 4000.0,  # N, only for force reeling
         "softplus": True,
-        "softplus_beta": 1e-5,  # bigger is sharper
+        "softplus_beta": 1e-4,  # bigger is sharper
         "softminus": True,
         "softminus_beta": 1e-3,  # bigger is sharper
-        "slope_winch_force": 20000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
-        "offset_winch_force": -0,  # m/s
+        "slope_winch_force": 1000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+        "offset_winch_force": -4,  # m/s
     }
     winch = Winch(pattern_config=example_pattern_config)
     winch.plot_tension_curve(vr_min=-10, vr_max=10, n_points=400, show=True, ax=ax)

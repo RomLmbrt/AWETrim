@@ -83,7 +83,7 @@ class Reelout:
         self.variables_to_plot = [
             "speed_tangential",
             "tension_tether_ground",
-            "angle_of_attack",
+            "angle_elevation",
             "speed_radial",
         ]
         self._opti_params = {}

@@ -73,8 +73,6 @@ def main(run_plots: bool = False):
         "beta_amp0",
         "beta0",
         "elevation_start_riro",
-        # "slope",
-        # "offset",
         "offset_winch_ri",
         # "slope_winch_ri",
         # "offset_winch_ro",
@@ -89,7 +87,7 @@ def main(run_plots: bool = False):
         depower=0,
     )
 
-    reelout.run_simulation_opti(optimization_params=optimization_params, target="power")
+    # reelout.run_simulation_opti(optimization_params=optimization_params, target="power")
     reelin = ReelinSimple(
         system_model=system_model,
         pattern_config=reelin_mod.REELIN_CONFIG,
@@ -100,7 +98,7 @@ def main(run_plots: bool = False):
     cycle = CycleSimple(reelin=reelin, reelout=reelout)
 
     print("Running cycle simulation: reel-out -> (opt) reel-in -> transition")
-    result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
+    # result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
     plt.show()
     cycle.run_cycle_opti(optimization_params=optimization_params)
     print(cycle.reelin.pattern_config)
