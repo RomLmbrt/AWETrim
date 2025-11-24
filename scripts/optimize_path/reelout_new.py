@@ -20,7 +20,7 @@ PHYSICAL_CONFIG = {
 }
 
 PATH_PARAMETERS = {
-    "r0": 180,
+    "r0": 230,
     "az_amp0": 0.4814306739489051 * 1.1,
     "beta_amp0": 0.08726645323472254 * 1.1,
     "beta_coeffs": np.array(
@@ -31,7 +31,7 @@ PATH_PARAMETERS = {
     "beta0": 0.45090333335903443 * 1.1,
     "kappa": 0,
     "downloops": True,
-    "distance_radial_start": 180,
+    "distance_radial_start": 230,
 }
 
 RADIAL_PARAMETERS = {

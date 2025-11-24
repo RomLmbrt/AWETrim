@@ -21,7 +21,7 @@ PHYSICAL_CONFIG = {
 
 PATH_PARAMETERS = {
     "elevation_start_ri": np.radians(30),
-    "elevation_start_riro": np.radians(90),
+    "elevation_start_riro": np.radians(80),
     "elevation_start_ro": np.radians(30),
     "distance_radial_start": 360,
     "distance_radial_end": 230,
