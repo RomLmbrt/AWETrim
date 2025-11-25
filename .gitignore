@@ -4,6 +4,7 @@ data/LEI-V9-KITE/
 flight_logs/
 processed_data/fitting/
 processed_data/experimental/
+processed_data/batch_sim/
 *.prof
 
 # Byte-compiled / optimized / DLL files
