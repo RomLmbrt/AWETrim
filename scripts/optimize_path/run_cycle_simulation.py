@@ -21,9 +21,9 @@ import argparse
 
 # helper to dynamically import the script modules by path
 WIND_CONFIG = {
-    "speed_wind_at_200": 18,
+    "speed_wind_at_200": 10,
     "z0": 0.1,
-    "model_type": "logarithmic",
+    "model_type": "uniform",
 }
 
 
@@ -77,19 +77,25 @@ def main(run_plots: bool = False):
         # "slope_winch_ri",
         # "offset_winch_ro",
         "slope_winch_ro",
-        "beta_coeffs",
+        # "beta_coeffs",
         # "kappa",
     ]
+    print(reelout_mod.REELOUT_CONFIG)
     # Instantiate phases using the configs defined in the scripts
     reelout = Reelout(
         system_model=system_model,
         pattern_config=reelout_mod.REELOUT_CONFIG,
         depower=0,
     )
-
-    # reelout.run_simulation_opti(
-    #     optimization_params=optimization_params, target="energy"
-    # )
+    opti_params_ro = [
+        "az_amp0",
+        "beta_amp0",
+        "beta0",
+        # "slope_winch_ro",
+        # "beta_coeffs",
+        # "kappa",
+    ]
+    # reelout.run_simulation_opti(optimization_params=opti_params_ro, target="power")
     reelin = ReelinSimple(
         system_model=system_model,
         pattern_config=reelin_mod.REELIN_CONFIG,
@@ -100,10 +106,10 @@ def main(run_plots: bool = False):
     cycle = CycleSimple(reelin=reelin, reelout=reelout)
 
     print("Running cycle simulation: reel-out -> (opt) reel-in -> transition")
-    # result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
+    result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
     # plt.show()
     cycle.run_cycle_opti(optimization_params=optimization_params)
-    print(cycle.reelin.pattern_config)
+
     result = cycle.run_cycle_simulation(optimize_reelin=False, plotting=run_plots)
     plt.show()
     if result is None:

@@ -14,9 +14,9 @@ from awetrim.timeseries.reelin_phase import ReelinSimple
 # ---------------------------------------------------------------------------
 PHYSICAL_CONFIG = {
     "mass_wing": 15,
-    "mass_kcu": 15,
+    "mass_kcu": 10,
     "area_wing": 19.75,
-    "tether_diameter": 0.01,
+    "tether_diameter": 0.006,
 }
 
 PATH_PARAMETERS = {
@@ -32,7 +32,7 @@ RADIAL_PARAMETERS = {
     "force_model": "quadratic",
     "reeling_speed": 1.0,
     "max_tether_force": 8400.0,
-    "min_tether_force": 750.0,
+    "min_tether_force": 2000.0,
     "softplus": True,
     "softplus_beta": 1e-4,
     "softminus": True,

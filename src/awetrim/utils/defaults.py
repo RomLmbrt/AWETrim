@@ -120,7 +120,7 @@ DEFAULT_OPTI_LIMITS = {
         np.radians(50),
     ),  # Range for azimuth amplitude: 10 to 30 degrees
     "beta_amp0": (
-        np.radians(5),
+        np.radians(2),
         np.radians(30),
     ),  # Range for beta amplitude: 5 to 20 degrees
     "beta_coeffs": (-1, 1),  # Range for beta coefficients: -1 to 1
@@ -128,12 +128,12 @@ DEFAULT_OPTI_LIMITS = {
     "speed_radial": (-10, 10),
     "distance_radial": (100, 360),
     "k_vr": (0.5, 1.5),
-    "slope_winch_ro": (400, 40000),  # Range for slope in winch model
+    "slope_winch_ro": (400, 10000),  # Range for slope in winch model
     "offset_winch_ro": (-6, 0),  # Range for offset in winch model
     "slope_winch_ri": (100, 4000),  # Range for slope in winch model
-    "offset_winch_ri": (-20, -3),  # Range for offset in winch model
+    "offset_winch_ri": (-12, -3),  # Range for offset in winch model
     # "max_tether_force": (20000, 50000),  # Range for max tether force in winch model
-    "end_angle": (0.6, 10),
+    "end_angle": (0.6, 30),
     "elevation_start_riro": (np.radians(30), np.radians(120)),
 }
 

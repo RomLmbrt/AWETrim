@@ -252,7 +252,7 @@ class Reelout:
             "ipopt",
             {
                 "ipopt": {
-                    "bound_relax_factor": 1e-8,
+                    # "bound_relax_factor": 1e-8,
                     "tol": 1e-6,
                     # "acceptable_iter": 3,
                     "acceptable_tol": 1e-6,
@@ -347,7 +347,7 @@ class Reelout:
         start_state = {
             "t": 0,
             "s": 0,
-            "s_dot": 3,
+            "s_dot": 4,
             "input_steering": 0,
             "tension_tether_ground": 1e12,
             "distance_radial": pattern_config["path_parameters"][

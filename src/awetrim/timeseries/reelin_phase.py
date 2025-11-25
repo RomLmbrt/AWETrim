@@ -345,11 +345,11 @@ class ReelinSimple:
             {
                 "ipopt": {
                     "bound_relax_factor": 1e-8,
-                    "tol": 1e-2,
+                    "tol": 1e-4,
                     "acceptable_iter": 3,
-                    "acceptable_tol": 1e-2,
-                    "constr_viol_tol": 1e-2,
-                    "dual_inf_tol": 1e-2,
+                    "acceptable_tol": 1e-4,
+                    "constr_viol_tol": 1e-4,
+                    "dual_inf_tol": 1e-4,
                     "hessian_approximation": "limited-memory",
                     "mu_strategy": "adaptive",
                 }

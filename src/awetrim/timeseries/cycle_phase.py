@@ -100,10 +100,6 @@ class CycleSimple:
         merged_params.update(params_ri or {})
         for k, v in (params_ro or {}).items():
             if k in merged_params:
-                # If there is a collision, rename the second to avoid overwrite
-                # (append _ro). This rarely happens if parameter naming is consistent.
-                merged_params[f"{k}_ro"] = v
-            else:
                 merged_params[k] = v
 
         return opti, merged_vars, merged_obj, merged_params
@@ -156,11 +152,11 @@ class CycleSimple:
             {
                 "ipopt": {
                     "bound_relax_factor": 1e-8,
-                    "tol": 1e-5,
+                    "tol": 1e-6,
                     # "acceptable_iter": 3,
-                    "acceptable_tol": 1e-5,
-                    "constr_viol_tol": 1e-5,
-                    "dual_inf_tol": 1e-5,
+                    "acceptable_tol": 1e-6,
+                    "constr_viol_tol": 1e-6,
+                    "dual_inf_tol": 1e-6,
                     "hessian_approximation": "limited-memory",
                     "mu_strategy": "adaptive",
                 }
@@ -185,51 +181,54 @@ class CycleSimple:
 
                 # Try to update the parameter in the correct phase configuration
                 updated = False
+                candidate_keys = (base_name, var_name)
 
-                # Check reelout first if it has _ro suffix
-                if var_name.endswith("_ro"):
-                    if base_name in self.reelout.pattern_config.get(
+                # Check reelin with both base and original keys
+                for key in candidate_keys:
+                    if not updated and key in self.reelin.pattern_config.get(
                         "path_parameters", {}
                     ):
-                        self.reelout.pattern_config["path_parameters"][base_name] = val
-                        print(f"  {var_name} -> reelout: {val}")
+                        self.reelin.pattern_config["path_parameters"][key] = val
+                        print(f"  {var_name} -> reelin.path_parameters[{key}]: {val}")
                         updated = True
-                    if base_name in self.reelout.pattern_config.get(
-                        "radial_parameters", {}
-                    ):
-                        self.reelout.pattern_config["radial_parameters"][
-                            base_name
-                        ] = val
-                        print(f"  {var_name} -> reelout: {val}")
-                        updated = True
+                        break
+                if not updated:
+                    for key in candidate_keys:
+                        if key in self.reelin.pattern_config.get(
+                            "radial_parameters", {}
+                        ):
+                            self.reelin.pattern_config["radial_parameters"][key] = val
+                            print(
+                                f"  {var_name} -> reelin.radial_parameters[{key}]: {val}"
+                            )
+                            updated = True
+                            break
 
-                # Check reelin if not updated or no _ro suffix
-                if not updated and base_name in self.reelin.pattern_config.get(
-                    "path_parameters", {}
-                ):
-                    self.reelin.pattern_config["path_parameters"][base_name] = val
-                    print(f"  {var_name} -> reelin: {val}")
-                    updated = True
-                if not updated and base_name in self.reelin.pattern_config.get(
-                    "radial_parameters", {}
-                ):
-                    self.reelin.pattern_config["radial_parameters"][base_name] = val
-                    print(f"  {var_name} -> reelin: {val}")
-                    updated = True
+                # If still not updated, check reelout with both keys
+                if not updated:
+                    for key in candidate_keys:
+                        if key in self.reelout.pattern_config.get(
+                            "path_parameters", {}
+                        ):
+                            self.reelout.pattern_config["path_parameters"][key] = val
+                            print(
+                                f"  {var_name} -> reelout.path_parameters[{key}]: {val}"
+                            )
+                            updated = True
+                            break
+                # Optional: keep the debug print to show available radial parameters
+                if not updated:
+                    for key in candidate_keys:
+                        if key in self.reelout.pattern_config.get(
+                            "radial_parameters", {}
+                        ):
+                            self.reelout.pattern_config["radial_parameters"][key] = val
+                            print(
+                                f"  {var_name} -> reelout.radial_parameters[{key}]: {val}"
+                            )
+                            updated = True
+                            break
 
-                # If still not updated, check reelout without _ro requirement
-                if not updated and base_name in self.reelout.pattern_config.get(
-                    "path_parameters", {}
-                ):
-                    self.reelout.pattern_config["path_parameters"][base_name] = val
-                    print(f"  {var_name} -> reelout: {val}")
-                    updated = True
-                if not updated and base_name in self.reelout.pattern_config.get(
-                    "radial_parameters", {}
-                ):
-                    self.reelout.pattern_config["radial_parameters"][base_name] = val
-                    print(f"  {var_name} -> reelout: {val}")
-                    updated = True
                 if not updated:
                     print(
                         f"  Warning: {var_name} = {val} (not stored in any configuration)"
@@ -303,7 +302,7 @@ class CycleSimple:
             optimization_result = self.reelin.run_simulation_opti(
                 optimization_params=[
                     "elevation_start_riro",
-                    "offset_winch_ri",
+                    # "offset_winch_ri",
                     # "slope_winch_ri",
                 ],
                 target="zero",

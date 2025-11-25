@@ -661,7 +661,7 @@ class PhaseParameterized(TimeSeries):
             elif var in self.pattern_config["sim_parameters"]:
                 init_val = self.pattern_config["sim_parameters"][var]
                 opti.set_initial(mx, init_val)
-                # print(f"Applying constraints for {var}")
+                print(f"Applying constraints for {var}, sim param initial {init_val}")
                 lb, ub = DEFAULT_OPTI_LIMITS[var]
                 opti.subject_to(mx >= lb)
                 opti.subject_to(mx <= ub)

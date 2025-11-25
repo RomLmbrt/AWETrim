@@ -14,24 +14,22 @@ from awetrim.timeseries.reelout_phase import Reelout
 # ---------------------------------------------------------------------------
 PHYSICAL_CONFIG = {
     "mass_wing": 15,
-    "mass_kcu": 15,
+    "mass_kcu": 10,
     "area_wing": 19.75,
-    "tether_diameter": 0.01,
+    "tether_diameter": 0.006,
 }
 
 PATH_PARAMETERS = {
-    "r0": 230,
-    "az_amp0": 0.251445,
-    "beta_amp0": 0.0872665,
-    "beta_coeffs": np.array(
-        [0.36348566, -0.74089438, 0.09136024, -0.39742969, -0.3705854]
-    ),
+    "r0": 180,
+    "az_amp0": 0.25,
+    "beta_amp0": 0.12,
+    "beta_coeffs": np.array([0, 0, 0, 0, 0]),
     "az_coeffs": [0, 0, 0, 0, 0],
     "kbeta": 0,
-    "beta0": 0.436688,
+    "beta0": 0.346,
     "kappa": 0,
     "downloops": True,
-    "distance_radial_start": 230,
+    "distance_radial_start": 180,
 }
 
 RADIAL_PARAMETERS = {
@@ -39,22 +37,22 @@ RADIAL_PARAMETERS = {
     "force_model": "quadratic",  # "linear" or "quadratic"
     "reeling_speed": 0.0,  # m/s, only for constant reeling
     "max_tether_force": 8400,  # N, only for force reeling
-    "min_tether_force": 750,  # N, only for force reeling
+    "min_tether_force": 1500,  # N, only for force reeling
     "softplus": True,
     "softplus_beta": 1e-4,
     "softminus": True,
     "softminus_beta": 1e-3,
-    "slope_winch_ro": 10000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
+    "slope_winch_ro": 6000,  # N/(m/s)^2 for quadratic, N/(m/s) for linear
     "offset_winch_ro": 0,  # m/s
 }
 
-N = 4  # Number of half eight loops
+N = 5  # Number of half eight loops
 SIM_PARAMETERS = {
     "start_time": 0,
     "end_time": 35,
     "start_angle": 0,
     "end_angle": N * np.pi,
-    "n_points": 600,
+    "n_points": 200,
 }
 
 REELOUT_CONFIG = {
@@ -67,8 +65,8 @@ REELOUT_CONFIG = {
 AERO_INPUT_FILE = Path("data/LEI-V3-KITE/v3_aero_input.json")
 
 WIND_CONFIG = {
-    "speed_wind_at_200": 10,
-    "z0": 0.1,
+    "speed_wind_at_200": 12,
+    "z0": 0.01,
     "model_type": "logarithmic",
 }
 
@@ -148,7 +146,7 @@ def main(run_plots=False):
     )
     optimization_params = [
         "az_amp0",
-        "beta_amp0",
+        # "beta_amp0",
         "beta0",
         # "slope_winch_ro",
         # "offset",
@@ -156,6 +154,10 @@ def main(run_plots=False):
         # "kappa",
     ]
     phase, axes = reelout.run_simulation(run_plots=run_plots)
+    lift = phase.return_variable("lift_coefficient")
+    print("Average lift coefficient:", np.mean(lift))
+    drag = phase.return_variable("drag_coefficient")
+    print("Average drag coefficient:", np.mean(drag))
 
     solution = reelout.run_simulation_opti(optimization_params=optimization_params)
     phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes)
