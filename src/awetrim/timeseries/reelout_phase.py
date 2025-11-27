@@ -135,7 +135,7 @@ class Reelout:
         start_state = {
             "t": 0,
             "s": 0,
-            "s_dot": 2,
+            "s_dot": 5,
             "input_steering": 0,
             "tension_tether_ground": 1e10,
             "distance_radial": self.pattern_config["path_parameters"][
@@ -253,11 +253,11 @@ class Reelout:
             {
                 "ipopt": {
                     # "bound_relax_factor": 1e-8,
-                    "tol": 1e-6,
+                    "tol": 1e-4,
                     # "acceptable_iter": 3,
-                    "acceptable_tol": 1e-6,
-                    "constr_viol_tol": 1e-6,
-                    "dual_inf_tol": 1e-6,
+                    "acceptable_tol": 1e-4,
+                    "constr_viol_tol": 1e-4,
+                    "dual_inf_tol": 1e-4,
                     "hessian_approximation": "limited-memory",
                     "mu_strategy": "adaptive",
                 }
@@ -347,13 +347,13 @@ class Reelout:
         start_state = {
             "t": 0,
             "s": 0,
-            "s_dot": 4,
+            "s_dot": 5,
             "input_steering": 0,
-            "tension_tether_ground": 1e12,
+            "tension_tether_ground": 1e10,
             "distance_radial": pattern_config["path_parameters"][
                 "distance_radial_start"
             ],
-            "speed_radial": 0,  # Positive for reel-out
+            "speed_radial": 1,  # Positive for reel-out
         }
 
         phase = PhaseParameterized(

@@ -14,14 +14,14 @@ from awetrim.timeseries.reelin_phase import ReelinSimple
 # ---------------------------------------------------------------------------
 PHYSICAL_CONFIG = {
     "mass_wing": 15,
-    "mass_kcu": 10,
+    "mass_kcu": 15,
     "area_wing": 19.75,
     "tether_diameter": 0.006,
 }
 
 PATH_PARAMETERS = {
     "elevation_start_ri": np.radians(30),
-    "elevation_start_riro": np.radians(80),
+    "elevation_start_riro": np.radians(70),
     "elevation_start_ro": np.radians(30),
     "distance_radial_start": 360,
     "distance_radial_end": 230,

@@ -14,22 +14,22 @@ from awetrim.timeseries.reelout_phase import Reelout
 # ---------------------------------------------------------------------------
 PHYSICAL_CONFIG = {
     "mass_wing": 15,
-    "mass_kcu": 10,
+    "mass_kcu": 15,
     "area_wing": 19.75,
     "tether_diameter": 0.006,
 }
 
 PATH_PARAMETERS = {
-    "r0": 180,
-    "az_amp0": 0.25,
-    "beta_amp0": 0.12,
+    "r0": 200,
+    "az_amp0": np.radians(20),
+    "beta_amp0": 0.089,
     "beta_coeffs": np.array([0, 0, 0, 0, 0]),
     "az_coeffs": [0, 0, 0, 0, 0],
     "kbeta": 0,
-    "beta0": 0.346,
+    "beta0": 0.33105746800957997,
     "kappa": 0,
     "downloops": True,
-    "distance_radial_start": 180,
+    "distance_radial_start": 200,
 }
 
 RADIAL_PARAMETERS = {
@@ -46,13 +46,13 @@ RADIAL_PARAMETERS = {
     "offset_winch_ro": 0,  # m/s
 }
 
-N = 5  # Number of half eight loops
+N = 2  # Number of half eight loops
 SIM_PARAMETERS = {
     "start_time": 0,
     "end_time": 35,
     "start_angle": 0,
     "end_angle": N * np.pi,
-    "n_points": 200,
+    "n_points": 400,
 }
 
 REELOUT_CONFIG = {
@@ -65,9 +65,9 @@ REELOUT_CONFIG = {
 AERO_INPUT_FILE = Path("data/LEI-V3-KITE/v3_aero_input.json")
 
 WIND_CONFIG = {
-    "speed_wind_at_200": 12,
+    "speed_wind_at_200": 10,
     "z0": 0.01,
-    "model_type": "logarithmic",
+    "model_type": "uniform",
 }
 
 
@@ -146,7 +146,7 @@ def main(run_plots=False):
     )
     optimization_params = [
         "az_amp0",
-        # "beta_amp0",
+        "beta_amp0",
         "beta0",
         # "slope_winch_ro",
         # "offset",
@@ -162,8 +162,8 @@ def main(run_plots=False):
     solution = reelout.run_simulation_opti(optimization_params=optimization_params)
     phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes)
     print(phase.energy_metrics())
-    reelout.pattern_config["path_parameters"]["kappa"] = 1
-    phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes)
+    # reelout.pattern_config["path_parameters"]["kappa"] = 1
+    # phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes)
     print(phase.energy_metrics())
 
     plt.show()

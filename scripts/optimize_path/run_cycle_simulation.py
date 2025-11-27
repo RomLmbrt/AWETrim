@@ -74,10 +74,10 @@ def main(run_plots: bool = False):
         "beta0",
         "elevation_start_riro",
         "offset_winch_ri",
-        # "slope_winch_ri",
+        "slope_winch_ri",
         # "offset_winch_ro",
         "slope_winch_ro",
-        # "beta_coeffs",
+        "beta_coeffs",
         # "kappa",
     ]
     print(reelout_mod.REELOUT_CONFIG)
@@ -87,14 +87,14 @@ def main(run_plots: bool = False):
         pattern_config=reelout_mod.REELOUT_CONFIG,
         depower=0,
     )
-    opti_params_ro = [
-        "az_amp0",
-        "beta_amp0",
-        "beta0",
-        # "slope_winch_ro",
-        # "beta_coeffs",
-        # "kappa",
-    ]
+    # opti_params_ro = [
+    #     "az_amp0",
+    #     "beta_amp0",
+    #     "beta0",
+    #     "slope_winch_ro",
+    #     # "beta_coeffs",
+    #     # "kappa",
+    # ]
     # reelout.run_simulation_opti(optimization_params=opti_params_ro, target="power")
     reelin = ReelinSimple(
         system_model=system_model,
@@ -109,7 +109,8 @@ def main(run_plots: bool = False):
     result = cycle.run_cycle_simulation(optimize_reelin=True, plotting=run_plots)
     # plt.show()
     cycle.run_cycle_opti(optimization_params=optimization_params)
-
+    print(cycle.reelin.pattern_config)
+    print(cycle.reelout.pattern_config)
     result = cycle.run_cycle_simulation(optimize_reelin=False, plotting=run_plots)
     plt.show()
     if result is None:

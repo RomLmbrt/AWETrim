@@ -278,7 +278,7 @@ class CycleSimple:
             return None
 
         # 2) Set the reel-in start distance to this value
-        self.reelin.pattern_config.setdefault("path_parameters", {})
+        # self.reelin.pattern_config.setdefault("path_parameters", {})
         self.reelin.pattern_config["path_parameters"][
             "distance_radial_start"
         ] = distance_radial_end_ro
