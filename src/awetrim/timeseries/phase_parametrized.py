@@ -89,8 +89,11 @@ class PhaseParameterized(TimeSeries):
         else:
             state_obj = start_state
 
-        N = self.pattern_config["n_points"]
-        time_step = self.pattern_config["end_time"] / self.pattern_config["n_points"]
+        N = self.pattern_config["sim_parameters"]["n_points"]
+        time_step = (
+            self.pattern_config["sim_parameters"]["end_time"]
+            / self.pattern_config["sim_parameters"]["n_points"]
+        )
         intg = self.integrator(time_step=time_step, kite_model=km_copy)
         qs_solver = self.residual_solver(km_copy)
 
@@ -120,7 +123,7 @@ class PhaseParameterized(TimeSeries):
             x0 = p
             z0 = sol["x"]
         # self.states.append(new_state.to_dict())
-        t = self.pattern_config["start_time"]
+        t = self.pattern_config["sim_parameters"]["start_time"]
         for i in range(N):
             # print(f"Time: {t}, State: {x0}, Inputs: {z0}")
             try:
@@ -161,7 +164,10 @@ class PhaseParameterized(TimeSeries):
             self.states.append(new_state.to_dict())
 
     def run_simulation_phase(
-        self, start_state, allow_failure=True, return_states=False
+        self,
+        start_state,
+        allow_failure=True,
+        return_states=True,
     ):
         """
         March along an s-grid. At each grid point:
@@ -216,7 +222,11 @@ class PhaseParameterized(TimeSeries):
                 state_obj.speed_radial,
             )
             # x = [s, distance_radial]
-            x = ca.vertcat(s_grid[0], state_obj.distance_radial)
+            x = ca.vertcat(
+                s_grid[0],
+                state_obj.distance_radial,
+                self.pattern_config["sim_parameters"]["input_depower"],
+            )
         else:
             # z = [tension_tether_ground, input_steering, s_ddot, speed_radial]
             z = ca.vertcat(
@@ -268,6 +278,7 @@ class PhaseParameterized(TimeSeries):
                     s_dot=float(z[2]),
                     distance_radial=float(x[1]),
                     speed_radial=float(z[3]),
+                    input_depower=float(x[2]),
                 )
             else:
                 curr_state = State(
@@ -290,7 +301,7 @@ class PhaseParameterized(TimeSeries):
                 v_s = z[2]  # s_dot from QS solve
                 dt = ds / (v_s + 1e-12)  # small epsilon to avoid division by zero
                 next_r = x[1] + z[3] * dt
-                x = ca.vertcat(s_grid[i + 1], next_r)
+                x = ca.vertcat(s_grid[i + 1], next_r, x[2])
             else:
                 # dynamic: ds = v*dt + 0.5*a*dt^2
                 v_s = x[1]  # current s_dot (state)
@@ -304,7 +315,7 @@ class PhaseParameterized(TimeSeries):
             # 5) advance time (dt is a CasADi scalar DM; cast to float)
             t += float(dt)
 
-        print("Total time:", t)
+        # print("Total time:", t)
         return self.states if return_states else None
 
     def run_simulation_euler(
@@ -407,7 +418,7 @@ class PhaseParameterized(TimeSeries):
 
         if not opti:
             opti = ca.Opti()
-        self.run_simulation_phase(start_state, return_states=True)
+        self.run_simulation_phase(start_state)
         self.kite_model.reset_solver()
 
         if start_state_opti:
@@ -496,6 +507,10 @@ class PhaseParameterized(TimeSeries):
         # --- Build model functions
         km_copy.establish_residual()
         flat_syms = [ca.vertcat(*opti_params.values())] if opti_params else []
+        if not "input_depower" in opti_params:
+            flat_syms.append(
+                km_copy.input_depower
+            )  # treat depower as param if not optimized
 
         residual = ca.Function(
             "residual",
@@ -523,10 +538,23 @@ class PhaseParameterized(TimeSeries):
             + flat_syms,
             [km_copy.tension_tether_equation],
         )
-
+        aoa_eq = ca.Function(
+            "speed_tangential_eq",
+            [
+                self.s,
+                self.s_dot,
+                km_copy.input_steering,
+                km_copy.tension_tether_ground,
+                km_copy.speed_radial,
+                km_copy.distance_radial,
+            ]
+            + flat_syms,
+            [km_copy.angle_of_attack],
+        )
         # --- Safety / geometry constraint
         height = pattern.z(opti_vars["distance_radial"], s_grid[:-1])  # N entries
-        opti.subject_to(height >= 50)
+        opti.subject_to(height >= DEFAULT_OPTI_LIMITS["height"][0])
+        opti.subject_to(height <= DEFAULT_OPTI_LIMITS["height"][1])
 
         # --- Power scale based on the simulated trajectory (LEFT RULE, consistent)
         t_hist = self.return_variable("t")  # length N (QS) or N+1
@@ -566,6 +594,7 @@ class PhaseParameterized(TimeSeries):
         opti.subject_to(opti_vars["s_dot"] >= sdot_min)
         if "speed_radial" in DEFAULT_OPTI_LIMITS:
             lb, ub = DEFAULT_OPTI_LIMITS["speed_radial"]
+            print(f"Applying speed_radial limits: lb={lb}, ub={ub}")
             opti.subject_to(opti_vars["speed_radial"] >= lb)
             opti.subject_to(opti_vars["speed_radial"] <= ub)
         if "distance_radial" in DEFAULT_OPTI_LIMITS:
@@ -576,6 +605,9 @@ class PhaseParameterized(TimeSeries):
         # --- Objective assembly with SAME quadrature as simulation (left rule)
         energy = 0
         t_eff = 0
+
+        if not "input_depower" in opti_params:
+            flat_syms[-1] = sim_params["input_depower"]
 
         for i in range(N):
 
@@ -611,7 +643,8 @@ class PhaseParameterized(TimeSeries):
             # Left-rule dt_i = Δs_i / s_dot[i], guarded to avoid blow-up
             if i < N - 1:
                 ds_i = s_grid[i + 1] - s_grid[i]
-                sd_safe = ca.fmax(opti_vars["s_dot"][i], max(sdot_min, S["sd"] * 1e-3))
+                # sd_safe = ca.fmax(opti_vars["s_dot"][i], max(sdot_min, S["sd"] * 1e-3))
+                sd_safe = opti_vars["s_dot"][i]
                 dt_i = ds_i / sd_safe
 
                 # r_{i+1} propagation (scaled residual)
@@ -624,10 +657,31 @@ class PhaseParameterized(TimeSeries):
                     / S["r"]
                     == 0
                 )
-
+                steering_rate = (
+                    opti_vars["input_steering"][i + 1] - opti_vars["input_steering"][i]
+                ) / dt_i
+                opti.subject_to(
+                    steering_rate <= DEFAULT_OPTI_LIMITS["steering_rate"][1]
+                )
+                opti.subject_to(
+                    steering_rate >= DEFAULT_OPTI_LIMITS["steering_rate"][0]
+                )
                 # Accumulate energy and time: power_i = T_i * v_r_i
                 energy += T_i * opti_vars["speed_radial"][i] * dt_i
                 t_eff += dt_i
+
+                # LImit angle of attack
+                aoa_i = aoa_eq(
+                    s_grid[i],
+                    opti_vars["s_dot"][i],
+                    opti_vars["input_steering"][i],
+                    T_i,
+                    opti_vars["speed_radial"][i],
+                    opti_vars["distance_radial"][i],
+                    *flat_syms,
+                )
+                opti.subject_to(aoa_i <= DEFAULT_OPTI_LIMITS["angle_of_attack"][1])
+                opti.subject_to(aoa_i >= DEFAULT_OPTI_LIMITS["angle_of_attack"][0])
 
         power = energy / (t_eff + 1e-12)
 
@@ -644,6 +698,7 @@ class PhaseParameterized(TimeSeries):
 
             if var in self.pattern_config["path_parameters"]:
                 init_val = self.pattern_config["path_parameters"][var]
+
                 opti.set_initial(mx, init_val)
                 # print(f"Applying constraints for {var}")
                 lb, ub = DEFAULT_OPTI_LIMITS[var]
@@ -665,10 +720,10 @@ class PhaseParameterized(TimeSeries):
                 lb, ub = DEFAULT_OPTI_LIMITS[var]
                 opti.subject_to(mx >= lb)
                 opti.subject_to(mx <= ub)
-            # else:
-            #     raise ValueError(
-            #         f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
-            #     )
+            else:
+                raise ValueError(
+                    f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
+                )
 
         # --- Default limits for vector vars (if provided)
         for var_name, mx in opti_vars.items():
@@ -867,6 +922,7 @@ class PhaseParameterized(TimeSeries):
             p = ca.vertcat(
                 self.s,
                 km_copy.distance_radial,
+                km_copy.input_depower,
             )
 
         else:
