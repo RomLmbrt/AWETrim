@@ -6,14 +6,26 @@ reel-out maneuvers for airborne wind energy systems.
 
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
+from pathlib import Path
 import copy
 import warnings
 import casadi as ca
 import numpy as np
+import yaml
 import matplotlib.pyplot as plt
 
 from awetrim.timeseries.phase_parametrized import PhaseParameterized
 from awetrim.utils.defaults import DEFAULT_RADIAL_PARAMETERS
+
+
+START_STATE_REELOUT = {
+    "t": 0,
+    "s": 0,
+    "s_dot": 1.5,
+    "input_steering": 0,
+    "tension_tether_ground": 8.4e7,
+    "speed_radial": 0,  # Positive for reel-out
+}
 
 
 @dataclass
@@ -26,6 +38,62 @@ class SimulationResult:
     phase_variables: Dict[str, Any]
     energy_objective: float
     total_time: float
+
+    def save_config_to_yaml(self, output_path: Union[str, Path]) -> None:
+        """Save optimized configuration to a YAML file.
+
+        Parameters
+        ----------
+        output_path : str or Path
+            Path where the YAML config file should be saved.
+
+        Examples
+        --------
+        >>> result = reelout.run_simulation_opti()
+        >>> result.save_config_to_yaml("data/LEI-V3-KITE/v3_optimized_config.yaml")
+        """
+        output_path = Path(output_path)
+
+        # Convert config to YAML-friendly format (numpy arrays -> lists)
+        yaml_config = self._prepare_config_for_yaml(self.optimized_config)
+
+        # Write to file
+        with output_path.open("w", encoding="utf-8") as f:
+            yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
+
+        print(f"Optimized configuration saved to {output_path}")
+
+    def _prepare_config_for_yaml(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert numpy arrays and other non-serializable types to YAML-friendly formats.
+
+        Nests all reelout configuration under a "reelout" section.
+
+        Parameters
+        ----------
+        config : dict
+            Configuration dictionary potentially containing numpy arrays.
+
+        Returns
+        -------
+        dict
+            Configuration with reelout section nested and all numpy arrays converted to lists.
+        """
+        yaml_config = {"reelout": {}}
+
+        for section_name, section_content in config.items():
+            if isinstance(section_content, dict):
+                yaml_config["reelout"][section_name] = {}
+                for key, value in section_content.items():
+                    if isinstance(value, np.ndarray):
+                        yaml_config["reelout"][section_name][key] = value.tolist()
+                    elif isinstance(value, (np.floating, np.integer)):
+                        yaml_config["reelout"][section_name][key] = float(value)
+                    else:
+                        yaml_config["reelout"][section_name][key] = value
+            else:
+                yaml_config["reelout"][section_name] = section_content
+
+        return yaml_config
 
 
 class Reelout:
@@ -58,7 +126,7 @@ class Reelout:
         *,
         system_model: Any,  # Should be SystemModel but avoiding circular import
         pattern_config: Optional[Dict[str, Any]] = None,
-        depower: float = 0.0,
+        depower: float = None,
     ) -> None:
         """Initialize ReeloutSimple instance.
 
@@ -84,7 +152,7 @@ class Reelout:
             "speed_tangential",
             "tension_tether_ground",
             "angle_elevation",
-            "distance_radial",
+            "speed_radial",
         ]
         self._opti_params = {}
 
@@ -129,25 +197,27 @@ class Reelout:
 
     def initialize_phase(self) -> PhaseParameterized:
         """Initialize and prepare the optimization phase."""
-        self.system_model.input_depower = self.depower
 
         pattern_config_opti = copy.deepcopy(self.pattern_config)
-        start_state = {
-            "t": 0,
-            "s": 0,
-            "s_dot": 5,
-            "input_steering": 0,
-            "tension_tether_ground": 1e10,
-            "distance_radial": self.pattern_config["path_parameters"]["r0"],
-            "speed_radial": 1,  # Positive for reel-out
-        }
+        start_state = START_STATE_REELOUT
+        start_state["distance_radial"] = self.pattern_config["path_parameters"]["r0"]
 
         pattern_config_opti = copy.deepcopy(self.pattern_config)
         start_state_opti = copy.deepcopy(start_state)
+        opti_depower = False
         for var_name, mx in self._opti_params.items():
             for entry in ["path_parameters", "radial_parameters", "sim_parameters"]:
                 if var_name in pattern_config_opti.get(entry, {}):
                     pattern_config_opti[entry][var_name] = mx
+            if var_name == "input_depower":
+                self.system_model.input_depower = mx
+                # opti_depower = True
+
+        # if not opti_depower:
+        #     self.system_model.input_depower = self.pattern_config["sim_parameters"].get(
+        #         "input_depower", 0.0
+        #     )
+
         self._phase = PhaseParameterized(
             self.system_model,
             quasi_steady=True,
@@ -184,10 +254,13 @@ class Reelout:
 
         if optimization_params:
             for var in optimization_params:
-                self._opti_params[var] = opti.variable()
-            if "coeffs" in var:
-                num_coeffs = len(self.pattern_config["path_parameters"].get(var, []))
-                self._opti_params[var] = opti.variable(num_coeffs)
+                if "coeffs" in var:
+                    num_coeffs = len(
+                        self.pattern_config["path_parameters"].get(var, [])
+                    )
+                    self._opti_params[var] = opti.variable(num_coeffs)
+                else:
+                    self._opti_params[var] = opti.variable()
         elif optimization_dict:
             self._opti_params = optimization_dict
 
@@ -196,7 +269,10 @@ class Reelout:
         return self._opti, self._opti_vars, self._objective, self._opti_params
 
     def run_simulation_opti(
-        self, optimization_params: List[str] = None, target: str = "power"
+        self,
+        optimization_params: List[str] = None,
+        target: str = "power",
+        s_dot: Optional[float] = None,
     ) -> Optional[SimulationResult]:
         """Run optimization and return results.
 
@@ -252,12 +328,16 @@ class Reelout:
                 "ipopt": {
                     # "bound_relax_factor": 1e-8,
                     "tol": 1e-6,
-                    # "acceptable_iter": 3,
-                    "acceptable_tol": 1e-6,
-                    "constr_viol_tol": 1e-6,
-                    "dual_inf_tol": 1e-6,
+                    "acceptable_iter": 3,
+                    "acceptable_tol": 1e-5,
+                    # "constr_viol_tol": 1e-6,
+                    "dual_inf_tol": 1e-4,
                     "hessian_approximation": "limited-memory",
-                    "mu_strategy": "adaptive",
+                    # "mu_strategy": "adaptive",
+                    # "nlp_scaling_method": "gradient-based",
+                    # "limited_memory_max_history": 40,  # try 20–50
+                    # "limited_memory_update_type": "bfgs",  # (if supported)
+                    "mu_target": 1e-8,
                 }
             },
         )
@@ -289,20 +369,34 @@ class Reelout:
             print("Optimization failed:", exc)
             return None
 
-    def run_simulation(self, *, run_plots: bool = False, axes: Any = None) -> None:
+    def run_simulation(
+        self,
+        *,
+        run_plots: bool = False,
+        axes: Any = None,
+        phase_sim: bool = True,
+        s_dot: Optional[float] = None,
+        speed_radial: Optional[float] = None,
+    ) -> None:
         """Execute the reel-out simulation.
 
         Args:
-            solution: Optional CasADi solution from optimization
             run_plots: When True, produce overview plots
+            axes: Optional axes for plotting
+            phase_sim: Whether to run in phase mode
+            s_dot: Optional override for initial tangential speed (default: 4)
+            speed_radial: Optional override for initial radial speed (default: -1)
         """
-        self.initialize_phase()
-        self.system_model.input_depower = self.depower
 
+        # self.system_model.input_depower = self.depower
+
+        # Use provided values or defaults
         phase = self._run_parametrized_phase(
             label_prefix="a",
             pattern_config=self.pattern_config,
-            phase_sym=True,
+            phase_sym=phase_sim,
+            s_dot=s_dot,
+            speed_radial=speed_radial,
         )
 
         if run_plots:
@@ -328,6 +422,8 @@ class Reelout:
         label_prefix: str,
         pattern_config: Dict[str, Any],
         phase_sym: bool = False,
+        s_dot: Optional[float] = None,
+        speed_radial: Optional[float] = None,
     ) -> PhaseParameterized:
         """Run a parametrized phase simulation.
 
@@ -335,6 +431,8 @@ class Reelout:
             label_prefix: Prefix for labeling outputs
             pattern_config: Configuration for this phase
             phase_sym: Whether to run in symbolic mode
+            s_dot: Optional override for initial tangential speed
+            speed_radial: Optional override for initial radial speed
 
         Returns:
             PhaseParameterized object with simulation results
@@ -342,15 +440,16 @@ class Reelout:
         sim_type = "quasi steady"
         print(f"Running simulation for {sim_type} with label: {label_prefix}")
 
-        start_state = {
-            "t": 0,
-            "s": 0,
-            "s_dot": 5,
-            "input_steering": 0,
-            "tension_tether_ground": 1e10,
-            "distance_radial": pattern_config["path_parameters"]["r0"],
-            "speed_radial": 1,  # Positive for reel-out
-        }
+        start_state = START_STATE_REELOUT.copy()
+        start_state["distance_radial"] = pattern_config["path_parameters"]["r0"]
+
+        # Override initial conditions if provided
+        if s_dot is not None:
+            start_state["s_dot"] = s_dot
+            print(f"  Using s_dot={s_dot}")
+        if speed_radial is not None:
+            start_state["speed_radial"] = speed_radial
+            print(f"  Using speed_radial={speed_radial}")
 
         phase = PhaseParameterized(
             self.system_model,
