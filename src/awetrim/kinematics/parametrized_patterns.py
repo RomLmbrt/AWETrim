@@ -405,11 +405,17 @@ def create_pattern_from_dict(
             "az_amp0",
             "beta_amp0",
             "beta0",
+            "phi0",
             "beta_coeffs",
             "az_coeffs",
         ],
         "reel_in_simple": ["elevation_start_ri", "elevation_start_riro"],
-        "transition_simple": ["elevation_start_riro", "elevation_start_ro"],
+        "transition_simple": [
+            "elevation_start_riro",
+            "elevation_start_ro",
+            "azimuth_start_riro",
+            "azimuth_start_ro",
+        ],
     }
 
     if pattern_type not in required_params:
@@ -502,25 +508,51 @@ class CST_Lissajous(ParametrizedPatternsAngles):
     def _mod1(x):
         return x - ca.floor(x)
 
-    def _bump(self, u, a, width, normalize=False):
-        delta = self._mod1(u - a)
-        s = delta / width
-        val = 6.0 * (s**2) * ((1.0 - s) ** 2)
-        inside = ca.if_else(delta <= width, 1.0, 0.0)
-        bump = inside * val
+    @staticmethod
+    def _p(x):
+        # 2nd basis polynomial of 4th-order Bernstein: p(x)=6x^2(1-x)^2
+        return 6.0 * (x**2) * ((1.0 - x) ** 2)
+
+    @staticmethod
+    def _gate01(x):
+        # hard gate: 1 if 0<=x<=1 else 0
+        return ca.if_else(ca.logic_and(x >= 0.0, x <= 1.0), 1.0, 0.0)
+
+    def _bump_pair(self, u, s0, width, normalize=False):
+        """
+        Periodic bump without inner mod1:
+        - right bump active for u in [s0, s0+width]
+        - left bump is the wrapped copy (shifted by +1)
+        """
+        x_right = (u - s0) / width
+        x_left = (u - s0 + 1.0) / width  # wrap-around copy
+
+        pright = self._gate01(x_right) * self._p(x_right)
+        pleft = self._gate01(x_left) * self._p(x_left)
+
+        bump = pright + pleft
         return bump / width if normalize else bump
 
     def _build_shape_repeat(self, u, K, width, base_vec):
-        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump(u; a=k/K, width)."""
+        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump_pair(u; s0=k/K, width)."""
         P = int(base_vec.numel())
         N = 1.0
         for k in range(K):
             wk = base_vec[k % P]
-            a = k / K
-            N = N + wk * self._bump(u, a=a, width=width, normalize=self.normalize_bumps)
+
+            # Start-aligned bumps (matches your current a=k/K interpretation)
+            s0 = k / K
+
+            # If instead you want the PEAK at k/K (since p peaks at x=0.5), use:
+            # s0 = k / K - width / 2.0
+
+            N = N + wk * self._bump_pair(
+                u, s0=s0, width=width, normalize=self.normalize_bumps
+            )
         return N
 
-    def _u(self, s):  # unit-phase for shaping
+    def _u(self, s):
+        # keep ONE wrap here
         return self._mod1(self.omega * s / (2.0 * ca.pi))
 
     def azimuth(self, r, s):
@@ -528,7 +560,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         phi_class = self.sgn * a_phi * ca.sin(self.omega * s)
         u = self._u(s)
         N_phi = self._build_shape_repeat(u, self.K_phi, self.width_phi, self.az_coeffs)
-        return phi_class * N_phi  # c_phi = 0
+        return phi_class * N_phi
 
     def elevation(self, r, s):
         c_beta = self.beta_center(r)
@@ -538,7 +570,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
         N_beta = self._build_shape_repeat(
             u, self.K_beta, self.width_beta, self.beta_coeffs
         )
-        return (beta_class) * N_beta
+        return beta_class * N_beta
 
 
 class Bspline(ParametrizedPatternsAngles):
@@ -864,11 +896,12 @@ class CST_Helix(ParametrizedPatternsAngles):
         kbeta=0.0,
         width_phi=0.5,
         width_beta=0.5,
+        phi0=0,
         left_first=True,
         normalize_bumps=False,
         repeat_phi=True,
         repeat_beta=True,
-        k_vr=6300,
+        **kwargs,
     ):  # <- only flags
         super().__init__(
             omega=omega,
@@ -884,11 +917,13 @@ class CST_Helix(ParametrizedPatternsAngles):
             width_beta=width_beta,
             left_first=left_first,
             normalize_bumps=normalize_bumps,
+            phi0=phi0,
         )
 
         # Base weight vectors
         self.az_coeffs = ca.vertcat(az_coeffs)
         self.beta_coeffs = ca.vertcat(beta_coeffs)
+        self.phi_center = phi0
         P_phi = int(self.az_coeffs.numel())
         P_beta = int(self.beta_coeffs.numel())
 
@@ -913,33 +948,67 @@ class CST_Helix(ParametrizedPatternsAngles):
     def _mod1(x):
         return x - ca.floor(x)
 
-    def _bump(self, u, a, width, normalize=False):
-        delta = self._mod1(u - a)
-        s = delta / width
-        val = 6.0 * (s**2) * ((1.0 - s) ** 2)
-        inside = ca.if_else(delta <= width, 1.0, 0.0)
-        bump = inside * val
+    @staticmethod
+    def _p(x):
+        # 2nd basis polynomial of 4th-order Bernstein: p(x)=6x^2(1-x)^2
+        return 6.0 * (x**2) * ((1.0 - x) ** 2)
+
+    @staticmethod
+    def _gate01_smooth_sigmoid(x, k=50.0):
+        # k controls sharpness. Larger k -> closer to hard gate.
+        s_left = 1.0 / (1.0 + ca.exp(-k * (x - 0.0)))
+        s_right = 1.0 / (1.0 + ca.exp(-k * (1.0 - x)))
+        return s_left * s_right
+
+    @staticmethod
+    def _gate01(x):
+        # hard gate: 1 if 0<=x<=1 else 0
+        return ca.if_else(ca.logic_and(x >= 0.0, x <= 1.0), 1.0, 0.0)
+
+    def _bump_pair(self, u, s0, width, normalize=False):
+        """
+        Periodic bump without inner mod1:
+        - right bump active for u in [s0, s0+width]
+        - left bump is the wrapped copy (shifted by +1)
+        """
+        x_right = (u - s0) / width
+        x_left = (u - s0 + 1.0) / width  # wrap-around copy
+
+        pright = self._gate01(x_right) * self._p(x_right)
+        pleft = self._gate01(x_left) * self._p(x_left)
+
+        bump = pright + pleft
         return bump / width if normalize else bump
 
     def _build_shape_repeat(self, u, K, width, base_vec):
-        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump(u; a=k/K, width)."""
+        """N(u) = 1 + Σ_{k=0..K-1} w_{k mod P} * bump_pair(u; s0=k/K, width)."""
         P = int(base_vec.numel())
         N = 1.0
         for k in range(K):
             wk = base_vec[k % P]
-            a = k / K
-            N = N + wk * self._bump(u, a=a, width=width, normalize=self.normalize_bumps)
+
+            # Start-aligned bumps (matches your current a=k/K interpretation)
+            s0 = k / K
+
+            # If instead you want the PEAK at k/K (since p peaks at x=0.5), use:
+            # s0 = k / K - width / 2.0
+
+            N = N + wk * self._bump_pair(
+                u, s0=s0, width=width, normalize=self.normalize_bumps
+            )
         return N
 
-    def _u(self, s):  # unit-phase for shaping
+    def _u(self, s):
+        # keep ONE wrap here
         return self._mod1(self.omega * s / (2.0 * ca.pi))
 
     def azimuth(self, r, s):
+        c_phi = self.phi_center
         a_phi = self.az_amp(r)
         phi_class = self.sgn * a_phi * ca.sin(self.omega * s)
         u = self._u(s)
         N_phi = self._build_shape_repeat(u, self.K_phi, self.width_phi, self.az_coeffs)
-        return phi_class * N_phi  # c_phi = 0
+        return c_phi + phi_class * N_phi  # c_phi = 0
 
     def elevation(self, r, s):
         c_beta = self.beta_center(r)
@@ -977,10 +1046,14 @@ class Transition_Simple(ParametrizedPatternsAngles):
         self,
         elevation_start_riro,
         elevation_start_ro,
+        azimuth_start_riro=0,
+        azimuth_start_ro=0,
     ):  # <- only flags
         super().__init__(
             elevation_start_riro=elevation_start_riro,
             elevation_start_ro=elevation_start_ro,
+            azimuth_start_riro=azimuth_start_riro,
+            azimuth_start_ro=azimuth_start_ro,
         )
 
     def elevation(self, r, s):
@@ -989,4 +1062,6 @@ class Transition_Simple(ParametrizedPatternsAngles):
         )
 
     def azimuth(self, r, s):
-        return 0
+        return self.azimuth_start_riro + s * (
+            self.azimuth_start_ro - self.azimuth_start_riro
+        )
