@@ -1,5 +1,8 @@
 import casadi as ca
 import numpy as np
+from pathlib import Path
+from typing import Union
+import yaml
 from awetrim.system.tether import RigidLinkTether, FlexibleLinkTether
 from awetrim.system.kite import Kite
 from awetrim.kinematics.Kinematics import KiteKinematics
@@ -164,7 +167,19 @@ class SystemModel(KiteKinematics):
         if unknown_vars is None:
             unknown_vars = self.default_unknown_vars
         self.establish_residual()
-        x = [getattr(self, name) for name in unknown_vars]
+
+        x = []
+        for name in unknown_vars:
+            if hasattr(self, name):
+                x.append(getattr(self, name))
+            else:
+                try:
+                    x.append(getattr(self.wind, name))
+                except AttributeError:
+                    raise ValueError(
+                        f"Unknown variable '{name}' is not a valid attribute."
+                    )
+        # x = [getattr(self, name) for name in unknown_vars]
 
         inputs = []
         for var in ca.symvar(self.residual):
@@ -477,3 +492,67 @@ class State:
 
 def safe_value(val):
     return 0.0 if val is None else val
+
+
+from awetrim.system.tether import RigidLumpedTether
+
+
+def create_system_model_from_yaml(
+    yaml_path: Union[str, Path], steering_control: str = "asymmetric"
+):
+    """Create a SystemModel from a YAML configuration.
+
+    Expects a YAML file structured like `data/LEI-V3-KITE/v3_kite_input.yaml` with sections:
+    - physical: { model_name, mass, area, span }
+    - kcu: { mass, ... } (optional)
+    - aerodynamics: { model, params, coefficients }
+    - tether: { diameter, ... } (optional)
+    - wind: { model, z0, speed_ref } (optional)
+
+    Parameters
+    ----------
+    yaml_path : str | Path
+        Path to the YAML configuration file.
+    steering_control : str
+        Steering control mode for the kite ("asymmetric" or "roll"). Defaults to "asymmetric".
+
+    Returns
+    -------
+    SystemModel
+        A fully initialized system model built from the YAML config.
+    """
+
+    # Resolve path and load YAML
+    config_path = Path(yaml_path)
+    with config_path.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    wing = cfg.get("wing", {})
+    kcu_cfg = cfg.get("kcu", {})
+    aero_cfg = wing.get("aerodynamics", {})
+    tether_cfg = cfg.get("tether", {})
+
+    # Build tether model (use diameter from YAML if present; default to 0.006)
+    tether_diameter = tether_cfg.get("diameter", 0.006)
+    tether = RigidLumpedTether(diameter=tether_diameter)
+
+    # Build kite model from physical and aerodynamics
+    mass_wing = wing.get("mass", 20)
+    area_wing = wing.get("area", 20)
+    mass_kcu = kcu_cfg.get("mass", 0)
+
+    kite = Kite(
+        mass_wing=mass_wing,
+        mass_kcu=mass_kcu,
+        area_wing=area_wing,
+        aero_input=aero_cfg,
+        steering_control=steering_control,
+    )
+
+    # Assemble the system model
+    model = SystemModel(
+        dof=3,
+        kite=kite,
+        tether=tether,
+    )
+    return model
