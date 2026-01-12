@@ -26,7 +26,7 @@ for data_source in source:
         full_path = f"{base_path}/2024-11-05_12-58-54_ProtoLogger.csv"
         cycle_path = f"{base_path}/2024-11-05_12-58-54_full_log.txt"
         csv_path = "./results/timeseries/cycle_timeseries.csv"
-    
+
     elif data_source == "JULIA":
         base_path = "./processed_data/fitting"
         waypoint_path = f"{base_path}/2025-10-23_09-43-50_ProtoLogger_waypoints.csv"
@@ -40,13 +40,27 @@ for data_source in source:
 
     run_plots_DP = True
 
-    fit = Fitting(full_path, cycle_path, waypoint_path, cyc_idx=cycle_idx, n_ctrl_pts=25, run_plots=run_plots_DP)
+    fit = Fitting(
+        full_path,
+        cycle_path,
+        waypoint_path,
+        cyc_idx=cycle_idx,
+        n_ctrl_pts=25,
+        run_plots=run_plots_DP,
+    )
 
     print("RO and RI_Spline fitting completed. Proceeding to Winch Curve Fitting...\n")
 
     json_path = "src/awetrim/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json"
     base_path = "./processed_data/fitting"
-    fitter = WinchCurveFitter(json_path, base_path, cycle_idx=cycle_idx, n_knots=25, run_plots=False, run_plots_DP=False)
+    fitter = WinchCurveFitter(
+        json_path,
+        base_path,
+        cycle_idx=cycle_idx,
+        n_knots=25,
+        run_plots=False,
+        run_plots_DP=False,
+    )
 
     print("===================================================================")
     print("Winch Curve Fitting completed. Proceeding to cycle simulation...")
@@ -67,7 +81,9 @@ for data_source in source:
         print("--------------------------------------------------")
         print("Starting Reel-Out Simulation...")
         print("--------------------------------------------------")
-        main_reelout_cst(run_plots=False, depower_denom=depower)  # Run with default value
+        main_reelout_cst(
+            run_plots=False, depower_denom=depower
+        )  # Run with default value
 
         print("--------------------------------------------------")
         print("Starting Full Cycle Data Concatenation...")
@@ -77,5 +93,7 @@ for data_source in source:
         print("--------------------------------------------------")
         print("Starting Data Comparison...")
         print("--------------------------------------------------")
-        compare = Compare(full_path, cycle_path, waypoint_path, csv_path, run_plots_DP=False)
+        compare = Compare(
+            full_path, cycle_path, waypoint_path, csv_path, run_plots_DP=False
+        )
         compare._plot_all_data_overlayed()

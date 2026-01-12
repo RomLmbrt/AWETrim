@@ -27,20 +27,26 @@ class Fitting(DataProcessing):
         run_plots=True,
     ):
         # Initialize DataProcessing parent class
-        super().__init__(file_path_full, file_path_cycle, file_path_waypoints, cyc_idx, run_plots_DP=run_plots)
+        super().__init__(
+            file_path_full,
+            file_path_cycle,
+            file_path_waypoints,
+            cyc_idx,
+            run_plots_DP=run_plots,
+        )
         self.n_ctrl = n_ctrl_pts
-    
+
         self._setup_spline_segment()
         self._setup_lissajous_segment()
 
         self.FitSpline()
         self.FitLissajous()
 
-        self.save_data_RI_spline()
+        # self.save_data_RI_spline()
         self.save_data_L_shape()
 
         if run_plots:
-            self.plot_spline_cart()
+            # self.plot_spline_cart()
             self.plot_fit_L_shape()
 
     # -------------------------------------------------------------------------
@@ -66,10 +72,13 @@ class Fitting(DataProcessing):
             "repeat_phi": True,
             "repeat_beta": True,
             "k_vr": 2716,
+            # "az_coeffs": [0],
+            # "beta_amp0": 0.1,
+            # "az_amp0": 0.5,
         }
         n_coeffs = 5
         params_init = {
-            "az_amp0": 0.34,
+            "az_amp0": 0.5,
             "beta_amp0": 0.08,
             "beta0": 0.48,
             "beta_coeffs": list(np.random.uniform(-1, 1, n_coeffs)),
@@ -84,8 +93,8 @@ class Fitting(DataProcessing):
                 params_init["az_coeffs"],
             ]
         )
-        lower_bounds = [0, 0, 0] + [-2] * n_coeffs + [-2] * n_coeffs
-        upper_bounds = [2, 1, 1] + [2] * n_coeffs + [2] * n_coeffs
+        lower_bounds = [0, 0, 0] + [-1] * n_coeffs + [-1] * n_coeffs
+        upper_bounds = [1, 1, 1] + [1] * n_coeffs + [1] * n_coeffs
 
         def unpack_params(x):
             return {
@@ -102,8 +111,9 @@ class Fitting(DataProcessing):
             obj = CST_Lissajous(**params)
             az_model = obj.azimuth(params["r0"], self.L_shape_u_vals)
             el_model = obj.elevation(params["r0"], self.L_shape_u_vals)
+
             return np.concatenate(
-                (self.L_shape_az - az_model, self.L_shape_el - el_model)
+                (self.L_shape_az + az_model, self.L_shape_el - el_model)
             ).ravel()
 
         res = least_squares(
@@ -117,6 +127,7 @@ class Fitting(DataProcessing):
         )
 
         self.best_params = unpack_params(res.x)
+        print("Best Lissajous parameters found:", self.best_params)
         obj = CST_Lissajous(**self.best_params)
         self.L_shape_az_fit = obj.azimuth(self.best_params["r0"], self.L_shape_u_vals)
         self.L_shape_el_fit = obj.elevation(self.best_params["r0"], self.L_shape_u_vals)
@@ -264,7 +275,9 @@ class Fitting(DataProcessing):
         )
 
         axes[0].plot(self.u_vals, self.data_az, "b-", label="Data", linewidth=2)
-        axes[0].plot(self.u_vals, self.spline_az_fit, "r--", label="Fitted", linewidth=2)
+        axes[0].plot(
+            self.u_vals, self.spline_az_fit, "r--", label="Fitted", linewidth=2
+        )
         if show_control_points:
             axes[0].scatter(
                 self.u_vals[self.fitted_indices_az],
@@ -282,7 +295,9 @@ class Fitting(DataProcessing):
         axes[0].grid(True, alpha=0.3)
 
         axes[1].plot(self.u_vals, self.data_el, "b-", label="Data", linewidth=2)
-        axes[1].plot(self.u_vals, self.spline_el_fit, "r--", label="Fitted", linewidth=2)
+        axes[1].plot(
+            self.u_vals, self.spline_el_fit, "r--", label="Fitted", linewidth=2
+        )
         if show_control_points:
             axes[1].scatter(
                 self.u_vals[self.fitted_indices_el],
@@ -326,7 +341,7 @@ class Fitting(DataProcessing):
         with open(filename, "wb") as f:
             pickle.dump(fitted_data, f)
         print(f"💾 Saved RI_Spline results to {filename}")
-    
+
     def save_data_L_shape(self):
         """Save fitted spline or L_shape results to pickle."""
         self.segment = "L_shape"
@@ -437,7 +452,9 @@ class Fitting(DataProcessing):
 
     def plot_fit_L_shape(self, title_prefix=""):
         fig = plt.figure()
-        plt.plot(self.L_shape_az_fit, self.L_shape_el_fit, "r-", label="Fitted Lissajous")
+        plt.plot(
+            self.L_shape_az_fit, self.L_shape_el_fit, "r-", label="Fitted Lissajous"
+        )
         plt.plot(self.L_shape_az, self.L_shape_el, "b--", label="Data")
         plt.xlabel("Azimuth (rad)")
         plt.ylabel("Elevation (rad)")
