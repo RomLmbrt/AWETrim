@@ -1,0 +1,59 @@
+# V3 Kite Configuration File
+# Complete kite parameters including physical properties and aerodynamic model
+
+wing:
+  model_name: 'v3'
+  mass: 15                        # Mass of the kite in kg
+  area: 19.75                     # Area of the kite in m^2
+  span: 10                        # Span of the kite in m
+  # Aerodynamic Model
+  aerodynamics:
+    model: 'coeffs'
+    params:
+      CD0: 0.1130532
+      CL0: 0.04671295
+      angle_pitch_depower_0: -0.12
+      delta_pitch_depower: -0.15
+    
+    coefficients:
+      CL:
+        - var: alpha
+          power: 1
+          coef: 6.09131779
+        - var: alpha
+          power: 2
+          coef: -10.11227433
+        - var: u_s
+          power: 1
+          coef: 0.0
+        - var: u_p
+          power: 1
+          coef: -0.0
+      
+      CD:
+        - var: alpha
+          power: 1
+          coef: 0.01460944
+        - var: alpha
+          power: 2
+          coef: 1.56422478
+        - var: u_s
+          power: 1
+          coef: 0.0225
+        - var: u_p
+          power: 1
+          coef: -0.00
+      
+      CS:
+        - var: u_s
+          power: 1
+          coef: 0.15
+
+# KCU (Kite Control Unit) Properties
+kcu:
+  mass: 8.4                     # Mass of the KCU in kg
+
+tether:
+  diameter: 0.01                # Diameter of the tether in m
+  density: 970                   # Density of the tether material in kg/m^3
+
