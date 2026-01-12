@@ -87,6 +87,7 @@ dependencies = [
   "casadi",
   "h5py",
   "scipy",
+  "PyYAML",
 ]
 
 # You can define additional groups of dependencies here (e.g., development dependencies).
