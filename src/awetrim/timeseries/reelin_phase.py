@@ -112,9 +112,9 @@ class ReelinSimple:
             "s": 0,
             "s_dot": 0.2,
             "input_steering": 0,
-            "tension_tether_ground": 1e12,
+            "tension_tether_ground": 8.4e3,
             "distance_radial": distance_radial_start,
-            "speed_radial": -3,
+            "speed_radial": -5,
         }
         self.pattern_config_ri = {
             "pattern_type": "reel_in_simple",
@@ -143,20 +143,28 @@ class ReelinSimple:
         distance_radial_start = self.pattern_config["path_parameters"].get(
             "distance_radial_start", 360
         )
+        azimuth_start_ro = self.pattern_config["path_parameters"].get(
+            "azimuth_start_ro", 0
+        )
+        azimuth_start_riro = self.pattern_config["path_parameters"].get(
+            "azimuth_start_riro", 0
+        )
         self.start_state_riro = {
             "t": 0,
             "s": 0,
-            "s_dot": 0.5,
+            "s_dot": 0.2,
             "input_steering": 0,
-            "tension_tether_ground": 1e12,
+            "tension_tether_ground": 8.4e3,
             "distance_radial": distance_radial_start,
-            "speed_radial": -3,
+            "speed_radial": -7,
         }
         self.pattern_config_riro = {
             "pattern_type": "transition_simple",
             "path_parameters": {
                 "elevation_start_ro": elevation_start_ro,
                 "elevation_start_riro": elevation_start_riro,
+                "azimuth_start_ro": azimuth_start_ro,
+                "azimuth_start_riro": azimuth_start_riro,
             },
             "radial_parameters": self.radial_parameters_riro,
             "sim_parameters": {
