@@ -573,13 +573,15 @@ class TimeSeries:
         #     # Remove offset so x starts at zero
         #     if len(x) > 0:
         #         x = x - x[0]
-
+        if x_param == "s":
+            x = np.degrees(x)
         # Plot each variable
         for ax, var in zip(axes, variables):
             y = self.return_variable(var)
             scale = y_scaling.get(var, 1.0) if isinstance(y_scaling, dict) else 1.0
             if "angle" in var:
                 y = np.degrees(y)
+
             ax.plot(x, y * scale, label=label, color=color, linestyle=linestyle)
             ax.set_ylabel(y_labels.get(var, PLOT_LABELS.get(var, var)))
 
