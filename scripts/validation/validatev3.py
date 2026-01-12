@@ -88,8 +88,8 @@ results = results[mask]
 results = results.reset_index(drop=True)
 flight_data = flight_data.reset_index(drop=True)
 
-csv_file = "./processed_data/VSM_results_alpha_sweep.csv"
-v3_polar_data = pd.read_csv(csv_file)
+# csv_file = "./processed_data/VSM_results_alpha_sweep.csv"
+# v3_polar_data = pd.read_csv(csv_file)
 
 # -----------------------------------------
 # Define the system
@@ -123,7 +123,7 @@ flight_data["up"] = (flight_data["up"] - flight_data["up"].min()) / (
 )
 
 course_rate = np.gradient(np.unwrap(flight_data.kite_course), flight_data.time)
-course_rate = gaussian_filter1d(course_rate, sigma=3)
+course_rate = gaussian_filter1d(course_rate, sigma=1)
 plt.plot(flight_data.time, course_rate)
 plt.show()
 flight_data["course_rate"] = course_rate
@@ -188,6 +188,8 @@ for aero_file, label in zip(aero_files, aero_labels):
     pitch_bridle_func = kite_model.extract_function("pitch_bridle")
     pitch_aero_func = kite_model.extract_function("angle_pitch_aerodynamic")
     roll_aero_func = kite_model.extract_function("angle_roll_aerodynamic")
+    input_steering_func = kite_model.extract_function("input_steering")
+    roll_bridle_func = kite_model.extract_function("roll_bridle")
 
     kite_model.setup_qs_solver(unknown_vars, solver_options=solver_options)
 
@@ -270,6 +272,16 @@ for aero_file, label in zip(aero_files, aero_labels):
                         state_combined[name]
                         for name in speed_apparent_wind_func.name_in()
                     ]
+                )
+            )
+            state_combined["input_steering"] = float(
+                input_steering_func(
+                    *[state_combined[name] for name in input_steering_func.name_in()]
+                )
+            )
+            state_combined["roll_bridle"] = float(
+                roll_bridle_func(
+                    *[state_combined[name] for name in roll_bridle_func.name_in()]
                 )
             )
             state_combined["time"] = row.time
@@ -744,6 +756,13 @@ def plot_main_results_comparison(
         label="Kite roll EKF",
         linestyle="--",
     )
+    ax5.plot(
+        flight_data["time"],
+        -flight_data["kcu_actual_steering"] / (max(flight_data["kcu_actual_steering"])),
+        color="black",
+        linestyle="-.",
+        label="Steering input EKF",
+    )
 
     # Plot results for aerodynamic models
     for i, (label, solutions_df) in enumerate(all_solutions.items()):
@@ -773,6 +792,20 @@ def plot_main_results_comparison(
             color=color,
             linestyle="--",
             label="Aerodynamic roll QS",
+        )
+        ax5.plot(
+            solutions_df["time"],
+            np.degrees(solutions_df["roll_bridle"]),
+            color=color,
+            linestyle=":",
+            label="Kite roll QS",
+        )
+        ax5.plot(
+            solutions_df["time"],
+            solutions_df["input_steering"],
+            color="blue",
+            linestyle="-.",
+            label="Steering input QS",
         )
     axs = [ax3, ax4, ax5]
     # Add phase shading to all subplots
