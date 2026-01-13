@@ -13,6 +13,7 @@ import casadi as ca
 import time
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
+import yaml
 
 
 def read_results(year, month, day, kite_model, addition="", path_to_main=""):
@@ -91,12 +92,6 @@ flight_data = flight_data.reset_index(drop=True)
 # csv_file = "./processed_data/VSM_results_alpha_sweep.csv"
 # v3_polar_data = pd.read_csv(csv_file)
 
-# -----------------------------------------
-# Define the system
-# -----------------------------------------
-
-import json
-
 # -----------------------------------------------
 # Load data and define aerodynamic model
 # -----------------------------------------------
@@ -127,26 +122,30 @@ course_rate = gaussian_filter1d(course_rate, sigma=1)
 plt.plot(flight_data.time, course_rate)
 plt.show()
 flight_data["course_rate"] = course_rate
-# Run simulation for both aerodynamic models
-aero_files = [
-    "./data/LEI-V3-KITE/v3_aero_input.json",
-]
+# Run simulation for aerodynamic model defined in YAML (avoids missing JSON)
+with open("./data/LEI-V3-KITE/v3_kite_input.yaml", "r") as file:
+    kite_cfg = yaml.safe_load(file)
+
 aero_labels = ["Variable"]
+aero_cfgs = [kite_cfg]
 all_solutions = {}
 
-for aero_file, label in zip(aero_files, aero_labels):
-    print(f"\nRunning simulation with {aero_file}...")
+for cfg, label in zip(aero_cfgs, aero_labels):
+    print(f"\nRunning simulation with {label} aerodynamic model...")
 
-    with open(aero_file, "r") as file:
-        aero_input = json.load(file)
+    aero_input = cfg["wing"]["aerodynamics"]
+    mass_wing = cfg["wing"].get("mass", 14)
+    area_wing = cfg["wing"].get("area", 20)
+    mass_kcu = cfg.get("kcu", {}).get("mass", 16)
+    tether_diameter = cfg.get("tether", {}).get("diameter", 0.01)
 
-    tether = RigidLumpedTether(diameter=0.01)
+    tether = RigidLumpedTether(diameter=tether_diameter)
     wind_model = Wind(wind_model="logarithmic", z0=0.1)
     kite = Kite(
-        mass_wing=14,  # 14,
-        area_wing=20,
+        mass_wing=mass_wing,
+        area_wing=area_wing,
         aero_input=aero_input,
-        mass_kcu=16,
+        mass_kcu=mass_kcu,
         steering_control="asymmetric",
     )
     kite_model = SystemModel(
