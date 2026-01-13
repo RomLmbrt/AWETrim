@@ -29,20 +29,15 @@ To modify parameters:
 KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
 # CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example.yaml")
 CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_downloop_config_example.yaml")
-CYCLE_CONFIG_PATH = Path(
-    "results/optimized_configs/downloops/depower_downloop_optimized_config_wind_17_z0_0.03_logarithmic.yaml"
-)
+# CYCLE_CONFIG_PATH = Path(
+#     "results/optimized_configs/downloops/depower_downloop_optimized_config_wind_17_z0_0.03_logarithmic.yaml"
+# )
 
 # Load configurations from YAML
 REELOUT_CONFIG, REELIN_CONFIG = load_cycle_config_from_yaml(CYCLE_CONFIG_PATH)
-# REELOUT_CONFIG["path_parameters"]["beta0"] += 0.1
-# REELOUT_CONFIG["path_parameters"]["beta_amp0"] = 0.18
-# REELOUT_CONFIG["path_parameters"]["az_amp0"] = 0.3536
-# # REELOUT_CONFIG["path_parameters"]["kappa"] = 1
-REELOUT_CONFIG["path_parameters"]["kbeta"] = 0
-# REELOUT_CONFIG["sim_parameters"]["input_depower"] += 0.1
+# Wind model parameters
 WIND_CONFIG = {
-    "speed_wind_at_100": 18,
+    "speed_wind_at_100": 12,
     "z0": 0.03,
     "model_type": "logarithmic",
 }
@@ -79,13 +74,13 @@ def main(run_plots=False):
     optimization_params = [
         # "az_amp0",
         # "beta_amp0",
-        "beta0",
+        # "beta0",
         # "kbeta",
-        # # "slope_winch_ro",
+        "slope_winch_ro",
         # # "offset",
         "beta_coeffs",
         "az_coeffs",
-        "input_depower",
+        # "input_depower",
     ]
     phase, axes = reelout.run_simulation(run_plots=run_plots, phase_sim=True)
     us = phase.return_variable("input_steering")
