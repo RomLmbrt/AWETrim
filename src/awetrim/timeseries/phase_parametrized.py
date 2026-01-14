@@ -721,9 +721,7 @@ class PhaseParameterized(TimeSeries):
                 opti.subject_to(mx >= lb)
                 opti.subject_to(mx <= ub)
             else:
-                raise ValueError(
-                    f"Optimization parameter '{var}' not found in 'path_parameters' or 'radial_parameters'."
-                )
+                continue
 
         # --- Default limits for vector vars (if provided)
         for var_name, mx in opti_vars.items():
@@ -967,6 +965,7 @@ class PhaseParameterized(TimeSeries):
             },
             "print_time": False,  # Disables CasADi's internal timing output
         }
+
         return ca.nlpsol("solver", "ipopt", nlp, solver_options)
 
     def get_boundaries(self, state_obj, unknown_vars, km_copy):

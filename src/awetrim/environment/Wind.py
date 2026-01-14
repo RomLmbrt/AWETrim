@@ -9,10 +9,17 @@ class Wind:
         z0=0.01,
         tabulated_heights=None,
         tabulated_speeds=None,
+        direction_wind=None,
     ):
         self._speed_wind_ref = ca.MX.sym("speed_wind_ref")
         self._speed_friction = ca.MX.sym("speed_friction")
-        self._height_ref = 6 # 10
+        if direction_wind is None:
+            self._direction_wind = ca.MX.sym(
+                "direction_wind"
+            )  # Wind coming from x-direction
+        else:
+            self._direction_wind = direction_wind
+        self._height_ref = 6  # 10
         self.wind_model = wind_model
         self.kappa = 0.41
         self.z0 = z0
@@ -43,6 +50,14 @@ class Wind:
         self._speed_wind_ref = value
 
     @property
+    def direction_wind(self):
+        return self._direction_wind
+
+    @direction_wind.setter
+    def direction_wind(self, value):
+        self._direction_wind = value
+
+    @property
     def height_ref(self):
         return self._height_ref
 
@@ -69,7 +84,11 @@ class Wind:
             return self.wind_interp(state.z)
 
     def velocity_wind_W(self, state):
-        return ca.vertcat(self.speed_wind(state), 0, 0)
+        return ca.vertcat(
+            self.speed_wind(state) * ca.cos(self.direction_wind),
+            self.speed_wind(state) * ca.sin(self.direction_wind),
+            0,
+        )
 
     def velocity_wind(self, state):
         """

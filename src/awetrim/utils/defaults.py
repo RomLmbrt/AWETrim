@@ -15,6 +15,8 @@ DEFAULT_BOUNDS = {
     "length_tether": [0, 1000],
     "distance_radial": [0, 2000],
     "speed_friction": [0, 5],
+    "direction_wind": [-np.pi / 4, np.pi / 4],
+    "angle_of_attack": [np.radians(-1), np.radians(15)],
 }
 
 PLOT_LABELS = {

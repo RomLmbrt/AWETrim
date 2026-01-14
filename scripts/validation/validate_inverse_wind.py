@@ -14,6 +14,7 @@ import casadi as ca
 import time
 import yaml
 import time
+from awetrim.utils.defaults import DEFAULT_BOUNDS
 
 
 def read_results(year, month, day, kite_model, addition="", path_to_main=""):
@@ -80,7 +81,7 @@ def setup_inverse_solver(kite_model):
     # Define the inverse problem:
     # Unknown variables: [tension_tether_ground, input_steering, speed_friction]
     unknown_vars = [
-        "speed_tangential",
+        "direction_wind",
         "input_steering",
         "speed_friction",  # Changed from speed_tangential to speed_friction
     ]
@@ -89,7 +90,8 @@ def setup_inverse_solver(kite_model):
         "ipopt": {
             "print_level": 0,
             "sb": "yes",
-            "max_iter": 400,
+            # "tol": 1e-5,
+            "max_iter": 100,
         },
         "print_time": False,
     }
@@ -135,9 +137,11 @@ def solve_inverse(
     speed_friction_idx = unknown_vars.index("speed_friction")
     qs_guess = np.array(
         [
-            measured_vtau,  # speed_tangential
-            0.0,  # input_steering
-            0.5,  # speed_friction (initial guess from measurement)
+            current_state["direction_wind"],  # direction_wind
+            current_state["input_steering"],  # input_steering
+            current_state[
+                "speed_friction"
+            ],  # speed_friction (initial guess from measurement)
         ]
     )
 
@@ -184,8 +188,9 @@ def run_inverse_validation(cycle_num=65):
     speed_tangential = np.linalg.norm(
         np.cross(position, velocity), axis=1
     ) / np.maximum(distance_radial, 1e-12)
-    azimuth = np.arctan2(results.kite_position_y, results.kite_position_x)
-
+    ned_azimuth = np.arctan2(results.kite_position_y, results.kite_position_x)
+    wind_azimuth = flight_data.kite_azimuth.to_numpy()
+    assumed_wind_direction = np.mean(ned_azimuth - wind_azimuth)
     # Normalize depower
     flight_data["up"] = (flight_data["up"] - flight_data["up"].min()) / (
         flight_data["up"].max() - flight_data["up"].min()
@@ -236,9 +241,9 @@ def run_inverse_validation(cycle_num=65):
     loop_start = time.time()
     last_print_idx = -600  # force a print on first iteration
     last_print_wall = time.time()
-
+    state_combined = {}
     for i, row in flight_data.iterrows():
-        # if i > 100:
+        # if i > 600:
         #     break
         # Measured values (to be used as initial conditions or prescribed values)
         measured_wind_speed = uf[i]
@@ -262,9 +267,23 @@ def run_inverse_validation(cycle_num=65):
             "distance_radial": distance_radial[i],
             "angle_course": row.kite_course,
             "speed_radial": row.tether_reelout_speed,
-            "angle_azimuth": azimuth[i] - results.wind_direction[i],
+            "angle_azimuth": wind_azimuth[i],  # - results.wind_direction[i],
             "angle_elevation": row.kite_elevation,
-            "speed_friction": measured_wind_speed,  # Will be optimized in inverse
+            "speed_friction": (
+                state_combined["speed_friction"]
+                if "speed_friction" in state_combined
+                else measured_wind_speed
+            ),  # Will be optimized in inverse
+            "direction_wind": (
+                state_combined["direction_wind"]
+                if "direction_wind" in state_combined
+                else 0.0
+            ),  # Will be optimized in inverse
+            "input_steering": (
+                state_combined["input_steering"]
+                if "input_steering" in state_combined
+                else 0.0
+            ),  # Will be optimized in inverse
             "timeder_angle_course": 0.0,  # Approximate
             "input_depower": row.up,
             "tension_tether_ground": measured_force,  # Will be optimized in inverse
@@ -283,7 +302,7 @@ def run_inverse_validation(cycle_num=65):
 
         if np.linalg.norm(sol["g"]) < 1:
             # Extract solution
-            solved_vtau = float(sol["x"][0])
+            solved_direction_wind = float(sol["x"][0])
             solved_steering = float(sol["x"][1])
             solved_wind_speed = float(sol["x"][2])
 
@@ -298,13 +317,13 @@ def run_inverse_validation(cycle_num=65):
             # print(f"  Constraint violation: {np.linalg.norm(sol['g']):.2e}")
 
             # Update current_state with solved values
-            current_state["speed_tangential"] = solved_vtau
+            current_state["direction_wind"] = solved_direction_wind
             current_state["input_steering"] = solved_steering
             current_state["speed_friction"] = solved_wind_speed
 
             # Compute derived quantities
             state_combined = dict(current_state)
-            state_combined["speed_tangential"] = solved_vtau
+            state_combined["direction_wind"] = solved_direction_wind
             state_combined["input_steering"] = solved_steering
             state_combined["speed_friction"] = solved_wind_speed
             state_combined["speed_wind"] = (
@@ -330,6 +349,12 @@ def run_inverse_validation(cycle_num=65):
             ) / kite_model.wind.kappa
             state_combined["measured_force"] = measured_force
             state_combined["measured_speed_tangential"] = speed_tangential[i]
+            state_combined["assumed_wind_direction"] = assumed_wind_direction
+            state_combined["measured_wind_direction"] = results.wind_direction[i]
+            # Skip solutions that violate AoA upper bound
+            aoa_upper = DEFAULT_BOUNDS.get("angle_of_attack", [None, None])[1]
+            if aoa_upper is not None and state_combined["aoa"] > aoa_upper:
+                continue
 
             solutions_inverse.append(state_combined)
 
@@ -339,14 +364,24 @@ def run_inverse_validation(cycle_num=65):
         #     )
 
     elapsed_loop = time.time() - loop_start
-    return solutions_inverse, flight_data, speed_tangential, elapsed_loop
+    return (
+        solutions_inverse,
+        flight_data,
+        speed_tangential,
+        assumed_wind_direction,
+        elapsed_loop,
+    )
 
 
 if __name__ == "__main__":
     print("Running inverse wind speed solver...")
-    solutions_inverse, flight_data, speed_tangential, elapsed_loop = (
-        run_inverse_validation(cycle_num=list(range(5, 71)))
-    )
+    (
+        solutions_inverse,
+        flight_data,
+        speed_tangential,
+        assumed_wind_direction,
+        elapsed_loop,
+    ) = run_inverse_validation(cycle_num=list(range(50, 66)))
 
     # Convert to DataFrame for easier analysis
     df_inverse = pd.DataFrame(solutions_inverse)
@@ -403,29 +438,54 @@ if __name__ == "__main__":
     # Plot measured vs solved wind speed
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+    def rolling_mean(arr, w):
+        if len(arr) == 0 or w <= 1:
+            return arr
+        pad = w // 2
+        padded = np.pad(arr, pad_width=pad, mode="reflect")
+        kernel = np.ones(w) / float(w)
+        sm = np.convolve(padded, kernel, mode="valid")
+        # Trim to original length
+        excess = len(sm) - len(arr)
+        if excess > 0:
+            start = excess // 2
+            sm = sm[start : start + len(arr)]
+        return sm
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
     time = df_inverse["time"].values
+    solved_dir_deg = np.rad2deg(
+        df_inverse.get("direction_wind", pd.Series(np.nan))  # + assumed_wind_direction
+    )
+    measured_dir_deg = np.rad2deg(df_inverse["measured_wind_direction"].to_numpy())
 
     # Plot 1: Wind speed at kite height comparison
     axes[0].plot(
         time,
         df_inverse["measured_wind_speed"],
+        label="Measured wind speed",
     )
 
     from scipy.ndimage import gaussian_filter1d
 
+    dt = np.median(np.diff(time)) if len(time) > 1 else 1.0
+    window = max(int(round(60.0 / dt)), 1)
+    speed_wind_rolling = rolling_mean(
+        df_inverse["measured_wind_speed"].to_numpy(), window=10
+    )
     axes[0].plot(
         time,
-        gaussian_filter1d(df_inverse["speed_wind"], sigma=3),
+        speed_wind_rolling,
         label="Solved wind at kite height",
     )
+
     axes[0].set_ylabel("Wind Speed [m/s]", fontsize=12)
     axes[0].set_title(
         "Measured vs Solved Wind Speed at Kite Height", fontsize=13, fontweight="bold"
     )
     axes[0].grid(True, alpha=0.3)
-    axes[0].legend(fontsize=11)
+    axes[0].legend(fontsize=11, loc="upper right")
 
     # Plot 2: Wind speed difference at kite height
     wind_diff_kite = df_inverse["speed_wind"] - df_inverse["measured_wind_speed"]
@@ -437,6 +497,33 @@ if __name__ == "__main__":
         "Solved - Measured Wind Speed at Kite Height", fontsize=13, fontweight="bold"
     )
     axes[1].grid(True, alpha=0.3)
+
+    # Plot 3: Wind direction (measured vs solved + assumed offset) with 1-minute means
+
+    mean_meas_dir = rolling_mean(measured_dir_deg, window)
+    mean_solved_dir = rolling_mean(solved_dir_deg, window)
+
+    axes[2].plot(
+        time,
+        mean_meas_dir,
+        "--",
+        color="tab:red",
+        label="Measured wind dir (1-min mean)",
+    )
+    axes[2].plot(
+        time,
+        mean_solved_dir,
+        "-",
+        color="tab:orange",
+        label="Solved wind dir (offset, 1-min mean)",
+    )
+    axes[2].set_ylabel("Wind Direction [deg]", fontsize=12)
+    axes[2].set_xlabel("Time [s]", fontsize=12)
+    axes[2].set_title(
+        "Wind Direction: Measured vs Solved", fontsize=13, fontweight="bold"
+    )
+    axes[2].grid(True, alpha=0.3)
+    axes[2].legend(fontsize=11, loc="upper right")
 
     plt.tight_layout()
     plt.savefig(
