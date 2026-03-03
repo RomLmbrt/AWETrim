@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from awetrim.system.winch import Winch
+import pandas as pd
 from awetrim.utils.color_palette import set_plot_style, get_color_list
 
 set_plot_style()
@@ -99,6 +100,26 @@ def bump_pair(u, s0, wp, normalize=False):
     return b / wp if normalize else b
 
 
+def bump_pair_zero_mean(u, s0, wp, normalize=False):
+    """
+    Periodic paired Bernstein bump with zero mean over the given grid u.
+    """
+    x_right = (u - s0) / wp
+    x_left = (u - s0 + 1.0) / wp
+
+    pright = gate01(x_right) * bernstein2of4(x_right)
+    pleft = gate01(x_left) * bernstein2of4(x_left)
+
+    b = pright + pleft
+    # if normalize:
+    #     b = b / wp
+
+    # # Enforce zero mean on the given grid
+    # b = b - b.mean()
+
+    return b
+
+
 def plot_bumps_and_total(az_coeffs, wp, repeat_phi=True, normalize_bumps=False, n=2000):
     az_coeffs = np.asarray(az_coeffs, dtype=float)
     P = len(az_coeffs)
@@ -117,7 +138,7 @@ def plot_bumps_and_total(az_coeffs, wp, repeat_phi=True, normalize_bumps=False, 
         # If you want bumps evenly distributed, this is the natural choice:
         s0 = k / K
 
-        bk = bump_pair(u, s0=s0, wp=wp, normalize=normalize_bumps)
+        bk = bump_pair_zero_mean(u, s0=s0, wp=wp, normalize=normalize_bumps)
         contrib = wk * bk
 
         contributions.append(contrib)
@@ -167,10 +188,140 @@ def plot_bumps_and_total(az_coeffs, wp, repeat_phi=True, normalize_bumps=False, 
 az_coeffs = np.random.uniform(-1, 1, 10)  # your az_coeffs
 # az_coeffs[2] = 0.5
 # az_coeffs[3] = -0.3
-wp = 0.4  # width parameter (wp in the text)
+# az_coeffs = np.ones(10)
+wp = 0.45  # width parameter (wp in the text)
 repeat_phi = False  # repeat bumps?
 normalize_bumps = False  # divide by wp?
 
 plot_bumps_and_total(
     az_coeffs, wp, repeat_phi=repeat_phi, normalize_bumps=normalize_bumps
 )
+
+
+def build_P(K, wp, n=2000, normalize_bumps=False):
+    u = np.linspace(0, 1, n, endpoint=False)
+    P = np.zeros((n, K))
+    for k in range(K):
+        s0 = k / K
+        P[:, k] = bump_pair_zero_mean(u, s0=s0, wp=wp, normalize=normalize_bumps)
+
+    return u, P
+
+
+def svd_rank_cond(P, rtol=1e-12):
+    # singular values in descending order
+    s = np.linalg.svd(P, compute_uv=False)
+    # numerical rank threshold
+    tol = rtol * s[0]
+    r = int(np.sum(s > tol))
+    cond = float(s[0] / s[-1]) if s[-1] > 0 else np.inf
+    return r, cond, s, tol
+
+
+K = 10
+wp = 0.45
+u, P = build_P(K, wp, n=2000, normalize_bumps=False)
+
+r, cond, svals, tol = svd_rank_cond(P)
+print("K =", K, "rank =", r, "cond =", cond, "tol =", tol)
+print("smallest singular value =", svals[-1])
+
+
+def max_offdiag_corr(P):
+    """
+    Column correlation magnitude (after centering). Returns max |corr(i,j)| for i!=j.
+    Helpful to see 'overlap/correlation' while preserving local basis.
+    """
+    X = P - P.mean(axis=0, keepdims=True)
+    norms = np.linalg.norm(X, axis=0, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    Xn = X / norms
+    C = Xn.T @ Xn  # cosine similarity matrix
+    np.fill_diagonal(C, 0.0)
+    return float(np.max(np.abs(C)))
+
+
+def explore_K_wp(
+    K_list,
+    wp_list,
+    n=2000,
+    normalize_bumps=False,
+    zero_mean=True,
+    rtol=1e-12,
+):
+    """
+    Scans (K, wp) grid and returns a DataFrame with:
+      - rho = wp*K (overlap ratio)
+      - rank(P), cond(P), smallest singular value
+      - max off-diagonal column correlation
+    """
+    rows = []
+    for K in K_list:
+        for wp in wp_list:
+            u, P = build_P(K, wp, n=n, normalize_bumps=normalize_bumps)
+            rank, cond, svals, tol = svd_rank_cond(P, rtol=rtol)
+            smin = float(svals[-1])
+            corr = max_offdiag_corr(P)
+            rows.append(
+                {
+                    "K": int(K),
+                    "wp": float(wp),
+                    "rho=wp*K": float(wp * K),
+                    "rank": int(rank),
+                    "cond": float(cond),
+                    "smin": float(smin),
+                    "max|corr|": float(corr),
+                    "tol": float(tol),
+                    "n": int(n),
+                    "zero_mean": bool(zero_mean),
+                    "normalize_bumps": bool(normalize_bumps),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def heatmap(df, value_col, title=None):
+    """
+    Simple heatmap with K on y-axis and wp on x-axis.
+    """
+    K_vals = np.sort(df["K"].unique())
+    wp_vals = np.sort(df["wp"].unique())
+    M = np.full((len(K_vals), len(wp_vals)), np.nan)
+    for i, K in enumerate(K_vals):
+        for j, wp in enumerate(wp_vals):
+            sel = df[(df["K"] == K) & (df["wp"] == wp)]
+            if len(sel) == 1:
+                M[i, j] = sel.iloc[0][value_col]
+    plt.figure(figsize=(7.2, 4.8))
+    plt.imshow(
+        M,
+        aspect="auto",
+        origin="lower",
+        extent=[wp_vals[0], wp_vals[-1], K_vals[0], K_vals[-1]],
+    )
+    plt.colorbar(label=value_col)
+    plt.xlabel("wp")
+    plt.ylabel("K")
+    plt.title(title or f"Heatmap: {value_col}")
+    plt.tight_layout()
+    plt.show()
+
+
+# -----------------------------
+# Example usage
+# -----------------------------
+K_list = [10]
+wp_list = np.round(np.linspace(0.1, 0.80, 15), 3)
+
+df = explore_K_wp(K_list, wp_list, n=2000, normalize_bumps=False)
+print(df.sort_values(["K", "wp"]).head(80))
+
+df = df.sort_values(["K", "wp"]).reset_index(drop=True)
+plt.figure(figsize=(5, 4))
+plt.plot(df["wp"], df["cond"], marker="o")
+plt.show()
+
+# Heatmaps
+heatmap(df, "cond", title="Condition number cond(P)")
+heatmap(df, "max|corr|", title="Max column correlation |corr(i,j)|")
+heatmap(df, "rank", title="Numerical rank(P)")
