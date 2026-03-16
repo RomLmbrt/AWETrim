@@ -21,7 +21,7 @@ from awetrim.utils.color_palette import set_plot_style, get_color_list
 # Base configuration
 KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
 CONFIG_ROOT = Path("results/optimized_configs")
-SHEARS = (0.0002, 0.03, 0.3)
+SHEARS = [0.0002, 0.03, 0.3]
 WIND_SPEED = 12
 WIND_SWEEP = (6, 12, 18, 22)
 SHEAR_FOR_WIND_SWEEP = 0.03
@@ -31,6 +31,16 @@ PATTERN_FOLDERS = {
     "Down-loop": CONFIG_ROOT / "downloops",
     "Up-loop": CONFIG_ROOT / "uploops",
     "Helix": CONFIG_ROOT / "helix",
+}
+
+
+START_STATE = {
+    "t": 0.0,
+    "s": 0.0,
+    "s_dot": 2,
+    "speed_radial": 0,
+    "input_steering": 0.0,
+    "tension_tether_ground": 8.4e5,
 }
 
 
@@ -47,11 +57,11 @@ def find_config(directory: Path, wind_speed: float, shear: float) -> Path:
 
     shear_str = f"{shear:g}"
     # Use underscores as word boundaries to avoid matching e.g. wind_16 when looking for wind_6
-    pattern = f"*wind_{wind_speed}_z0_{shear_str}*logarithmic.yaml"
+    pattern = f"*wind_{wind_speed}_z0_{shear_str}*logarithmic_spline.yaml"
     matches = sorted(directory.glob(pattern))
     if not matches:
         # Fallback to older naming format without underscores
-        pattern = f"*wind{wind_speed}z0{shear_str}*logarithmic.yaml"
+        pattern = f"*wind{wind_speed}z0{shear_str}*logarithmic_spline.yaml"
         matches = sorted(directory.glob(pattern))
     if not matches:
         raise FileNotFoundError(
@@ -69,7 +79,9 @@ def find_config(directory: Path, wind_speed: float, shear: float) -> Path:
     return result
 
 
-def simulate_phase(config_path: Path, wind_speed: float, shear: float):
+def simulate_phase(
+    config_path: Path, wind_speed: float, shear: float, start_state: dict | None = None
+):
     """Load a config, attach the requested wind model, and run a quasi-steady simulation."""
 
     pattern_config, _ = load_cycle_config_from_yaml(config_path)
@@ -78,8 +90,14 @@ def simulate_phase(config_path: Path, wind_speed: float, shear: float):
     reelout = Reelout(
         system_model=system_model, pattern_config=pattern_config, depower=0
     )
-    phase, _ = reelout.run_simulation(run_plots=False, phase_sim=True)
-    return phase
+    start_state["distance_radial"] = pattern_config["path_parameters"]["r0"]
+    phase, _, start_state = reelout.run_simulation(
+        run_plots=False,
+        phase_sim=True,
+        start_state=start_state,
+        return_start_state=True,
+    )
+    return phase, start_state
 
 
 def get_power_metrics(phase):
@@ -112,7 +130,9 @@ def get_power_metrics(phase):
 
 
 def plot_trajectories(
-    shears: Iterable[float] = SHEARS, wind_speed: float = WIND_SPEED
+    shears: Iterable[float] = SHEARS,
+    wind_speed: float = WIND_SPEED,
+    start_state: dict = START_STATE,
 ) -> Tuple[plt.Figure, np.ndarray]:
     """Plot 2x3 grid: top row y-z, bottom row x-z for downloop, uploop, helix."""
 
@@ -125,9 +145,15 @@ def plot_trajectories(
 
     for col, (pattern_name, folder) in enumerate(PATTERN_FOLDERS.items()):
         trajectory_data[col] = []
+        start_state = START_STATE.copy()  # Reset start state for each pattern
         for shear in shears:
+            start_state = START_STATE.copy()  # Reset start state for each simulation
+            if pattern_name == "Helix":
+                start_state["s_dot"] = 2
             config_path = find_config(folder, wind_speed, shear)
-            phase = simulate_phase(config_path, wind_speed, shear)
+            phase, start_state = simulate_phase(
+                config_path, wind_speed, shear, start_state=start_state
+            )
             x = phase.return_variable("x")
             y = phase.return_variable("y")
             z = phase.return_variable("z")
@@ -155,19 +181,23 @@ def plot_trajectories(
 
         # Top row titles and labels
         axes[0, col].set_title(f"{pattern_name}")
-        axes[0, col].set_xlabel("Crosswind y [m]")
+        axes[0, col].set_xlabel("Crosswind y (m)")
         axes[0, col].grid(True, linestyle=":", linewidth=0.7)
         axes[0, col].set_xlim(y_min - y_pad, y_max + y_pad)
         axes[0, col].set_ylim(z_min - z_pad, z_max + z_pad)
 
         # Bottom row labels
-        axes[1, col].set_xlabel("Downwind x [m]")
+        axes[1, col].set_xlabel("Downwind x (m)")
         axes[1, col].grid(True, linestyle=":", linewidth=0.7)
         axes[1, col].set_xlim(x_min - x_pad, x_max + x_pad)
         axes[1, col].set_ylim(z_min - z_pad, z_max + z_pad)
 
-    axes[0, 0].set_ylabel("Altitude z [m]")
-    axes[1, 0].set_ylabel("Altitude z [m]")
+    # Plot discontinuous altitude lines at z=50m for reference
+    for ax in axes.flatten():
+        ax.axhline(y=50, color="gray", linestyle="--", linewidth=0.7)
+
+    axes[0, 0].set_ylabel("Altitude z (m)")
+    axes[1, 0].set_ylabel("Altitude z (m)")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=len(labels), frameon=False)
@@ -217,7 +247,9 @@ def plot_trajectories(
 
 
 def plot_wind_sweep_for_shear(
-    shear: float = SHEAR_FOR_WIND_SWEEP, wind_speeds: Iterable[float] = WIND_SWEEP
+    shear: float = SHEAR_FOR_WIND_SWEEP,
+    wind_speeds: Iterable[float] = WIND_SWEEP,
+    start_state: dict = START_STATE,
 ) -> Tuple[plt.Figure, np.ndarray]:
     """Plot 2x3 grid: top row y-z, bottom row x-z for multiple wind speeds."""
 
@@ -230,9 +262,12 @@ def plot_wind_sweep_for_shear(
 
     for col, (pattern_name, folder) in enumerate(PATTERN_FOLDERS.items()):
         trajectory_data[col] = []
+        start_state = START_STATE.copy()  # Reset start state for each pattern
         for wind_speed in wind_speeds:
             config_path = find_config(folder, wind_speed, shear)
-            phase = simulate_phase(config_path, wind_speed, shear)
+            phase, start_state = simulate_phase(
+                config_path, wind_speed, shear, start_state=start_state
+            )
             get_power_metrics(phase)
             x = phase.return_variable("x")
             y = phase.return_variable("y")
@@ -260,19 +295,19 @@ def plot_wind_sweep_for_shear(
 
         # Top row titles and labels
         axes[0, col].set_title(f"{pattern_name}")
-        axes[0, col].set_xlabel("Crosswind y [m]")
+        axes[0, col].set_xlabel("Crosswind y (m)")
         axes[0, col].grid(True, linestyle=":", linewidth=0.7)
         axes[0, col].set_xlim(y_min - y_pad, y_max + y_pad)
         axes[0, col].set_ylim(z_min - z_pad, z_max + z_pad)
 
         # Bottom row labels
-        axes[1, col].set_xlabel("Downwind x [m]")
+        axes[1, col].set_xlabel("Downwind x (m)")
         axes[1, col].grid(True, linestyle=":", linewidth=0.7)
         axes[1, col].set_xlim(x_min - x_pad, x_max + x_pad)
         axes[1, col].set_ylim(z_min - z_pad, z_max + z_pad)
 
-    axes[0, 0].set_ylabel("Altitude z [m]")
-    axes[1, 0].set_ylabel("Altitude z [m]")
+    axes[0, 0].set_ylabel("Altitude z (m)")
+    axes[1, 0].set_ylabel("Altitude z (m)")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=len(labels), frameon=False)
@@ -283,7 +318,7 @@ def plot_wind_sweep_for_shear(
 
 if __name__ == "__main__":
     set_plot_style()
-    plot_trajectories()
+    # plot_trajectories()
     # plt.show()
     plot_wind_sweep_for_shear()
     plt.show()

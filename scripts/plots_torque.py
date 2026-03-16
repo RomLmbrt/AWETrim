@@ -60,11 +60,12 @@ ax.plot(
     color=get_color_list()[0],
     linestyle="-",
 )
-ax.set_xlabel(r"Reeling speed $v_r$ (m/s)")
+ax.set_xlabel(r"Reeling speed $v_r$ (m s$^{-1}$)")
 ax.set_ylabel("Tension (N)")
 ax.set_ylim(0, 9000)
 ax.legend()
 ax.set_xlim(-2, 6)
+plt.tight_layout()
 plt.savefig("results/figures/torque2026/winch_tension_curve.pdf")
 plt.show()
 
@@ -115,7 +116,7 @@ def bump_pair_zero_mean(u, s0, wp, normalize=False):
     #     b = b / wp
 
     # # Enforce zero mean on the given grid
-    # b = b - b.mean()
+    b = b - b.mean()
 
     return b
 

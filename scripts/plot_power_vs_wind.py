@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import MultipleLocator
 
 from awetrim.environment.Wind import Wind
 from awetrim.system.system_model import create_system_model_from_yaml
@@ -25,8 +26,8 @@ CONFIG_ROOT = Path("results/optimized_configs")
 SHEAR = 0.03
 
 PATTERN_FOLDERS: Dict[str, Path] = {
-    "Downloop": CONFIG_ROOT / "downloops",
-    "Uploop": CONFIG_ROOT / "uploops",
+    "Down-loop": CONFIG_ROOT / "downloops",
+    "Up-loop": CONFIG_ROOT / "uploops",
     "Helix": CONFIG_ROOT / "helix",
 }
 
@@ -43,17 +44,37 @@ def extract_wind_speed(path: Path) -> float:
 
 
 def simulate_metrics(
-    config_path: Path, wind_speed: float, shear: float
-) -> Dict[str, float]:
+    config_path: Path,
+    wind_speed: float,
+    shear: float,
+    prev_state: Dict[str, float] | None = None,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
     pattern_config, _ = load_cycle_config_from_yaml(config_path)
     # s_dot = 2 if "loop" in config_path.name else 4.0
-    s_dot = 1.5
+
+    if prev_state is not None:
+        start_state = prev_state
+    else:
+        start_state = {
+            "t": 0.0,
+            "s": 0.0,
+            "s_dot": 4,
+            "distance_radial": pattern_config["path_parameters"]["r0"],
+            "speed_radial": -2.0,
+            "input_steering": 0.0,
+            "tension_tether_ground": 8.4e5,
+        }
     system_model = create_system_model_from_yaml(yaml_path=KITE_CONFIG_PATH)
     system_model.wind = build_wind_model(speed_wind_at_100=wind_speed, z0=shear)
     reelout = Reelout(
         system_model=system_model, pattern_config=pattern_config, depower=0
     )
-    phase, _ = reelout.run_simulation(run_plots=False, phase_sim=True, s_dot=s_dot)
+    phase, _, start_state = reelout.run_simulation(
+        run_plots=False,
+        phase_sim=True,
+        start_state=start_state,
+        return_start_state=True,
+    )
 
     tension = phase.return_variable("tension_tether_ground")
     vr = phase.return_variable("speed_radial")
@@ -84,14 +105,18 @@ def simulate_metrics(
         "mean_aoa": float(np.mean(aoa_deg)),
         "min_aoa": float(np.min(aoa_deg)),
         "max_aoa": float(np.max(aoa_deg)),
-    }
+    }, start_state
 
 
 def collect_metrics(folder: Path, shear: float) -> List[Tuple[float, Dict[str, float]]]:
     data: List[Tuple[float, Dict[str, float]]] = []
-    for config_path in sorted(folder.glob(f"*{shear}*logarithmic.yaml")):
+    prev_state: Dict[str, float] | None = None
+    for config_path in sorted(
+        folder.glob(f"*{shear}*logarithmic_spline.yaml"),
+        key=lambda p: extract_wind_speed(p) or 0,
+    ):
         wind_speed = extract_wind_speed(config_path)
-        if wind_speed < 6:
+        if wind_speed < 5:
             continue
         if wind_speed > 24:
             continue
@@ -100,7 +125,13 @@ def collect_metrics(folder: Path, shear: float) -> List[Tuple[float, Dict[str, f
         print(f"Simulating {config_path.name}...")
         if "depower" in config_path.name:
             print("  (depower pattern)")
-            metrics = simulate_metrics(config_path, wind_speed, shear)
+            print(f"  Previous state: {prev_state}")
+            metrics, prev_state = simulate_metrics(
+                config_path,
+                wind_speed,
+                shear,
+                prev_state,
+            )
             data.append((wind_speed, metrics))
     return sorted(data, key=lambda x: x[0])
 
@@ -207,15 +238,17 @@ def plot_metrics_vs_wind(shear: float = SHEAR) -> Tuple[plt.Figure, List[plt.Axe
 
     # Labels and grids
     for ax in axes:
-        ax.set_xlabel(r"$v_\mathrm{w,100m}$" + " [m/s]")
+        ax.set_xlabel(r"$v_\mathrm{w,100m}$ (m s$^{-1}$)")
         ax.grid(True, linestyle=":", linewidth=0.7)
+        ax.set_xlim(5, 24)
+        ax.xaxis.set_major_locator(MultipleLocator(1.0))
 
-    axes[0].set_ylabel("Power [kW]")
-    axes[1].set_ylabel("Tether force [kN]")
-    axes[2].set_ylabel("Reeling speed [m/s]")
-    axes[3].set_ylabel("Tangential speed [m/s]")
-    axes[4].set_ylabel("Input depower [-]")
-    axes[5].set_ylabel("Angle of attack [deg]")
+    axes[0].set_ylabel("Power (kW)")
+    axes[1].set_ylabel("Tether force (kN)")
+    axes[2].set_ylabel(r"Reeling speed (m s$^{-1}$)")
+    axes[3].set_ylabel(r"Tangential speed (m s$^{-1}$)")
+    axes[4].set_ylabel("Input depower (-)")
+    axes[5].set_ylabel(r"Angle of attack ($^\circ$)")
 
     axes[0].legend()
     fig.tight_layout()
