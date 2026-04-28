@@ -30,16 +30,19 @@ KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
 # CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example.yaml")
 CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_downloop_config_example_spline.yaml")
 # CYCLE_CONFIG_PATH = Path(
-#     "results/optimized_configs/downloops/depower_downloop_optimized_config_wind_12_z0_0.03_logarithmic_spline.yaml"
+#     "results/optimized_configs/downloops/depower_downloop_optimized_config_wind_6_z0_0.03_logarithmic_spline.yaml"
 # )
 
 # Load configurations from YAML
 REELOUT_CONFIG, REELIN_CONFIG = load_cycle_config_from_yaml(CYCLE_CONFIG_PATH)
-
-REELOUT_CONFIG["sim_parameters"]["n_points"] = 40
-REELOUT_CONFIG["sim_parameters"]["input_depower"] = -0.5
+# REELOUT_CONFIG["path_parameters"]["beta0"] += 0.1
+# REELOUT_CONFIG["path_parameters"]["beta_amp0"] = 0.18
+# REELOUT_CONFIG["path_parameters"]["az_amp0"] = 0.3536
+# # REELOUT_CONFIG["path_parameters"]["kappa"] = 1
+# REELOUT_CONFIG["path_parameters"]["kbeta"] = 0
+# REELOUT_CONFIG["sim_parameters"]["input_depower"] += 0.06
 WIND_CONFIG = {
-    "speed_wind_at_100": 12,
+    "speed_wind_at_100": 10,
     "z0": 0.03,
     "model_type": "logarithmic",
 }
