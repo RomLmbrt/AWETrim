@@ -26,8 +26,8 @@ def test_position_properties(
     position = np.array(pos.position.full().flatten())  # CasADi DM → NumPy array
     position_W = np.array(pos.position_W.full().flatten())
 
-    assert np.allclose(position, expected_position)
-    assert np.allclose(position_W, expected_position_W)
+    assert np.allclose(position, expected_position, rtol=1e-6, atol=1e-6)
+    assert np.allclose(position_W, expected_position_W, rtol=1e-6, atol=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -98,8 +98,8 @@ def test_velocity_properties(
     velocity = np.array(kite.velocity_kite.full().flatten())
     velocity_W = np.array(kite.velocity_kite_W.full().flatten())
 
-    assert np.allclose(velocity, expected_velocity)
-    assert np.allclose(velocity_W, expected_velocity_W)
+    assert np.allclose(velocity, expected_velocity, rtol=1e-6, atol=1e-6)
+    assert np.allclose(velocity_W, expected_velocity_W, rtol=1e-6, atol=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -160,5 +160,5 @@ def test_omega_course_properties(
 
     omega_course = np.array(kite.velocity_rotation_course_frame.full().flatten())
     assert np.allclose(
-        omega_course, expected_omega_course
+        omega_course, expected_omega_course, rtol=1e-6, atol=1e-6
     ), f"Expected {expected_omega_course}, got {omega_course}"
