@@ -1,4 +1,4 @@
-from .system import SystemModel, State
+from .system import SystemModel, State, create_system_model_from_yaml
 from .timeseries import Cycle
 from .utils import defaults, reference_frames, color_palette, utils
 import logging

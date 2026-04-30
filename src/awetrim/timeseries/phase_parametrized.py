@@ -14,7 +14,6 @@ from awetrim.system.winch import Winch
 from awetrim.utils.sparsity_analysis import stiffness_report
 import logging
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -108,7 +107,9 @@ class PhaseParameterized(TimeSeries):
                 "input_depower",
                 self.pattern_config.get("sim_parameters", {}).get("input_depower", 0.0),
             )
-            wind_ref = float(getattr(km_copy.wind, "speed_wind_ref", 0.0))
+            wind_ref = getattr(km_copy.wind, "speed_wind_ref_value", None)
+            if wind_ref is None:
+                wind_ref = 0.0
             x0 = ca.vertcat(
                 state_obj.tension_tether_ground,
                 state_obj.input_steering,
@@ -128,7 +129,9 @@ class PhaseParameterized(TimeSeries):
                 "input_depower",
                 self.pattern_config.get("sim_parameters", {}).get("input_depower", 0.0),
             )
-            wind_ref = float(getattr(km_copy.wind, "speed_wind_ref", 0.0))
+            wind_ref = getattr(km_copy.wind, "speed_wind_ref_value", None)
+            if wind_ref is None:
+                wind_ref = 0.0
             x0 = ca.vertcat(
                 state_obj.tension_tether_ground,
                 state_obj.input_steering,
@@ -257,7 +260,9 @@ class PhaseParameterized(TimeSeries):
             if wind_profile.size != N + 1:
                 raise ValueError("wind_speed_profile must have length n_points+1")
         else:
-            base_wind = float(getattr(km_copy.wind, "speed_wind_ref", 0.0))
+            base_wind = getattr(km_copy.wind, "speed_wind_ref_value", None)
+            if base_wind is None:
+                base_wind = 0.0
             wind_profile = np.full(N + 1, base_wind, dtype=float)
 
         qs_solver = self.residual_solver(km_copy)
@@ -413,6 +418,7 @@ class PhaseParameterized(TimeSeries):
             state_obj.s,
             state_obj.distance_radial,
             state_obj.input_depower,
+            getattr(km_copy.wind, "speed_wind_ref_value", 0.0),
         )
         lbx_init, ubx_init, lbg_init, ubg_init = km_copy.get_boundaries(
             state_obj, qs_unknown_vars
@@ -686,7 +692,7 @@ class PhaseParameterized(TimeSeries):
                 km_copy.distance_radial,
             ]
             + flat_syms,
-            [km_copy.angle_of_attack],
+            [km_copy.expression("angle_of_attack")],
         )
         chi_eq = ca.Function(
             "chi_eq",

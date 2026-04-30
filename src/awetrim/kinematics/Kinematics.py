@@ -162,6 +162,59 @@ class KiteKinematics(Position):
             - self.timeder_angle_course,
         )
 
+    @property
+    def acceleration(self):
+        return self.acceleration_local + self.acceleration_rotation_course
+
+    @property
+    def acceleration_local(self):
+        return ca.vertcat(self.timeder_speed_tangential, 0, self.timeder_speed_radial)
+
+    @property
+    def acceleration_rotation_course(self):
+        if self._override_centripetal == True:
+            return ca.vertcat(
+                self.speed_tangential * self.speed_radial / self.distance_radial, 0, 0
+            )
+        if self._override_coriolis == True:
+            return ca.cross(
+                self.velocity_rotation_course_frame, self.velocity_kite
+            ) - ca.vertcat(
+                2 * self.speed_tangential * self.speed_radial / self.distance_radial,
+                0,
+                0,
+            )
+        return ca.cross(self.velocity_rotation_course_frame, self.velocity_kite)
+
+    @property
+    def velocity_apparent_wind(self):
+        return self.wind.velocity_wind(self) - self.velocity_kite
+
+    @property
+    def speed_apparent_wind(self):
+        va = self.velocity_apparent_wind
+        return ca.sqrt(ca.mtimes(va.T, va))
+
+    @property
+    def angle_pitch_aerodynamic(self):
+        velocity_apparent_wind_K = self.velocity_apparent_wind
+
+        return ca.atan2(
+            velocity_apparent_wind_K[2],
+            ca.sqrt(
+                velocity_apparent_wind_K[0] ** 2
+                + velocity_apparent_wind_K[1] ** 2
+                + 1e-6
+            ),
+        )
+
+    @property
+    def angle_yaw_aerodynamic(self):
+        velocity_apparent_wind_K = self.velocity_apparent_wind
+        return -ca.atan(
+            velocity_apparent_wind_K[1] / (velocity_apparent_wind_K[0] + 1e-6)
+        )
+
 
 class ParametrizedKinematics:
 

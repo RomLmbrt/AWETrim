@@ -16,6 +16,7 @@ DEFAULT_BOUNDS = {
     "distance_radial": [0, 2000],
     "speed_friction": [0, 5],
     "angle_of_attack": [np.radians(-2), np.radians(18)],
+    "direction_wind": [-np.pi, np.pi],
 }
 
 PLOT_LABELS = {

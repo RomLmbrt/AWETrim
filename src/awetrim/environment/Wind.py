@@ -14,10 +14,10 @@ class Wind:
         direction_wind=None,
         speed_wind_ref=None,
     ):
-        if speed_wind_ref is None:
-            self._speed_wind_ref = ca.MX.sym("speed_wind_ref")
-        else:
-            self._speed_wind_ref = speed_wind_ref
+        self._speed_wind_ref = ca.MX.sym("speed_wind_ref")
+        self._speed_wind_ref_value = None
+        if speed_wind_ref is not None:
+            self.speed_wind_ref = speed_wind_ref
         self._speed_friction = ca.MX.sym("speed_friction")
         if direction_wind is None:
             self._direction_wind = ca.MX.sym(
@@ -50,10 +50,16 @@ class Wind:
     def speed_wind_ref(self):
         return self._speed_wind_ref
 
+    @property
+    def speed_wind_ref_value(self):
+        return self._speed_wind_ref_value
+
     @speed_wind_ref.setter
     def speed_wind_ref(self, value):
+        self._speed_wind_ref_value = value
+        if isinstance(value, (ca.MX, ca.SX)) and value.is_symbolic():
+            self._speed_wind_ref = value
         self._speed_friction = value * self.kappa / ca.log(self.height_ref / self.z0)
-        self._speed_wind_ref = value
 
     @property
     def direction_wind(self):
@@ -78,32 +84,34 @@ class Wind:
     @speed_friction.setter
     def speed_friction(self, value):
         self._speed_friction = value
-        self._speed_wind_ref = value / self.kappa * ca.log(self.height_ref / self.z0)
+        self._speed_wind_ref_value = (
+            value / self.kappa * ca.log(self.height_ref / self.z0)
+        )
 
     # Should be renamed to speed_wind_kite
-    def speed_wind(self, state):
+    def speed_wind(self, height):
         if self.wind_model == "uniform":
             return self.speed_wind_ref
         elif self.wind_model == "logarithmic":
-            return self._speed_friction / self.kappa * ca.log(state.z / self.z0)
+            return self._speed_friction / self.kappa * ca.log(height / self.z0)
         elif self.wind_model == "tabulated":
-            return self.wind_interp(state.z)
+            return self.wind_interp(height)
 
-    def velocity_wind_W(self, state):
+    def velocity_wind_W(self, height):
         return ca.vertcat(
-            self.speed_wind(state) * ca.cos(self.direction_wind),
-            self.speed_wind(state) * ca.sin(self.direction_wind),
+            self.speed_wind(height) * ca.cos(self.direction_wind),
+            self.speed_wind(height) * ca.sin(self.direction_wind),
             0,
         )
 
-    def velocity_wind(self, state):
+    def velocity_wind(self, model):
         """
         Compute the wind velocity in the body frame.
         """
         T_C_from_W = transformation_C_from_W(
-            state.angle_azimuth, state.angle_elevation, state.angle_course
+            model.angle_azimuth, model.angle_elevation, model.angle_course
         )
-        return T_C_from_W @ self.velocity_wind_W(state)
+        return T_C_from_W @ self.velocity_wind_W(model.z)
 
     def speed_wind_at_height(self, height):
         if self.wind_model == "uniform":
@@ -116,12 +124,12 @@ class Wind:
     def velocity_wind_at_height_W(self, height):
         return ca.vertcat(self.speed_wind_at_height(height), 0, 0)
 
-    def velocity_wind_at_height(self, state, height):
+    def velocity_wind_at_height(self, model, height):
         """
         Compute the wind velocity in the body frame.
         """
         T_C_from_W = transformation_C_from_W(
-            state.angle_azimuth, state.angle_elevation, state.angle_course
+            model.angle_azimuth, model.angle_elevation, model.angle_course
         )
         return T_C_from_W @ self.velocity_wind_at_height_W(height)
 
@@ -134,9 +142,10 @@ class Wind:
             raise ValueError("z_max must be greater than z_min")
 
         z_samples = np.linspace(z_min, z_max, num)
+        speed_wind_ref_value = self.speed_wind_ref_value
 
         if self.wind_model == "uniform":
-            speeds = np.full_like(z_samples, float(self.speed_wind_ref))
+            speeds = np.full_like(z_samples, float(speed_wind_ref_value or 0.0))
         elif self.wind_model == "logarithmic":
             speeds = (float(self.speed_friction) / self.kappa) * np.log(
                 z_samples / self.z0

@@ -1,14 +1,13 @@
 import casadi as ca
+import copy
 import numpy as np
-from pathlib import Path
-from typing import Union
-import yaml
 from awetrim.system.tether import RigidLinkTether, FlexibleLinkTether
 from awetrim.system.kite import Kite
+from awetrim.system.expressions import build_expression_registry
+from awetrim.system.state import State
 from awetrim.kinematics.Kinematics import KiteKinematics
 from awetrim.environment.Wind import Wind
 from awetrim.utils.defaults import DEFAULT_BOUNDS
-import inspect
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,11 +35,15 @@ class SystemModel(KiteKinematics):
         self.define_kite_model(kite)
         self.define_tether_model(tether)
 
+        self._override_gravity = False
+        self._override_centripetal = False
+        self._override_coriolis = False
+
         self.acceleration_winch = acceleration_winch
         self.depower_rate = depower_rate
         # self.steering_control = self.steering_control
 
-        if self.steering_control not in ["asymmetric", "roll"]:
+        if self.kite.steering_control not in ["asymmetric", "roll"]:
             raise ValueError("Invalid steering_control. Choose 'asymmetric' or 'roll'.")
 
         if quasi_steady:
@@ -88,6 +91,7 @@ class SystemModel(KiteKinematics):
             "speed_apparent_wind",
         ]
         self._derived_functions = None
+        self._expressions = self._build_expression_registry()
 
     def define_kite_model(self, kite):
         if kite is None:
@@ -106,34 +110,185 @@ class SystemModel(KiteKinematics):
             )
             print("Kite model not defined. Using default kite model.")
 
-        # Inject all tether attributes into SystemModel so they can be accessed directly
-        for attr_name, attr_value in vars(kite).items():
-            setattr(self, attr_name, attr_value)
-        # Copy properties from the component's class and its base classes
-        for cls in inspect.getmro(kite.__class__):
-            for name, obj in cls.__dict__.items():
-                if isinstance(obj, property) and not hasattr(self.__class__, name):
-                    setattr(self.__class__, name, obj)
+        self.kite = kite
 
     def define_tether_model(self, tether):
         if tether is None:
             tether = FlexibleLinkTether()
             print("Tether model not defined. Using default tether model.")
         self.tether = tether
-        # Inject all tether attributes into SystemModel so they can be accessed directly
-        for attr_name, attr_value in vars(tether).items():
-            setattr(self, attr_name, attr_value)
-        # Copy properties from the component's class and its base classes
-        for cls in inspect.getmro(tether.__class__):
-            for name, obj in cls.__dict__.items():
-                if isinstance(obj, property) and not hasattr(self.__class__, name):
-                    setattr(self.__class__, name, obj)
 
     def define_wind_model(self, wind_model):
         if wind_model is None:
             self.wind = Wind("uniform")
         else:
             self.wind = wind_model
+
+    def _build_expression_registry(self):
+        """Named symbolic outputs available for extraction and post-processing."""
+        return build_expression_registry(self)
+
+    def refresh_expression_registry(self):
+        self._expressions = self._build_expression_registry()
+
+    def expression_registry(self):
+        return dict(self._expressions)
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            if key != "_expressions":
+                setattr(result, key, copy.deepcopy(value, memo))
+        result.refresh_expression_registry()
+        return result
+
+    def available_expressions(self):
+        return tuple(sorted(self._expressions))
+
+    def has_expression(self, name):
+        return name in self._expressions
+
+    def expression(self, name):
+        try:
+            return self._expressions[name]()
+        except KeyError as exc:
+            raise AttributeError(f"'SystemModel' has no expression '{name}'") from exc
+
+    @property
+    def tension_tether_equation(self):
+        # TODO: Write explicit equation for tether force
+        lhs = (self.kite.mass_wing + self.kite.mass_kcu) * self.acceleration
+        return (
+            -lhs[2]
+            + self.expression("force_aerodynamic")[2]
+            + self.expression("force_gravity")[2]
+            + self.expression("drag_tether_at_kite")[2]
+            + self.expression("force_gravity_tether_at_kite")[2]
+        )
+
+    @property
+    def input_steering(self):
+        return self.kite.input_steering
+
+    @input_steering.setter
+    def input_steering(self, value):
+        self.kite.input_steering = value
+
+    @property
+    def input_depower(self):
+        return self.kite.input_depower
+
+    @input_depower.setter
+    def input_depower(self, value):
+        self.kite.input_depower = value
+
+    @property
+    def g(self):
+        return self.kite.g
+
+    @g.setter
+    def g(self, value):
+        self.kite.g = value
+
+    @property
+    def rho(self):
+        return self.kite.rho
+
+    @rho.setter
+    def rho(self, value):
+        self.kite.rho = value
+
+    @property
+    def override_gravity(self):
+        return self._override_gravity
+
+    @override_gravity.setter
+    def override_gravity(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("override_gravity must be True or False.")
+        self._override_gravity = value
+
+    @property
+    def override_centripetal(self):
+        return self._override_centripetal
+
+    @override_centripetal.setter
+    def override_centripetal(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("override_centripetal must be True or False.")
+        self._override_centripetal = value
+
+    @property
+    def override_coriolis(self):
+        return self._override_coriolis
+
+    @override_coriolis.setter
+    def override_coriolis(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("override_coriolis must be True or False.")
+        self._override_coriolis = value
+
+    @property
+    def is_tether_rigid(self):
+        return self.tether.is_tether_rigid
+
+    @property
+    def length_tether(self):
+        return self.tether.length_tether
+
+    @length_tether.setter
+    def length_tether(self, value):
+        self.tether.length_tether = value
+
+    @property
+    def timeder_length_tether(self):
+        return self.tether.timeder_length_tether
+
+    @timeder_length_tether.setter
+    def timeder_length_tether(self, value):
+        self.tether.timeder_length_tether = value
+
+    @property
+    def tension_tether_ground(self):
+        if hasattr(self.tether, "tension_tether_ground_for"):
+            return self.tether.tension_tether_ground_for(self)
+        return self.tether.tension_tether_ground
+
+    @tension_tether_ground.setter
+    def tension_tether_ground(self, value):
+        self.tether.tension_tether_ground = value
+
+    @property
+    def force_tether_at_kite(self):
+        return self.tether.force_tether_at_kite_for(self)
+
+    @property
+    def force_gravity_kcu(self):
+        return self.kite.force_gravity_kcu_for(self)
+
+    @property
+    def force_external(self):
+        # print("force_external:", self.force_aerodynamic, self.force_gravity)
+
+        return (
+            self.expression("force_aerodynamic")
+            + self.expression("force_gravity")
+            + self.expression("force_tether_at_kite")
+        )
+
+    @property
+    def force_residual(self):
+        """
+        Compute the residual for the kite system dynamics.
+        """
+        # LHS and RHS
+        lhs = (self.kite.mass_wing) * self.acceleration
+        # Residual
+        # print(self.force_external)
+        # print(lhs)
+        return -lhs + self.force_external
 
     def establish_ode_function(self):
         dot_r = self.speed_radial
@@ -391,11 +546,12 @@ class SystemModel(KiteKinematics):
     def extract_function(self, attribute_name):
         """Extract a CasADi function dynamically based on the attribute name."""
 
-        # Ensure the attribute exists
-        if not hasattr(self, attribute_name):
+        if self.has_expression(attribute_name):
+            expression = self.expression(attribute_name)
+        elif hasattr(self, attribute_name):
+            expression = getattr(self, attribute_name)
+        else:
             raise AttributeError(f"'State' object has no attribute '{attribute_name}'")
-
-        expression = getattr(self, attribute_name)
 
         # If the expression is a DM (numerical constant), return a constant function
         if isinstance(expression, ca.DM) or isinstance(expression, (int, float)):
@@ -450,109 +606,5 @@ class SystemModel(KiteKinematics):
         self._qs_inputs = None
         self._derived_functions = None
 
-
-from dataclasses import dataclass, asdict, field
-from typing import Optional
-
-
-@dataclass
-class State:
-    distance_radial: float = None
-    angle_elevation: float = None
-    angle_azimuth: float = None
-    angle_course: float = None
-    speed_radial: float = None
-    speed_tangential: float = None
-    input_depower: float = None
-    input_steering: float = None
-    timeder_angle_course: float = None
-    length_tether: float = None
-    tension_tether_ground: float = None
-    timeder_speed_tangential: Optional[float] = None
-    timeder_speed_radial: Optional[float] = None
-    # Optional inputs
-    angle_roll: Optional[float] = None
-    angle_pitch: Optional[float] = None
-    angle_yaw: Optional[float] = None
-
-    # Optional outputs
-    angle_of_attack: Optional[float] = None
-    lift_coefficient: Optional[float] = None
-    drag_coefficient: Optional[float] = None
-    speed_apparent_wind: Optional[float] = None
-    # Parametrization
-    s: Optional[float] = None
-    s_dot: Optional[float] = None
-    s_ddot: Optional[float] = None
-    t: Optional[float] = None  # optionally track simulation time
-
-    def to_dict(self):
-        return asdict(self)
-
-
 def safe_value(val):
     return 0.0 if val is None else val
-
-
-from awetrim.system.tether import RigidLumpedTether
-
-
-def create_system_model_from_yaml(
-    yaml_path: Union[str, Path], steering_control: str = "asymmetric"
-):
-    """Create a SystemModel from a YAML configuration.
-
-    Expects a YAML file structured like `data/LEI-V3-KITE/v3_kite_input.yaml` with sections:
-    - physical: { model_name, mass, area, span }
-    - kcu: { mass, ... } (optional)
-    - aerodynamics: { model, params, coefficients }
-    - tether: { diameter, ... } (optional)
-    - wind: { model, z0, speed_ref } (optional)
-
-    Parameters
-    ----------
-    yaml_path : str | Path
-        Path to the YAML configuration file.
-    steering_control : str
-        Steering control mode for the kite ("asymmetric" or "roll"). Defaults to "asymmetric".
-
-    Returns
-    -------
-    SystemModel
-        A fully initialized system model built from the YAML config.
-    """
-
-    # Resolve path and load YAML
-    config_path = Path(yaml_path)
-    with config_path.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-
-    wing = cfg.get("wing", {})
-    kcu_cfg = cfg.get("kcu", {})
-    aero_cfg = wing.get("aerodynamics", {})
-    tether_cfg = cfg.get("tether", {})
-
-    # Build tether model (use diameter from YAML if present; default to 0.006)
-    tether_diameter = tether_cfg.get("diameter", 0.006)
-    tether = RigidLumpedTether(diameter=tether_diameter)
-
-    # Build kite model from physical and aerodynamics
-    mass_wing = wing.get("mass", 20)
-    area_wing = wing.get("area", 20)
-    mass_kcu = kcu_cfg.get("mass", 0)
-
-    kite = Kite(
-        mass_wing=mass_wing,
-        mass_kcu=mass_kcu,
-        area_wing=area_wing,
-        aero_input=aero_cfg,
-        steering_control=steering_control,
-    )
-
-    # Assemble the system model
-    model = SystemModel(
-        dof=3,
-        kite=kite,
-        tether=tether,
-    )
-    return model

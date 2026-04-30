@@ -18,7 +18,7 @@ class Cycle:
             self.wind_model.speed_friction = sim_config["speed_friction"]
         elif sim_config["wind_model"] == "uniform":
             self.wind_model = Wind(wind_model=sim_config["wind_model"])
-            self.wind_model._speed_wind_ref = sim_config["speed_wind_ref"]
+            self.wind_model.speed_wind_ref = sim_config["speed_wind_ref"]
         elif sim_config["wind_model"] == "tabulated":
             self.wind_model = Wind(
                 wind_model=sim_config["wind_model"],

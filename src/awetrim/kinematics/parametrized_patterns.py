@@ -446,8 +446,11 @@ class PeriodicBSpline(ParametrizedPatterns):
         return self.omega * (s - self.s_init) / (self.s_final - self.s_init)
 
     def _eval_spline_vec(self, C, u):
-        if u.is_scalar():
+        if np.isscalar(u) or (hasattr(u, "is_scalar") and u.is_scalar()):
             return self.spline(C, u)[0]
+
+        if not hasattr(u, "numel"):
+            u = ca.DM(np.asarray(u).ravel())
 
         u_col = ca.reshape(u, u.numel(), 1)
         N = int(u_col.numel())
@@ -486,8 +489,11 @@ class OpenBSpline(ParametrizedPatterns):
         return self.omega * (s - self.s_init) / (self.s_final - self.s_init)
 
     def _eval_spline_vec(self, C, u):
-        if u.is_scalar():
+        if np.isscalar(u) or (hasattr(u, "is_scalar") and u.is_scalar()):
             return self.spline(C, u)[0]
+
+        if not hasattr(u, "numel"):
+            u = ca.DM(np.asarray(u).ravel())
 
         u_col = ca.reshape(u, u.numel(), 1)
         N = int(u_col.numel())
@@ -549,3 +555,112 @@ def fit_bspline_pattern_to_trajectory(
         pattern = OpenBSpline(M, C_phi, C_beta, s_init, s_final, downloops=downloops)
 
     return pattern, C_phi, C_beta
+
+
+def named_curve_angles(
+    s,
+    curve_type="lissajous",
+    az_amp0=0.8,
+    beta0=0.45,
+    beta_amp0=0.35,
+    downloops=True,
+):
+    """Return azimuth/elevation samples for a named initial curve.
+
+    Supported curves are ``lissajous`` and ``helix``. The returned arrays are
+    numeric samples intended for fitting initial B-spline control points, not
+    symbolic trajectory expressions.
+    """
+    s = np.asarray(s).ravel()
+    omega = 1.0 if downloops else -1.0
+
+    if curve_type == "lissajous":
+        azimuth = az_amp0 * np.sin(omega * s)
+        elevation = beta0 + beta_amp0 * np.sin(omega * 2.0 * s)
+    elif curve_type == "helix":
+        azimuth = az_amp0 * np.sin(omega * s)
+        elevation = beta0 + beta_amp0 * np.cos(omega * s)
+    else:
+        raise ValueError(
+            "curve_type must be one of 'lissajous' or 'helix'."
+        )
+
+    return azimuth, elevation
+
+
+def fit_bspline_pattern_to_named_curve(
+    spline_type,
+    M,
+    s_init,
+    s_final,
+    n_fit,
+    curve_type="lissajous",
+    az_amp0=0.8,
+    beta0=0.45,
+    beta_amp0=0.35,
+    downloops=True,
+):
+    """Fit a B-spline pattern to a named helix or figure-eight initial curve."""
+    s_samples = np.linspace(s_init, s_final, int(n_fit), endpoint=True)
+    az_target, el_target = named_curve_angles(
+        s_samples,
+        curve_type=curve_type,
+        az_amp0=az_amp0,
+        beta0=beta0,
+        beta_amp0=beta_amp0,
+        downloops=downloops,
+    )
+
+    return fit_bspline_pattern_to_trajectory(
+        spline_type=spline_type,
+        M=M,
+        s_init=s_init,
+        s_final=s_final,
+        az_target=az_target,
+        el_target=el_target,
+        s_samples=s_samples,
+        downloops=downloops,
+    )
+
+
+def make_bspline_path_parameters_from_named_curve(
+    spline_type,
+    M,
+    r0,
+    s_init,
+    s_final,
+    n_fit,
+    curve_type="lissajous",
+    az_amp0=0.8,
+    beta0=0.45,
+    beta_amp0=0.35,
+    downloops=True,
+    precision=6,
+):
+    """Create YAML-ready path parameters for a B-spline initial curve."""
+    _, C_phi, C_beta = fit_bspline_pattern_to_named_curve(
+        spline_type=spline_type,
+        M=M,
+        s_init=s_init,
+        s_final=s_final,
+        n_fit=n_fit,
+        curve_type=curve_type,
+        az_amp0=az_amp0,
+        beta0=beta0,
+        beta_amp0=beta_amp0,
+        downloops=downloops,
+    )
+
+    def _rounded_coefficients(coefficients):
+        values = np.round(coefficients.full().flatten(), precision)
+        values[np.isclose(values, 0.0)] = 0.0
+        return values.tolist()
+
+    return {
+        "r0": float(r0),
+        "M": int(M),
+        "C_phi": _rounded_coefficients(C_phi),
+        "C_beta": _rounded_coefficients(C_beta),
+        "s_init": float(s_init),
+        "s_final": float(s_final),
+    }
