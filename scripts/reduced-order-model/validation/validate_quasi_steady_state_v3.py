@@ -140,7 +140,7 @@ for cfg, label in zip(aero_cfgs, aero_labels):
     tether_diameter = cfg.get("tether", {}).get("diameter", 0.01)
 
     tether = RigidLumpedTether(diameter=tether_diameter)
-    wind_model = Wind(wind_model="logarithmic", z0=0.1)
+    wind_model = Wind(wind_model="logarithmic", z0=0.1, direction_wind=0)
     kite = Kite(
         mass_wing=mass_wing,
         area_wing=area_wing,
@@ -546,7 +546,7 @@ for label, solutions_df in all_solutions.items():
                 speed_data.append(phase_data["speed_relative_error"].values)
                 phase_labels.append(phase)
         if tether_data:
-            bp1 = ax1.boxplot(tether_data, labels=phase_labels, patch_artist=True)
+            bp1 = ax1.boxplot(tether_data, tick_labels=phase_labels, patch_artist=True)
             for patch, phase in zip(bp1["boxes"], phase_labels):
                 patch.set_facecolor(colors_phase[phase])
                 patch.set_alpha(0.7)
@@ -554,7 +554,7 @@ for label, solutions_df in all_solutions.items():
             ax1.set_ylabel("Tether Force Relative Error (%)")
             ax1.set_title("Tether Force Error by Phase")
             ax1.grid(True, alpha=0.3)
-            bp2 = ax2.boxplot(speed_data, labels=phase_labels, patch_artist=True)
+            bp2 = ax2.boxplot(speed_data, tick_labels=phase_labels, patch_artist=True)
             for patch, phase in zip(bp2["boxes"], phase_labels):
                 patch.set_facecolor(colors_phase[phase])
                 patch.set_alpha(0.7)
@@ -667,10 +667,10 @@ for label, solutions_df in all_solutions.items():
     print("Measured power depower: ", measured_power_dep, "W")
 
 
-from awetrim.utils.color_palette import set_plot_style
+from awetrim.utils.color_palette import set_plot_style_no_latex
 from awetrim.utils.defaults import PLOT_LABELS
 
-set_plot_style()
+set_plot_style_no_latex()
 
 
 def plot_main_results_comparison(

@@ -48,7 +48,7 @@ def extract_coefficients(aero_input: dict) -> tuple:
     cd_terms = coeffs_def.get("CD", [])
 
     # Create alpha range
-    alpha_range = np.linspace(-np.pi / 6, np.pi / 6, 200)  # -30 to +30 degrees
+    alpha_range = np.linspace(-np.deg2rad(2), np.pi / 6, 200)  # -30 to +30 degrees
 
     # Compute CL and CD
     cl_values = np.zeros_like(alpha_range) + cl0

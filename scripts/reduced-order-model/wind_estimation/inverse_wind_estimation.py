@@ -381,7 +381,7 @@ if __name__ == "__main__":
         speed_tangential,
         assumed_wind_direction,
         elapsed_loop,
-    ) = run_inverse_validation(cycle_num=list(range(50, 66)))
+    ) = run_inverse_validation(cycle_num=list(range(60, 64)))
 
     # Convert to DataFrame for easier analysis
     df_inverse = pd.DataFrame(solutions_inverse)
@@ -438,12 +438,12 @@ if __name__ == "__main__":
     # Plot measured vs solved wind speed
     import matplotlib.pyplot as plt
 
-    def rolling_mean(arr, w):
-        if len(arr) == 0 or w <= 1:
+    def rolling_mean(arr, window):
+        if len(arr) == 0 or window <= 1:
             return arr
-        pad = w // 2
+        pad = window // 2
         padded = np.pad(arr, pad_width=pad, mode="reflect")
-        kernel = np.ones(w) / float(w)
+        kernel = np.ones(window) / float(window)
         sm = np.convolve(padded, kernel, mode="valid")
         # Trim to original length
         excess = len(sm) - len(arr)

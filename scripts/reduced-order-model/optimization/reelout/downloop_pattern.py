@@ -8,7 +8,7 @@ from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
 from awetrim.timeseries.reelout_phase import Reelout
-from awetrim.system.system_model import create_system_model_from_yaml
+from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.utils.utils import load_cycle_config_from_yaml
 
 """
@@ -28,26 +28,27 @@ To modify parameters:
 # ---------------------------------------------------------------------------
 KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
 # CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example.yaml")
-CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_uploop_config_example_spline.yaml")
+CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_downloop_config_example_spline.yaml")
 # CYCLE_CONFIG_PATH = Path(
-#     "results/optimized_configs/uploops/depower_uploop_optimized_config_wind_6_z0_0.03_logarithmic_spline.yaml"
+#     "results/optimized_configs/downloops/depower_downloop_optimized_config_wind_12_z0_0.03_logarithmic_spline.yaml"
 # )
 
 # Load configurations from YAML
 REELOUT_CONFIG, REELIN_CONFIG = load_cycle_config_from_yaml(CYCLE_CONFIG_PATH)
-REELOUT_CONFIG["sim_parameters"]["input_depower"] += 0.1
+
+# REELOUT_CONFIG["sim_parameters"]["n_points"] = 40
+# REELOUT_CONFIG["sim_parameters"]["input_depower"] = -0.5
 WIND_CONFIG = {
     "speed_wind_at_100": 10,
     "z0": 0.03,
     "model_type": "logarithmic",
 }
-
 START_STATE = {
     "t": 0,
     "s": 0,
-    "s_dot": 3,
+    "s_dot": 2,
     "input_steering": 0,
-    "tension_tether_ground": 8.4e3,  # Initial guess for tension (N)
+    "tension_tether_ground": 8.4e5,  # Initial guess for tension (N)
     "speed_radial": 0,  # Positive for reel-out
     "distance_radial": REELOUT_CONFIG["path_parameters"][
         "r0"
@@ -60,6 +61,7 @@ def build_wind_model(speed_wind_at_100=8, z0=0.01, model_type="uniform"):
     wind_model = Wind(
         wind_model=model_type,
         z0=z0,
+        direction_wind=0,  # Wind coming from x-direction
     )
     speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind_model.z0)
     if model_type == "logarithmic":
@@ -69,7 +71,6 @@ def build_wind_model(speed_wind_at_100=8, z0=0.01, model_type="uniform"):
     return wind_model
 
 
-# TODO: Make sure it is the number of figure eights that I want
 def main(run_plots=False):
 
     system_model = create_system_model_from_yaml(yaml_path=KITE_CONFIG_PATH)
@@ -110,9 +111,9 @@ def main(run_plots=False):
     # plt.show()
     solution = reelout.run_simulation_opti(optimization_params=optimization_params)
     depower_prefix = "depower_" if "input_depower" in optimization_params else ""
-    filename = f"{depower_prefix}uploop_optimized_config_wind_{WIND_CONFIG['speed_wind_at_100']}_z0_{WIND_CONFIG['z0']}_{WIND_CONFIG['model_type']}_spline.yaml"
+    filename = f"{depower_prefix}downloop_optimized_config_wind_{WIND_CONFIG['speed_wind_at_100']}_z0_{WIND_CONFIG['z0']}_{WIND_CONFIG['model_type']}_spline.yaml"
 
-    solution.save_config_to_yaml(Path("results/optimized_configs/uploops") / filename)
+    solution.save_config_to_yaml(Path("results/optimized_configs/downloops") / filename)
     phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes, phase_sim=True)
 
     # reelout.pattern_config["path_parameters"]["kappa"] = 1

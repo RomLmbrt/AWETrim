@@ -9,7 +9,7 @@ from awetrim.kinematics.parametrized_patterns import (
 )
 from awetrim.utils.color_palette import set_plot_style, custom_cmap
 from awetrim.environment.Wind import Wind
-from awetrim.system.system_model import create_system_model_from_yaml
+from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.timeseries.phase import Phase
 
 
@@ -217,6 +217,7 @@ def simulate_cycle(
     npoints_per_second=2.0,
     wind_profile=None,
     winch_models=None,
+    use_dynamic: bool = False,
 ):
     # Use phase-specific duration to size discretizations
     cycle_mask = flight_df["cycle_by_phase"] == cycle_id
@@ -244,6 +245,89 @@ def simulate_cycle(
     t_offset_sim = 0.0
     r0 = None
     phase_start_state = None
+
+    def _extract_final_state(phase_obj):
+        final_state = {}
+        try:
+            if hasattr(phase_obj, "states") and phase_obj.states:
+                fs = phase_obj.states[-1]
+                for key in [
+                    "t",
+                    "s",
+                    "s_dot",
+                    "speed_radial",
+                    "distance_radial",
+                    "input_steering",
+                    "tension_tether_ground",
+                    "input_depower",
+                ]:
+                    if key in fs:
+                        try:
+                            final_state[key] = float(fs[key])
+                        except Exception:
+                            final_state[key] = fs[key]
+            else:
+                for key in [
+                    "t",
+                    "s",
+                    "s_dot",
+                    "speed_radial",
+                    "distance_radial",
+                    "input_steering",
+                    "tension_tether_ground",
+                    "input_depower",
+                ]:
+                    try:
+                        series = np.array(phase_obj.return_variable(key))
+                        if series.size > 0:
+                            final_state[key] = float(series[-1])
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return final_state
+
+    def _extract_initial_state(phase_obj):
+        """Extract the first recorded state from a Phase object as a dict."""
+        init_state = {}
+        try:
+            if hasattr(phase_obj, "states") and phase_obj.states:
+                fs = phase_obj.states[0]
+                for key in [
+                    "t",
+                    "s",
+                    "s_dot",
+                    "speed_radial",
+                    "distance_radial",
+                    "input_steering",
+                    "tension_tether_ground",
+                    "input_depower",
+                ]:
+                    if key in fs:
+                        try:
+                            init_state[key] = float(fs[key])
+                        except Exception:
+                            init_state[key] = fs[key]
+            else:
+                for key in [
+                    "t",
+                    "s",
+                    "s_dot",
+                    "speed_radial",
+                    "distance_radial",
+                    "input_steering",
+                    "tension_tether_ground",
+                    "input_depower",
+                ]:
+                    try:
+                        series = np.array(phase_obj.return_variable(key))
+                        if series.size > 0:
+                            init_state[key] = float(series[0])
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return init_state
 
     # Compute durations per phase within the cycle
     phase_durations = {}
@@ -425,15 +509,42 @@ def simulate_cycle(
         )
         system_model.wind = wind_model
 
-        phase_sim = Phase(
-            system_model=system_model,
-            pattern_config=phase_config,
-            start_state=current_start_state,
-        )
+        if use_dynamic:
+            # First phase: get a warm-start from a quasi-steady run if we don't
+            # already have a dynamic start state from a previous dynamic run.
+            if phase_start_state is None:
+                qs_phase = Phase(
+                    system_model=system_model,
+                    pattern_config=phase_config,
+                    start_state=current_start_state,
+                    quasi_steady=True,
+                )
+                qs_phase_obj, _ = qs_phase.run_simulation(
+                    run_plots=False, start_state=current_start_state
+                )
+                # Use the first state from the quasi-steady run to initialize
+                # the dynamic simulation for the first phase.
+                init_state = _extract_initial_state(qs_phase_obj) or current_start_state
+            else:
+                init_state = phase_start_state
 
-        phase, _ = phase_sim.run_simulation(
-            run_plots=False, start_state=current_start_state
-        )
+            dyn_phase = Phase(
+                system_model=system_model,
+                pattern_config=phase_config,
+                start_state=init_state,
+                quasi_steady=False,
+            )
+            phase, _ = dyn_phase.run_simulation(run_plots=False, start_state=init_state)
+        else:
+            phase_sim = Phase(
+                system_model=system_model,
+                pattern_config=phase_config,
+                start_state=current_start_state,
+            )
+
+            phase, _ = phase_sim.run_simulation(
+                run_plots=False, start_state=current_start_state
+            )
         print(
             f"Phase {target_phase} simulation finished. Final radial distance:",
             phase.return_variable("distance_radial")[-1],
@@ -542,13 +653,9 @@ def simulate_cycle(
 
         # Prepare initializer for next phase from final simulated state
         try:
-            if hasattr(phase, "states") and phase.states:
-                final_state = phase.states[-1]
-            else:
-                final_state = {}
+            final_state = _extract_final_state(phase)
             next_state = {**current_start_state}
             for key in [
-                "t",
                 "s",
                 # "s_dot",
                 "speed_radial",
@@ -558,8 +665,9 @@ def simulate_cycle(
                 "input_depower",
             ]:
                 if key in final_state:
-                    next_state[key] = float(final_state[key])
-            next_state["s_dot"] = 0.1
+                    next_state[key] = final_state[key]
+            next_state["s_dot"] = float(final_state.get("s_dot", 0.1))
+            next_state["t"] = 0.0
             phase_start_state = next_state
         except Exception as exc:
             print(
@@ -780,6 +888,7 @@ def main():
             npoints_per_second=level_cfg["npoints_per_second"],
             wind_profile=None,
             winch_models=winch_models,
+            use_dynamic=False,
         )
 
     plt.show()

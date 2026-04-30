@@ -8,7 +8,7 @@ from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
 from awetrim.timeseries.reelout_phase import Reelout
-from awetrim.system.system_model import create_system_model_from_yaml
+from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.utils.utils import load_cycle_config_from_yaml
 
 """
@@ -30,7 +30,7 @@ KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
 # CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example.yaml")
 CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example_spline.yaml")
 # CYCLE_CONFIG_PATH = Path(
-#     "results/optimized_configs/helix/depower_helix_optimized_config_wind_10_z0_0.03_logarithmic_spline.yaml"
+#     "results/optimized_configs/helix/depower_helix_optimized_config_wind_6_z0_0.03_logarithmic_spline.yaml"
 # )
 
 # Load configurations from YAML
@@ -59,11 +59,14 @@ START_STATE = {
 }
 
 
-def build_wind_model(speed_wind_at_100=8, z0=0.01, model_type="uniform"):
+def build_wind_model(
+    speed_wind_at_100=8, z0=0.01, model_type="uniform", direction_wind=0
+):
     """Create a wind model using the supplied parameters."""
     wind_model = Wind(
         wind_model=model_type,
         z0=z0,
+        direction_wind=direction_wind,
     )
     speed_friction = 0.41 * speed_wind_at_100 / np.log(100 / wind_model.z0)
     if model_type == "logarithmic":
@@ -73,7 +76,6 @@ def build_wind_model(speed_wind_at_100=8, z0=0.01, model_type="uniform"):
     return wind_model
 
 
-# TODO: Make sure it is the number of figure eights that I want
 def main(run_plots=False):
 
     system_model = create_system_model_from_yaml(yaml_path=KITE_CONFIG_PATH)
@@ -82,6 +84,7 @@ def main(run_plots=False):
         speed_wind_at_100=WIND_CONFIG["speed_wind_at_100"],
         z0=WIND_CONFIG["z0"],
         model_type=WIND_CONFIG["model_type"],
+        direction_wind=0,
     )
     system_model.wind = wind_model
     reelout = Reelout(
