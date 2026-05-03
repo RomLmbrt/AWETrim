@@ -90,6 +90,7 @@ dependencies = [
   "PyYAML",
   "VSM @ git+https://github.com/awegroup/Vortex-Step-Method.git@main",
   "PSS @ git+https://github.com/awegroup/Particle_System_Simulator.git@v1.0.2",
+  "awes-ekf @ git+https://github.com/ocayon/EKF-AWE.git@main",
 ]
 
 # You can define additional groups of dependencies here (e.g., development dependencies).
