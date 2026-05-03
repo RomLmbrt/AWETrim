@@ -23,14 +23,18 @@ from awetrim.kinematics.parametrized_patterns import (
     make_bspline_path_parameters_from_named_curve,
     named_curve_angles,
 )
+from awetrim.utils.config_paths import (
+    LEI_V3_DOWNLOOP_SPLINE_CONFIG,
+    LEI_V3_GENERATED_SPLINE_CONFIG,
+)
 from awetrim.utils.color_palette import get_color_list, set_plot_style_no_latex
 
 
 # ---------------------------------------------------------------------------
 # Defaults: edit these for quick config-generation experiments
 # ---------------------------------------------------------------------------
-TEMPLATE_PATH = Path("data/LEI-V3-KITE/v3_downloop_config_example_spline.yaml")
-OUTPUT_PATH = Path("data/LEI-V3-KITE/v3_generated_spline_config.yaml")
+TEMPLATE_PATH = LEI_V3_DOWNLOOP_SPLINE_CONFIG
+OUTPUT_PATH = LEI_V3_GENERATED_SPLINE_CONFIG
 
 CURVE_TYPE = "lissajous"  # "lissajous" or "helix"
 SPLINE_TYPE = "periodic"  # "periodic" or "open"

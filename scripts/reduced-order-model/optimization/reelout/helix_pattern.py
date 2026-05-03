@@ -9,14 +9,18 @@ from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
 from awetrim.timeseries.reelout_phase import Reelout
 from awetrim.system.factory import create_system_model_from_yaml
+from awetrim.utils.config_paths import (
+    LEI_V3_HELIX_SPLINE_CONFIG,
+    LEI_V3_SYSTEM_CONFIG,
+)
 from awetrim.utils.utils import load_cycle_config_from_yaml
 
 """
 Reelout pattern simulation using YAML configuration files.
 
 Configuration is split into two YAML files:
-- Kite/physical properties: data/LEI-V3-KITE/v3_kite_input.yaml
-- Cycle parameters (reelout/reelin/wind): data/LEI-V3-KITE/v3_cycle_config.yaml
+- System properties: data/LEI-V3-KITE/lei_v3_system_config.yaml
+- Cycle parameters: data/LEI-V3-KITE/cycle_configs/helix_spline.yaml
 
 To modify parameters:
 1. Edit the YAML files directly, or
@@ -26,9 +30,8 @@ To modify parameters:
 # ---------------------------------------------------------------------------
 # Configuration files
 # ---------------------------------------------------------------------------
-KITE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_kite_input.yaml")
-# CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example.yaml")
-CYCLE_CONFIG_PATH = Path("data/LEI-V3-KITE/v3_helix_config_example_spline.yaml")
+KITE_CONFIG_PATH = LEI_V3_SYSTEM_CONFIG
+CYCLE_CONFIG_PATH = LEI_V3_HELIX_SPLINE_CONFIG
 # CYCLE_CONFIG_PATH = Path(
 #     "results/optimized_configs/helix/depower_helix_optimized_config_wind_6_z0_0.03_logarithmic_spline.yaml"
 # )
