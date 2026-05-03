@@ -30,6 +30,8 @@ from pathlib import Path
 import numpy as np
 
 from awetrim.aerostructural.logging_config import *  # noqa: F401,F403  (sets up root logger)
+from awetrim.aerostructural.actuation import update_steering_tape_actuation
+from awetrim.aerostructural.mapping import BilinearAeroToStructuralLoadMapper
 from awetrim.aerostructural.results import (
     aerostructural_results_root,
     append_sweep_csv_row,
@@ -43,10 +45,9 @@ from awetrim.aerostructural.utils import (
     rotate_geometry,
 )
 from awetrim.aerostructural import (
-    aero2struc_level_1,
     aerodynamic_vsm,
     aerostructural_coupled_solver_qsm,
-    read_struc_geometry_yaml_level_1,
+    structural_geometry_io,
     structural_pss,
 )
 from awetrim.system.system_model import SystemModel
@@ -169,7 +170,7 @@ def main() -> None:
         linktype_arr,
         pulley_line_indices,
         pulley_line_to_other_node_pair_dict,
-    ) = read_struc_geometry_yaml_level_1.main(struc_geometry, config=base_config)
+    ) = structural_geometry_io.main(struc_geometry, config=base_config)
 
     # Apply initial geometry rotation once
     struc_nodes_base = rotate_geometry(
@@ -310,11 +311,8 @@ def main() -> None:
                 if steering_tape_extension_step != 0
                 else steering_to_apply
             )
-            aerostructural_coupled_solver_qsm.update_steering_tape_actuation(
-                config=cfg,
+            update_steering_tape_actuation(
                 psystem=psystem,
-                kite_fem_structure=None,
-                kite_connectivity_arr=kite_connectivity_arr,
                 steering_tape_indices=steering_tape_indices,
                 steering_tape_extension_step=effective_step,
                 initial_length_steering_left=l0_arr_active[steering_tape_indices[0]],
@@ -338,12 +336,12 @@ def main() -> None:
         configure_system_model_from_config(system_model, cfg)
 
         # ── Aero–structure mapping (created per-run with current geometry) ────────
-        aero2struc_mapping = aero2struc_level_1.initialize_mapping(
+        aero2struc_mapping = BilinearAeroToStructuralLoadMapper().initialize(
             body_aero_init.panels,
             struc_nodes,  # Use current struc_nodes (may be recovered)
             struc_node_le_indices,
             struc_node_te_indices,
-        )
+        ).panel_corner_map
 
         # ── Run coupled solver ────────────────────────────────────────────
         # Deepcopy aero objects so each run starts from a clean initial state.
@@ -377,7 +375,6 @@ def main() -> None:
             power_tape_index=power_tape_index,
             # Struc
             psystem=psystem,
-            kite_fem_structure=None,
         )
 
         # Save simulation output

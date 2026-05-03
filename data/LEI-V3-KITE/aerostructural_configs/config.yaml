@@ -1,5 +1,4 @@
 ## case settings
-structural_solver: !!str 'pss' #"kite_fem" or "pss"
 kcu_mass: !!float 8.4
 # starting_from_sim_subdir: depower_p0000mm_steer_p0000mm
 is_with_gravity: !!bool false
@@ -84,26 +83,6 @@ structural_pss:
   fixed_point_indices: [0] #this is the bridle point / KCU
   is_with_diagnostics: !!bool false
   num_node_diagnostics: !!int 34
-
-## structural kite_fem
-structural_kite_fem:
-  max_iterations: !!int 2000 #used to be 2000
-  tolerance: !!float 0.01
-  step_limit: !!float 0.1
-  relax_init: !!float 0.1
-  relax_update: !!float 0.99
-  k_update: !!int 1
-  I_stiffness: !!int 15 #V3 kite: 25
-  is_with_diagnostics: !!bool false
-  num_node_diagnostics: !!int 34
-  # Regularizes K for Newton-Raphson stability. Does NOT affect
-  # the equilibrium (fe=fi is independent of I_stiffness).
-  # if pseudo_dt != 0 it overrides I_stiffness when set.
-  pseudo_dt: !!float 0.1 #0.05 # pseudo-transient timestep [s] for mass-proportional regularization.
-  k_reg_min: !!float 200.0 # minimum regularization stiffness [N/m] floor for light bridle/steering nodes
-  print_info: !!bool false
-  update_stiffness: !!bool true #Stiffen each spring with elongations higher than 1% on each iteration
-  max_stiffness: !!int 50000 #Maximum value of spring stiffness, when updated using update_stiffness
 
 ## aero2struc
 aero2struc:

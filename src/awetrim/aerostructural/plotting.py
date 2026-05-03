@@ -590,7 +590,7 @@ def interactive_plot(
 
     ax_cbar = fig.add_subplot(gs[0, 1])
     cbar = plt.colorbar(sm, cax=ax_cbar, orientation="vertical")
-    cbar.set_label("Normalized rest length change (\%)")
+    cbar.set_label(r"Normalized rest length change (\%)")
     cbar.ax.text(
         1.5,
         -0.1,

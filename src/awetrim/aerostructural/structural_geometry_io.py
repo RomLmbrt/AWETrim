@@ -1,3 +1,5 @@
+"""Read structural geometry YAML into solver arrays."""
+
 import numpy as np
 import logging
 

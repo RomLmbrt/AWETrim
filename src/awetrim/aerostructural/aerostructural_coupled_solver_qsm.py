@@ -2,23 +2,65 @@ import time
 from tqdm import tqdm
 import numpy as np
 import logging
-from pathlib import Path
-import copy
 from awetrim.aerostructural import (
-    aero2struc_level_1,
     aerodynamic_vsm,
-    struc2aero,
     structural_pss,
     tracking,
     plotting,
     aerodynamic_bridle_line_drag,
 )
+from awetrim.aerostructural.actuation import (
+    update_power_tape_actuation,
+    update_steering_tape_actuation_progressive,
+)
+from awetrim.aerostructural.convergence import check_convergence, compute_adaptive_dt
+from awetrim.aerostructural.forces import distribute_total_force_by_particle_mass
+from awetrim.aerostructural.mapping import (
+    BilinearAeroToStructuralLoadMapper,
+    LinearStructuralToAeroMapper,
+    check_moment_preservation,
+)
+from awetrim.aerostructural.protocols import AeroToStructureMap
 from awetrim.aerostructural.utils import (
     calculate_cg,
-    calculate_inertia,
-    load_yaml,
     rotate_geometry,
 )
+
+
+STRUCTURAL_TO_AERO_MAPPER = LinearStructuralToAeroMapper()
+AERO_TO_STRUCTURAL_LOAD_MAPPER = BilinearAeroToStructuralLoadMapper()
+
+
+def _map_structural_edges_to_aero(
+    struc_nodes,
+    struc_node_le_indices,
+    struc_node_te_indices,
+    n_aero_panels_per_struc_section,
+):
+    """Return aerodynamic leading/trailing-edge arrays from structural nodes."""
+    update = STRUCTURAL_TO_AERO_MAPPER.map(
+        struc_nodes,
+        struc_node_le_indices,
+        struc_node_te_indices,
+        n_aero_panels_per_struc_section,
+    )
+    return update.leading_edge_points, update.trailing_edge_points
+
+
+def _map_aero_loads_to_structure(
+    f_aero_wing_vsm_format,
+    struc_nodes,
+    panel_cp_locations,
+    aero2struc_mapping,
+):
+    """Return nodal aerodynamic loads from panel loads and a corner map."""
+    mapping = AeroToStructureMap(panel_corner_map=np.asarray(aero2struc_mapping))
+    return AERO_TO_STRUCTURAL_LOAD_MAPPER.map_loads(
+        f_aero_wing_vsm_format,
+        panel_cp_locations,
+        struc_nodes,
+        mapping,
+    )
 
 
 # Remove hardcoded values, when changing away from V3
@@ -57,466 +99,6 @@ def forcing_symmetry(struc_nodes):
     return struc_nodes
 
 
-def _compute_power_tape_increment(
-    delta_power_tape,
-    power_tape_final_extension,
-    power_tape_extension_step,
-    tol=1e-9,
-):
-    """
-    Compute the signed rest-length increment needed to move toward the target extension.
-
-    Returns:
-        tuple: (increment, should_update)
-    """
-    remaining = power_tape_final_extension - delta_power_tape
-    if np.abs(remaining) <= tol:
-        return 0.0, False
-    if np.abs(power_tape_extension_step) <= tol:
-        return 0.0, False
-
-    # Always move toward target and clamp to avoid overshoot.
-    increment = np.sign(remaining) * min(
-        np.abs(power_tape_extension_step), np.abs(remaining)
-    )
-    return increment, True
-
-
-def _find_kite_fem_spring_id_from_connectivity(
-    kite_fem_structure,
-    kite_connectivity_arr,
-    connectivity_idx,
-):
-    """
-    Map ASKITE connectivity index to the matching kite_fem spring element index.
-    """
-    ci, cj = [int(v) for v in kite_connectivity_arr[connectivity_idx]]
-    target_key = (min(ci, cj), max(ci, cj))
-
-    for spring_id, spring_element in enumerate(kite_fem_structure.spring_elements):
-        n1 = int(spring_element.spring.n1)
-        n2 = int(spring_element.spring.n2)
-        if (min(n1, n2), max(n1, n2)) == target_key:
-            return spring_id
-
-    raise ValueError(
-        f"Could not map power_tape connectivity index {connectivity_idx} "
-        f"with nodes ({ci}, {cj}) to a kite_fem spring element."
-    )
-
-
-def update_steering_tape_actuation(
-    config,
-    psystem,
-    kite_fem_structure,
-    kite_connectivity_arr,
-    steering_tape_indices,
-    steering_tape_extension_step,
-    initial_length_steering_left,
-    initial_length_steering_right,
-    steering_tape_final_extension,
-):
-    """
-    Apply steering actuation by changing the relative rest lengths of the two steering tapes.
-
-    The repository convention is to shorten the left steering tape and lengthen the right
-    steering tape by the same amount for a positive final extension.
-    """
-    if np.abs(steering_tape_extension_step) <= 1e-9:
-        return False
-    if np.abs(steering_tape_final_extension) <= 1e-9:
-        return False
-
-    if steering_tape_indices is None or len(steering_tape_indices) < 2:
-        raise ValueError("steering_tape_indices must contain at least two entries.")
-
-    steering_tape_left_index = int(steering_tape_indices[0])
-    steering_tape_right_index = int(steering_tape_indices[1])
-
-    desired_length_steering_left = (
-        initial_length_steering_left - steering_tape_final_extension
-    )
-    desired_length_steering_right = (
-        initial_length_steering_right + steering_tape_final_extension
-    )
-
-    if config["structural_solver"] == "pss":
-        psystem.update_rest_length(
-            steering_tape_left_index,
-            desired_length_steering_left
-            - float(psystem.extract_rest_length[steering_tape_left_index]),
-        )
-        psystem.update_rest_length(
-            steering_tape_right_index,
-            desired_length_steering_right
-            - float(psystem.extract_rest_length[steering_tape_right_index]),
-        )
-    elif config["structural_solver"] == "kite_fem":
-        if kite_connectivity_arr is None:
-            raise ValueError(
-                "kite_connectivity_arr is required for kite_fem steering actuation."
-            )
-
-        steering_tape_left_spring_id = _find_kite_fem_spring_id_from_connectivity(
-            kite_fem_structure=kite_fem_structure,
-            kite_connectivity_arr=kite_connectivity_arr,
-            connectivity_idx=steering_tape_left_index,
-        )
-        steering_tape_right_spring_id = _find_kite_fem_spring_id_from_connectivity(
-            kite_fem_structure=kite_fem_structure,
-            kite_connectivity_arr=kite_connectivity_arr,
-            connectivity_idx=steering_tape_right_index,
-        )
-        kite_fem_structure.modify_get_spring_rest_length(
-            spring_ids=[steering_tape_left_spring_id, steering_tape_right_spring_id],
-            new_l0s=[desired_length_steering_left, desired_length_steering_right],
-        )
-    else:
-        raise ValueError("Invalid structural solver specified, either pss or kite_fem")
-
-    logging.info(
-        "Steering tapes updated: left %.3fm -> %.3fm, right %.3fm -> %.3fm",
-        initial_length_steering_left,
-        desired_length_steering_left,
-        initial_length_steering_right,
-        desired_length_steering_right,
-    )
-    return True
-
-
-def update_power_tape_actuation(
-    config,
-    psystem,
-    kite_fem_structure,
-    kite_connectivity_arr,
-    power_tape_index,
-    power_tape_extension_step,
-    initial_length_power_tape,
-    power_tape_final_extension,
-    should_apply_update,
-    n_power_tape_steps,
-    rest_lengths=None,
-):
-    """
-    Calculate current power tape extension and update if needed for actuation.
-
-    Args:
-        config: Configuration dictionary
-        psystem: Particle system (for PSS solver)
-        kite_fem_structure: FEM structure (for kite_fem solver)
-        kite_connectivity_arr: ASKITE connectivity array
-        power_tape_index: Index of power tape in connectivity array
-        power_tape_extension_step: Increment for power tape extension
-        initial_length_power_tape: Initial length of power tape
-        power_tape_final_extension: Final desired power tape extension
-        should_apply_update: Flag indicating if a depower step should be applied now
-        n_power_tape_steps: Number of power tape extension steps
-        rest_lengths: Current rest lengths array (for kite_fem solver)
-
-    Returns:
-        tuple: (delta_power_tape, is_actuation_finalized, did_update)
-            - delta_power_tape: Current change in power tape length
-            - is_actuation_finalized: True if actuation is complete, False otherwise
-            - did_update: True if a depower step was applied this iteration
-    """
-    is_actuation_finalized = True
-    did_update = False
-
-    ## Calculate delta tape lengths based on structural solver
-    if config["structural_solver"] == "pss":
-        current_length = float(psystem.extract_rest_length[power_tape_index])
-        delta_power_tape = current_length - initial_length_power_tape
-        _, should_update = _compute_power_tape_increment(
-            delta_power_tape=delta_power_tape,
-            power_tape_final_extension=power_tape_final_extension,
-            power_tape_extension_step=power_tape_extension_step,
-        )
-        is_actuation_finalized = not should_update
-
-        if should_apply_update and should_update:
-            increment, _ = _compute_power_tape_increment(
-                delta_power_tape=delta_power_tape,
-                power_tape_final_extension=power_tape_final_extension,
-                power_tape_extension_step=power_tape_extension_step,
-            )
-            psystem.update_rest_length(power_tape_index, increment)
-            did_update = True
-            current_length = float(psystem.extract_rest_length[power_tape_index])
-            delta_power_tape = current_length - initial_length_power_tape
-            _, should_update_after = _compute_power_tape_increment(
-                delta_power_tape=delta_power_tape,
-                power_tape_final_extension=power_tape_final_extension,
-                power_tape_extension_step=power_tape_extension_step,
-            )
-            is_actuation_finalized = not should_update_after
-            logging.info(
-                f"||--- delta l_d: {delta_power_tape:.3f}m | new l_d: {current_length:.3f}m | Steps required: {n_power_tape_steps}"
-            )
-
-    elif config["structural_solver"] == "kite_fem":
-        if kite_connectivity_arr is None:
-            raise ValueError(
-                "kite_connectivity_arr is required for kite_fem power tape actuation."
-            )
-
-        spring_id = _find_kite_fem_spring_id_from_connectivity(
-            kite_fem_structure=kite_fem_structure,
-            kite_connectivity_arr=kite_connectivity_arr,
-            connectivity_idx=power_tape_index,
-        )
-        current_length = float(kite_fem_structure.spring_elements[spring_id].l0)
-        delta_power_tape = current_length - initial_length_power_tape
-        _, should_update = _compute_power_tape_increment(
-            delta_power_tape=delta_power_tape,
-            power_tape_final_extension=power_tape_final_extension,
-            power_tape_extension_step=power_tape_extension_step,
-        )
-        is_actuation_finalized = not should_update
-
-        if should_apply_update and should_update:
-            increment, _ = _compute_power_tape_increment(
-                delta_power_tape=delta_power_tape,
-                power_tape_final_extension=power_tape_final_extension,
-                power_tape_extension_step=power_tape_extension_step,
-            )
-            new_length = current_length + increment
-            kite_fem_structure.modify_get_spring_rest_length(
-                spring_ids=[spring_id],
-                new_l0s=[new_length],
-            )
-            did_update = True
-            delta_power_tape = new_length - initial_length_power_tape
-            _, should_update_after = _compute_power_tape_increment(
-                delta_power_tape=delta_power_tape,
-                power_tape_final_extension=power_tape_final_extension,
-                power_tape_extension_step=power_tape_extension_step,
-            )
-            is_actuation_finalized = not should_update_after
-            logging.info(
-                f"||--- delta l_d: {delta_power_tape:.3f}m | new l_d: {new_length:.3f}m | Steps required: {n_power_tape_steps}"
-            )
-
-    return delta_power_tape, is_actuation_finalized, did_update
-
-
-def update_steering_tape_actuation_progressive(
-    config,
-    psystem,
-    kite_fem_structure,
-    kite_connectivity_arr,
-    steering_tape_indices,
-    steering_tape_extension_step,
-    initial_length_steering_left,
-    initial_length_steering_right,
-    steering_tape_final_extension,
-    should_apply_update,
-):
-    """Progressively apply steering actuation, mirroring depower internal stepping."""
-    if steering_tape_indices is None or len(steering_tape_indices) < 2:
-        return 0.0, True, False
-
-    target = float(steering_tape_final_extension)
-    if np.abs(target) <= 1e-9:
-        return 0.0, True, False
-
-    left_idx = int(steering_tape_indices[0])
-    right_idx = int(steering_tape_indices[1])
-
-    if config["structural_solver"] == "pss":
-        current_left = float(psystem.extract_rest_length[left_idx])
-        current_right = float(psystem.extract_rest_length[right_idx])
-    elif config["structural_solver"] == "kite_fem":
-        if kite_connectivity_arr is None:
-            raise ValueError(
-                "kite_connectivity_arr is required for kite_fem steering actuation."
-            )
-        left_spring_id = _find_kite_fem_spring_id_from_connectivity(
-            kite_fem_structure=kite_fem_structure,
-            kite_connectivity_arr=kite_connectivity_arr,
-            connectivity_idx=left_idx,
-        )
-        right_spring_id = _find_kite_fem_spring_id_from_connectivity(
-            kite_fem_structure=kite_fem_structure,
-            kite_connectivity_arr=kite_connectivity_arr,
-            connectivity_idx=right_idx,
-        )
-        current_left = float(kite_fem_structure.spring_elements[left_spring_id].l0)
-        current_right = float(kite_fem_structure.spring_elements[right_spring_id].l0)
-    else:
-        raise ValueError("Invalid structural solver specified, either pss or kite_fem")
-
-    current_delta_left = float(initial_length_steering_left) - current_left
-    current_delta_right = current_right - float(initial_length_steering_right)
-    current_delta = 0.5 * (current_delta_left + current_delta_right)
-
-    if np.abs(target - current_delta) <= 1e-9:
-        return current_delta, True, False
-
-    if not should_apply_update:
-        return current_delta, False, False
-
-    step = float(steering_tape_extension_step)
-    if np.abs(step) <= 1e-9:
-        increment = target - current_delta
-    else:
-        remaining = target - current_delta
-        increment = np.sign(remaining) * min(np.abs(step), np.abs(remaining))
-
-    next_delta = current_delta + increment
-    update_steering_tape_actuation(
-        config=config,
-        psystem=psystem,
-        kite_fem_structure=kite_fem_structure,
-        kite_connectivity_arr=kite_connectivity_arr,
-        steering_tape_indices=steering_tape_indices,
-        steering_tape_extension_step=step,
-        initial_length_steering_left=initial_length_steering_left,
-        initial_length_steering_right=initial_length_steering_right,
-        steering_tape_final_extension=next_delta,
-    )
-
-    is_finalized = np.abs(target - next_delta) <= 1e-9
-    return next_delta, is_finalized, True
-
-
-def compute_adaptive_dt(
-    f_residual_list,
-    dt_initial,
-    dt_max,
-    residual_tol,
-):
-    """
-    Compute adaptive dt that increases as residual approaches convergence.
-
-    Strategy: dt scales with the absolute residual level relative to the
-    convergence tolerance. Residual near tolerance -> dt approaches dt_max.
-
-    Args:
-        f_residual_list: List of residual force norms over iterations
-        dt_initial: Initial dt from config
-        dt_max: Maximum dt (cap to prevent instability)
-        residual_tol: Absolute residual convergence tolerance
-
-    Returns:
-        dt: Adaptive timestep value
-    """
-    if len(f_residual_list) < 1:
-        return dt_initial
-
-    current_residual = f_residual_list[-1]
-
-    # Defensive handling for invalid settings/values.
-    if (
-        residual_tol is None
-        or residual_tol <= 0
-        or not np.isfinite(residual_tol)
-        or not np.isfinite(current_residual)
-        or current_residual < 0
-    ):
-        return dt_initial
-
-    # Scale from dt_initial (large residuals) to dt_max (near tolerance).
-    # ratio = 1 at/under tolerance, tends to 0 for large residuals.
-    ratio = np.clip(residual_tol / max(current_residual, 1e-12), 0.0, 1.0)
-    dt_adaptive = dt_initial + (dt_max - dt_initial) * ratio
-
-    # Ensure dt remains bounded regardless of dt ordering.
-    dt_low = min(dt_initial, dt_max)
-    dt_high = max(dt_initial, dt_max)
-    dt = float(np.clip(dt_adaptive, dt_low, dt_high))
-
-    return dt
-
-
-def distribute_total_force_by_particle_mass(total_force, m_arr):
-    """Distribute a total 3D force over nodes proportional to particle masses."""
-    total_force = np.asarray(total_force, dtype=float).reshape(3)
-    masses = np.asarray(m_arr, dtype=float).reshape(-1)
-    mass_sum = float(np.sum(masses))
-
-    if mass_sum <= 1e-12:
-        raise ValueError("Total particle mass must be positive to distribute force.")
-
-    mass_fraction = masses / mass_sum
-    return mass_fraction[:, None] * total_force[None, :]
-
-
-# TODO: this should also use structural is not converging
-def check_convergence(
-    i,
-    f_residual,
-    f_residual_list,
-    f_aero_wing_vsm_format,
-    config,
-    stagnation_check_start=0,
-):
-    """
-    Check convergence conditions for the aero-structural solver.
-
-    Args:
-        i: Current iteration number
-        f_residual: Current residual force vector
-        f_residual_list: List of residual force norms from all iterations
-        f_aero_wing_vsm_format: Aerodynamic forces in VSM format
-        config: Configuration dictionary
-        stagnation_check_start: Iteration index from which to check stagnation
-            (reset when switching regularization phase)
-
-    Returns:
-        tuple: (is_convergence, should_break, is_stagnated)
-            - is_convergence: True if converged, False otherwise
-            - should_break: True if loop should break, False to continue
-            - is_stagnated: True if residual has stagnated (no longer changing)
-    """
-    is_convergence = False
-    should_break = False
-    is_stagnated = False
-
-    n_stag = config["aero_structural_solver"]["n_max_constant_residual_force"]
-    # Number of iterations since the stagnation check window started
-    iters_since_start = i - stagnation_check_start
-
-    ### All the convergence checks, are be done in if-elif because only 1 should hold at once
-    # if convergence (residual below set tolerance)
-    if np.linalg.norm(f_residual) <= config["aero_structural_solver"]["tol"]:
-        is_convergence = True
-
-    # if residual forces are NaN
-    elif np.isnan(np.linalg.norm(f_residual)):
-        is_convergence = False
-        logging.info("Classic PS diverged - residual force is NaN")
-        should_break = True
-
-    # if residual forces are not changing anymore across the full recent window
-    elif iters_since_start >= n_stag and n_stag > 0:
-        window_vals = np.asarray(f_residual_list[i - n_stag : i + 1], dtype=float)
-        if window_vals.size > 0 and np.isfinite(window_vals).all():
-            residual_span = float(np.max(window_vals) - np.min(window_vals))
-            if residual_span < config["aero_structural_solver"]["stagnation_tol"]:
-                is_convergence = False
-                is_stagnated = True
-
-    # if too many iterations are needed
-    elif i > config["aero_structural_solver"]["max_iter"]:
-        is_convergence = False
-        logging.info(
-            f"Classic PS non-converging - more than max ({config['aero_structural_solver']['max_iter']}) iterations needed"
-        )
-        should_break = True
-
-    # special case for running the simulation for only one timestep
-    elif config["is_run_only_1_time_step"]:
-        should_break = True
-
-    # when aero does not converge
-    elif np.sum([force[1] for force in f_aero_wing_vsm_format]) == np.nan:
-        is_convergence = False
-        logging.info("Classic PS non-converging - aero forces are NaN")
-        should_break = True
-
-    return is_convergence, should_break, is_stagnated
-
-
 def main(
     m_arr=None,
     struc_nodes=None,
@@ -552,7 +134,6 @@ def main(
     power_tape_index=None,
     ### STRUC
     psystem=None,
-    kite_fem_structure=None,
 ):
     """
     Runs the aero-structural solver for the given input parameters.
@@ -566,13 +147,10 @@ def main(
         tracking_data (dict): Dictionary containing time histories of positions, forces, etc.
         meta (dict): Dictionary with meta information about the simulation (timing, convergence, etc).
     """
-    print(f'--> Running structural_solver: {config["structural_solver"]}')
+    print("--> Running structural solver: pss")
 
     ## PRELOOP
     f_ext_gravity = np.zeros(struc_nodes.shape)
-
-    if config["structural_solver"] == "kite_fem":
-        rest_lengths = kite_fem_structure.modify_get_spring_rest_length()
 
     max_iter = config["aero_structural_solver"]["max_iter"]
     # Keep index 0 for the pre-loop initial state and reserve max_iter loop slots.
@@ -587,8 +165,6 @@ def main(
     start_time = time.time()
     plotting.set_plot_style()
 
-    # Two-phase regularization: phase 1 = with pseudo_dt, phase 2 = without
-    reg_phase = 1  # 1 = regularized, 2 = unregularized (polish)
     stagnation_check_start = 0  # iteration at which current phase started
 
     # Adaptive dt for PSS solver
@@ -668,7 +244,7 @@ def main(
     ######################################################################
 
     ### STRUC --> AERO
-    le_arr, te_arr = struc2aero.main(
+    le_arr, te_arr = _map_structural_edges_to_aero(
         struc_nodes,
         struc_node_le_indices,
         struc_node_te_indices,
@@ -696,22 +272,19 @@ def main(
     roll, pitch, yaw = results_aero["opt_x"][1:4]
     struc_nodes = rotate_geometry(struc_nodes, angle_deg=[roll, pitch, yaw])
     ### AERO --> STRUC
-    f_aero_wing = aero2struc_level_1.main(
-        config["aero2struc"]["coupling_method"],
+    f_aero_wing = _map_aero_loads_to_structure(
         f_aero_wing_vsm_format,
         struc_nodes,
         np.array(results_aero["panel_cp_locations"]),
         aero2struc_mapping,
-        config["is_with_coupling_plot_per_iteration"],
-        config["aero2struc"],
     )
 
     # Check moment preservation of aero→struc mapping (pre-loop)
-    aero2struc_level_1.check_moment_preservation(
-        f_aero_panel=f_aero_wing_vsm_format,
-        panel_cps=np.array(results_aero["panel_cp_locations"]),
-        f_aero_mapped=f_aero_wing,
-        struc_nodes=struc_nodes,
+    check_moment_preservation(
+        panel_forces=f_aero_wing_vsm_format,
+        panel_points=np.array(results_aero["panel_cp_locations"]),
+        nodal_forces=f_aero_wing,
+        nodes=struc_nodes,
     )
 
     ### BRIDLE AERO
@@ -752,33 +325,26 @@ def main(
             ############## INTERNAL FORCE CALCULATION ##############
             ########################################################
             begin_time_f_int = time.time()
-            if config["structural_solver"] == "pss":
-                # Apply adaptive dt based on convergence progress
-                if len(f_residual_list) > 0:
-                    adaptive_dt = compute_adaptive_dt(
-                        f_residual_list,
-                        dt_initial,
-                        dt_max,
-                        config["aero_structural_solver"]["tol"],
-                    )
-                    config["structural_pss"]["dt"] = adaptive_dt
-                    logging.debug(
-                        f"Adaptive dt updated: {adaptive_dt:.6f} (residual: {f_residual_list[-1]:.3f}N)"
-                    )
-                    print(f"Adaptive dt: {adaptive_dt:.6f} s at iteration {i}")
-                psystem, is_structural_converged, struc_nodes, f_int = (
-                    structural_pss.run_pss(
-                        psystem,
-                        f_ext_flat,
-                        config["structural_pss"],
-                    )
+            # Apply adaptive dt based on convergence progress
+            if len(f_residual_list) > 0:
+                adaptive_dt = compute_adaptive_dt(
+                    f_residual_list,
+                    dt_initial,
+                    dt_max,
+                    config["aero_structural_solver"]["tol"],
                 )
-            elif config["structural_solver"] == "kite_fem":
-                kite_fem_structure, is_structural_converged, struc_nodes, f_int = (
-                    structural_kite_fem_level_1.run_kite_fem(
-                        kite_fem_structure, f_ext_flat, config["structural_kite_fem"]
-                    )
+                config["structural_pss"]["dt"] = adaptive_dt
+                logging.debug(
+                    f"Adaptive dt updated: {adaptive_dt:.6f} (residual: {f_residual_list[-1]:.3f}N)"
                 )
+                print(f"Adaptive dt: {adaptive_dt:.6f} s at iteration {i}")
+            psystem, is_structural_converged, struc_nodes, f_int = (
+                structural_pss.run_pss(
+                    psystem,
+                    f_ext_flat,
+                    config["structural_pss"],
+                )
+            )
             end_time_f_int = time.time()
 
             ### Aitken relaxation of structural nodes
@@ -804,36 +370,14 @@ def main(
                 r_prev_flat = r_k_flat.copy()
                 logging.debug(f"Aitken relaxation omega: {omega_relaxation:.4f}")
 
-                # Sync relaxed positions back to structural solver state
-                if config["structural_solver"] == "pss":
-                    for idx, particle in enumerate(psystem.particles):
-                        particle.update_pos(struc_nodes[idx])
-                        particle.update_vel(np.zeros(3))
-                elif config["structural_solver"] == "kite_fem":
-                    # Update kite_fem so the next solve() starts from the
-                    # Aitken-relaxed geometry instead of the original construction
-                    # geometry.  coords_rotations_init is the reference that
-                    # solve() adds displacements to, so moving it here makes the
-                    # Newton-Raphson start near the current state.
-                    flat_xyz = struc_nodes.flatten()
-                    kite_fem_structure.coords_current = flat_xyz.copy()
-                    # Build the 6-DOF vector [x,y,z, 0,0,0] per node
-                    n_nodes = len(struc_nodes)
-                    coords_rot = np.zeros(n_nodes * 6)
-                    for ni in range(n_nodes):
-                        coords_rot[6 * ni : 6 * ni + 3] = struc_nodes[ni]
-                    kite_fem_structure.coords_rotations_init = coords_rot.copy()
-                    kite_fem_structure.coords_rotations_current = coords_rot.copy()
+                # Sync relaxed positions back to structural solver state.
+                for idx, particle in enumerate(psystem.particles):
+                    particle.update_pos(struc_nodes[idx])
+                    particle.update_vel(np.zeros(3))
 
             ### PLOT per iteration
             if config["is_with_struc_plot_per_iteration"]:
-                if config["structural_solver"] == "pss":
-                    rest_lengths = psystem.extract_rest_length
-                elif config["structural_solver"] == "kite_fem":
-                    rest_lengths = structural_kite_fem_level_1.get_rest_lengths(
-                        kite_fem_structure, kite_connectivity_arr
-                    )
-                    kite_fem_structure.plot_convergence()
+                rest_lengths = psystem.extract_rest_length
 
                 plotting.main(
                     struc_nodes,
@@ -855,7 +399,7 @@ def main(
             begin_time_f_ext = time.time()
 
             ### STRUC --> AERO
-            le_arr, te_arr = struc2aero.main(
+            le_arr, te_arr = _map_structural_edges_to_aero(
                 struc_nodes,
                 struc_node_le_indices,
                 struc_node_te_indices,
@@ -925,23 +469,20 @@ def main(
             roll, pitch, yaw = results_aero["opt_x"][1:4]
             struc_nodes = rotate_geometry(struc_nodes, angle_deg=[roll, pitch, yaw])
             ### AERO --> STRUC
-            f_aero_wing = aero2struc_level_1.main(
-                config["aero2struc"]["coupling_method"],
+            f_aero_wing = _map_aero_loads_to_structure(
                 f_aero_wing_vsm_format,
                 struc_nodes,
                 np.array(results_aero["panel_cp_locations"]),
                 aero2struc_mapping,
-                config["is_with_coupling_plot_per_iteration"],
-                config["aero2struc"],
             )
 
             # Check moment preservation (only first coupling iteration to limit log spam)
             if i == 1:
-                aero2struc_level_1.check_moment_preservation(
-                    f_aero_panel=f_aero_wing_vsm_format,
-                    panel_cps=np.array(results_aero["panel_cp_locations"]),
-                    f_aero_mapped=f_aero_wing,
-                    struc_nodes=struc_nodes,
+                check_moment_preservation(
+                    panel_forces=f_aero_wing_vsm_format,
+                    panel_points=np.array(results_aero["panel_cp_locations"]),
+                    nodal_forces=f_aero_wing,
+                    nodes=struc_nodes,
                 )
 
             ### BRIDLE AERO
@@ -1040,15 +581,13 @@ def main(
             # is carried by the constraint reaction force, not by f_int.
             # Without this, the residual includes e.g. the weight of node 0
             # (~92 N) which can never converge to zero.
-            if config["structural_solver"] == "pss":
-                for fix_idx in config["structural_pss"]["fixed_point_indices"]:
-                    f_residual[3 * fix_idx : 3 * fix_idx + 3] = 0.0
+            for fix_idx in config["structural_pss"]["fixed_point_indices"]:
+                f_residual[3 * fix_idx : 3 * fix_idx + 3] = 0.0
 
             f_residual_list.append(np.linalg.norm(np.abs(f_residual)))
-            if config["structural_solver"] == "pss":
-                logging.debug(
-                    f"residual force in y-direction: {np.sum([f_residual[1::3]]):.3f}N"
-                )
+            logging.debug(
+                f"residual force in y-direction: {np.sum([f_residual[1::3]]):.3f}N"
+            )
 
             ### TRACKING
             # Update unified tracking dataframe (replaces position update)
@@ -1074,11 +613,12 @@ def main(
 
             ### CHECK CONVERGENCE
             is_convergence, should_break, is_stagnated = check_convergence(
-                i=i,
-                f_residual=f_residual,
-                f_residual_list=f_residual_list,
-                f_aero_wing_vsm_format=f_aero_wing_vsm_format,
-                config=config,
+                iteration=i,
+                residual=f_residual,
+                residual_norm_history=f_residual_list,
+                aero_forces_vsm_format=f_aero_wing_vsm_format,
+                solver_config=config["aero_structural_solver"],
+                is_run_only_1_time_step=config["is_run_only_1_time_step"],
                 stagnation_check_start=stagnation_check_start,
             )
 
@@ -1090,10 +630,7 @@ def main(
 
             delta_steering, is_steering_finalized, did_update_steering = (
                 update_steering_tape_actuation_progressive(
-                    config=config,
                     psystem=psystem,
-                    kite_fem_structure=kite_fem_structure,
-                    kite_connectivity_arr=kite_connectivity_arr,
                     steering_tape_indices=steering_tape_indices,
                     steering_tape_extension_step=steering_tape_extension_step,
                     initial_length_steering_left=initial_length_steering_left,
@@ -1106,19 +643,8 @@ def main(
             # Two-phase regularization: on stagnation in phase 1, disable
             # pseudo_dt and continue to let the solver polish to true equilibrium.
             if is_stagnated:
-                if reg_phase == 1 and config["structural_solver"] == "kite_fem":
-                    reg_phase = 2
-                    stagnation_check_start = i  # reset stagnation window
-                    config["structural_kite_fem"]["pseudo_dt"] = None
-                    logging.info(
-                        f"Phase 1 stagnated at iter {i} (res={np.linalg.norm(f_residual):.1f}N). "
-                        f"Switching to phase 2: pseudo_dt=None (no regularization)."
-                    )
-                else:
-                    logging.info(
-                        "Classic PS non-converging - residual no longer changes"
-                    )
-                    should_break = True
+                logging.info("Classic PS non-converging - residual no longer changes")
+                should_break = True
 
             if qs_state_should_break:
                 # Do not allow quasi-steady stagnation stopping to interrupt
@@ -1142,19 +668,13 @@ def main(
                 is_actuation_finalized,
                 did_update_depower,
             ) = update_power_tape_actuation(
-                config=config,
                 psystem=psystem,
-                kite_fem_structure=kite_fem_structure,
-                kite_connectivity_arr=kite_connectivity_arr,
                 power_tape_index=power_tape_index,
                 power_tape_extension_step=power_tape_extension_step,
                 initial_length_power_tape=initial_length_power_tape,
                 power_tape_final_extension=power_tape_final_extension,
                 should_apply_update=should_apply_depower_now,
                 n_power_tape_steps=n_power_tape_steps,
-                rest_lengths=(
-                    rest_lengths if config["structural_solver"] == "kite_fem" else None
-                ),
             )
 
             if did_update_depower:
@@ -1222,12 +742,7 @@ def main(
     #     f'results_aero["alpha_geometric"]: wrt horizontal {results_aero["alpha_geometric"][mid_idx]:.2f}°'
     # )
 
-    if config["structural_solver"] == "pss":
-        rest_lengths = psystem.extract_rest_length
-    elif config["structural_solver"] == "kite_fem":
-        rest_lengths = structural_kite_fem_level_1.get_rest_lengths(
-            kite_fem_structure, kite_connectivity_arr
-        )
+    rest_lengths = psystem.extract_rest_length
 
     if config["is_with_final_plot"]:
         plotting.main(

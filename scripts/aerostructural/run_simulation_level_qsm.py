@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from awetrim.aerostructural.logging_config import *  # noqa: F401,F403
+from awetrim.aerostructural.mapping import BilinearAeroToStructuralLoadMapper
 from awetrim.aerostructural.utils import (
     load_and_save_config_files,
     load_sim_output,
@@ -17,10 +18,9 @@ from awetrim.aerostructural.utils import (
     save_results,
 )
 from awetrim.aerostructural import (
-    aero2struc_level_1,
     aerodynamic_vsm,
     aerostructural_coupled_solver_qsm,
-    read_struc_geometry_yaml_level_1,
+    structural_geometry_io,
     structural_pss,
 )
 from awetrim.system.system_model import SystemModel
@@ -474,7 +474,7 @@ def main():
         linktype_arr,
         pulley_line_indices,
         pulley_line_to_other_node_pair_dict,
-    ) = read_struc_geometry_yaml_level_1.main(struc_geometry, config=config)
+    ) = structural_geometry_io.main(struc_geometry, config=config)
 
     #####################################################
     ### rotating the initial geometry by some angle,
@@ -509,54 +509,39 @@ def main():
             f"conn_idx: {idx}: conn: {conn}, l0: {l0_arr[idx]}, k: {k_arr[idx]}, c: {c_arr[idx]}, linktype: {linktype_arr[idx]}"
         )
 
-    if config["structural_solver"] == "pss":
-        ## pss -- https://github.com/awegroup/Particle_System_Simulator
-        ##TODO: Fix the comment below, it SHOULD read l0
-        # Note: ParticleSystem doesn’t read l0_arr. SpringDamper sets l0
-        # from the initial particle positions.
-        # So l0_arr is a bookkeeping array for you, not used at instantiation.
-        psystem, pss_initial_conditions, pss_params, struc_nodes_initial = (
-            structural_pss.instantiate(
-                # yaml files
-                config,
-                # node level
-                struc_nodes,
-                m_arr,
-                # element_level
-                kite_connectivity_arr,
-                l0_arr,
-                k_arr,
-                c_arr,
-                linktype_arr,
-                pulley_line_to_other_node_pair_dict,
-            )
+    psystem, pss_initial_conditions, pss_params, struc_nodes_initial = (
+        structural_pss.instantiate(
+            config,
+            struc_nodes,
+            m_arr,
+            kite_connectivity_arr,
+            l0_arr,
+            k_arr,
+            c_arr,
+            linktype_arr,
+            pulley_line_to_other_node_pair_dict,
         )
-        if config["is_with_initial_structure_plot"]:
-            structural_pss.plot_3d_kite_structure(
-                struc_nodes,
-                kite_connectivity_arr,
-                power_tape_index,
-                k_arr=k_arr,
-                c_arr=c_arr,
-                linktype_arr=linktype_arr,
-                pulley_nodes=pulley_node_indices,
-            )
-        # setting kite_fem related output to None
-        kite_fem_structure = None
-    else:
-        raise ValueError(
-            "Invalid structural solver specified, only pss is available in qsm couplded simulation for now."
+    )
+    if config["is_with_initial_structure_plot"]:
+        structural_pss.plot_3d_kite_structure(
+            struc_nodes,
+            kite_connectivity_arr,
+            power_tape_index,
+            k_arr=k_arr,
+            c_arr=c_arr,
+            linktype_arr=linktype_arr,
+            pulley_nodes=pulley_node_indices,
         )
 
     ##################
     ### AERO2STRUC ###
     ##################
-    aero2struc_mapping = aero2struc_level_1.initialize_mapping(
+    aero2struc_mapping = BilinearAeroToStructuralLoadMapper().initialize(
         body_aero.panels,
         struc_nodes,
         struc_node_le_indices,
         struc_node_te_indices,
-    )
+    ).panel_corner_map
 
     #################
     ### ACTUATION ###
@@ -635,7 +620,6 @@ def main():
         power_tape_index=power_tape_index,
         ### STRUC
         psystem=psystem,
-        kite_fem_structure=kite_fem_structure,
     )
 
     # Save results
