@@ -14,19 +14,20 @@ implements the winch/tether physics for pumping-cycle simulation.
 ```
 src/awetrim/
   system/            ✅  Wing, Kite, SystemModel, Tether, Winch
-  aerodynamics/      🟡  VSM aerodynamic quasi-steady trim interface
+  aerodynamics/      ✅  VSM quasi-steady trim — see src/awetrim/aerodynamics/AGENTS.md
+  aerostructural/    ✅  PSS/QSM coupled solver — see src/awetrim/aerostructural/AGENTS.md
   kinematics/        ✅  course-frame kinematics, B-spline path patterns
   timeseries/        ✅  PhaseParameterized, ReeloutSimple, ReelinSimple, Cycle
   environment/       ✅  Wind (logarithmic / uniform / tabulated)
+  experimental/      ✅  EKF flight-data analysis pipeline
   utils/             ✅  fitting, defaults, reference frames
+  stability/         🟡  stability functions (partial)
 
-  aerostructural/    🔴  NOT YET BUILT — see src/awetrim/aerostructural/AGENTS.md
-  identification/    🔴  NOT YET BUILT — see src/awetrim/identification/AGENTS.md
+  identification/    🔴  NOT YET BUILT
 ```
 
-**Do not create files in `aerostructural/` or `identification/` without first
-reading their `AGENTS.md` and following the architect → developer → tester
-workflow below.**
+**Read the module's `AGENTS.md` before modifying `aerodynamics/` or `aerostructural/`.
+When you add, remove, or rename public functions, dataclasses, config keys, or file layout in any module that has an `AGENTS.md`, update that file in the same commit.**
 
 ---
 
