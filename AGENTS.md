@@ -14,6 +14,7 @@ implements the winch/tether physics for pumping-cycle simulation.
 ```
 src/awetrim/
   system/            ✅  Wing, Kite, SystemModel, Tether, Winch
+  aerodynamics/      🟡  VSM aerodynamic quasi-steady trim interface
   kinematics/        ✅  course-frame kinematics, B-spline path patterns
   timeseries/        ✅  PhaseParameterized, ReeloutSimple, ReelinSimple, Cycle
   environment/       ✅  Wind (logarithmic / uniform / tabulated)
