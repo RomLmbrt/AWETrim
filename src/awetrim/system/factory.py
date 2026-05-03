@@ -55,7 +55,7 @@ def create_system_model_from_yaml(
 ):
     """Create a SystemModel from a YAML configuration.
 
-    Expects a YAML file structured like `data/LEI-V3-KITE/v3_kite_input.yaml` with sections:
+    Expects a YAML file structured like `data/LEI-V3-KITE/lei_v3_system_config.yaml` with sections:
     - physical: { model_name, mass, area, span }
     - kcu: { mass, ... } (optional)
     - aerodynamics: { model, params, coefficients }
