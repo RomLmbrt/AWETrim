@@ -8,6 +8,10 @@ from awetrim.kinematics.parametrized_patterns import (
     fit_bspline_pattern_to_trajectory,
 )
 from awetrim.utils.color_palette import set_plot_style, custom_cmap
+from awetrim.utils.config_paths import (
+    LEI_V3_DOWNLOOP_SPLINE_CONFIG,
+    LEI_V3_SYSTEM_CONFIG,
+)
 from awetrim.environment.Wind import Wind
 from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.timeseries.phase import Phase
@@ -504,9 +508,7 @@ def simulate_cycle(
             }
         )
 
-        system_model = create_system_model_from_yaml(
-            path_to_main + "/v3_kite_input.yaml"
-        )
+        system_model = create_system_model_from_yaml(LEI_V3_SYSTEM_CONFIG)
         system_model.wind = wind_model
 
         if use_dynamic:
@@ -844,7 +846,7 @@ def main():
     kite_model = "v3"
     path_to_main = "./data/LEI-V3-KITE"
     cycle_id = 68  # set to an int to run a single cycle, None to run all detected
-    downloop_cfg_path = "./data/LEI-V3-KITE/v3_downloop_config_example_spline.yaml"
+    downloop_cfg_path = str(LEI_V3_DOWNLOOP_SPLINE_CONFIG)
 
     # Discretization level selector: choose one of ["coarse", "medium", "fine"]
     discretization_level = "fine"

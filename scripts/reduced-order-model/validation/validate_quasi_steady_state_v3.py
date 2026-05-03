@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 import yaml
 
+from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
+
 
 def read_results(year, month, day, kite_model, addition="", path_to_main=""):
     path = "/flight_logs/"
@@ -123,7 +125,7 @@ plt.plot(flight_data.time, course_rate)
 plt.show()
 flight_data["course_rate"] = course_rate
 # Run simulation for aerodynamic model defined in YAML (avoids missing JSON)
-with open("./data/LEI-V3-KITE/v3_kite_input.yaml", "r") as file:
+with open(LEI_V3_SYSTEM_CONFIG, "r") as file:
     kite_cfg = yaml.safe_load(file)
 
 aero_labels = ["Variable"]
