@@ -13,6 +13,8 @@ from awetrim.environment.Wind import Wind
 import casadi as ca
 import time
 import yaml
+
+from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
 import time
 from awetrim.utils.defaults import DEFAULT_BOUNDS
 
@@ -197,7 +199,7 @@ def run_inverse_validation(cycle_num=65):
     )
 
     # Setup system from YAML config (avoids missing JSON file)
-    with open("./data/LEI-V3-KITE/v3_kite_input.yaml", "r") as file:
+    with open(LEI_V3_SYSTEM_CONFIG, "r") as file:
         kite_cfg = yaml.safe_load(file)
 
     aero_input = kite_cfg["wing"]["aerodynamics"]
