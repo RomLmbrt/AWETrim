@@ -104,7 +104,7 @@ def load_cycle_config_from_yaml(yaml_path):
     Examples
     --------
     >>> from pathlib import Path
-    >>> reelout_cfg, wind_cfg, reelin_cfg = load_cycle_config_from_yaml("data/LEI-V3-KITE/v3_cycle_config.yaml")
+    >>> reelout_cfg, reelin_cfg = load_cycle_config_from_yaml("data/LEI-V3-KITE/cycle_configs/downloop_spline.yaml")
     """
     import yaml
     import numpy as np
