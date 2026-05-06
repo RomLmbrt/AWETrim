@@ -1,5 +1,5 @@
 ## case settings
-kcu_mass: !!float 8.4
+# kcu_mass and tether.diameter are now defined in system.yml (awesIO format)
 # starting_from_sim_subdir: depower_p0000mm_steer_p0000mm
 is_with_gravity: !!bool false
 is_with_aero_bridle: !!bool true
@@ -112,8 +112,7 @@ rho: !!float 1.225 # air density in kg/m^3
 mu: !!float 1.789e-05 # dynamic viscosity in kg/(m*s)
 
 
-tether: # set to zero, if you don't want tether force
-  diameter: !!float 0.01  # 
+# tether.diameter is now defined in system.yml (awesIO format)
 #   density: !!float 1.0    # <-- NOT USED
 
 # power_tape_index:
