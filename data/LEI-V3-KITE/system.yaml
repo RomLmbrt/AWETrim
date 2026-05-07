@@ -15,23 +15,24 @@ components:
     name: LEI-V3 Kite
     type: LEI_soft_kite_system
     version: 1.0
+    structure:
     # Aggregate (wing + bridle + KCU); populated by populate_system_yml.py
-    mass: 21.2395                                                    # kg
-    center_of_mass:                                                 # m
-    - -0.0618
-    - 0.0006
-    - 5.88
-    inertia_tensor:                                                      # kg·m²
+      mass: 21.2395                                                    # kg
+      center_of_mass:                                                 # m
+      - -0.0618
+      - 0.0006
+      - 5.88
+      inertia_tensor:                                                      # kg·m²
 
-    - - 619.8677
-      - -0.0041
-      - 7.9389
-    - - -0.0041
-      - 531.8946
-      - 0.0594
-    - - 7.9389
-      - 0.0594
-      - 111.3129
+      - - 619.8677
+        - -0.0041
+        - 7.9389
+      - - -0.0041
+        - 531.8946
+        - 0.0594
+      - - 7.9389
+        - 0.0594
+        - 111.3129
     wing:
       name: LEI-V3
       type: LEI_soft_kite
