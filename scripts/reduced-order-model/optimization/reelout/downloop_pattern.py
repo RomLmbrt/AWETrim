@@ -52,7 +52,7 @@ START_STATE = {
     "s_dot": 2,
     "input_steering": 0,
     "tension_tether_ground": 8.4e5,  # Initial guess for tension (N)
-    "speed_radial": 0,  # Positive for reel-out
+    "speed_radial": 1,  # Positive for reel-out
     "distance_radial": REELOUT_CONFIG["path_parameters"][
         "r0"
     ],  # Start at the specified radius
