@@ -30,8 +30,9 @@ def main() -> None:
     values = parsed_common(args)
     out_dir = output_dir(args, "single_state")
 
+    body, _ = build_body(args)  # unpack tuple, use body only
     result, _ = solve_vsm_quasi_steady_trim(
-        body_aero=build_body(args),
+        body_aero=body,
         center_of_gravity=values["center_of_gravity"],
         reference_point=values["reference_point"],
         system_model=build_system_model(args),
@@ -45,13 +46,21 @@ def main() -> None:
     )
     print_trim_summary(result)
 
-    json_path = Path(args.output_json) if args.output_json else out_dir / "trim_result.json"
+    json_path = (
+        Path(args.output_json) if args.output_json else out_dir / "trim_result.json"
+    )
     write_json(json_path, result)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     labels = ["cmx", "cmy", "cmz", "cfx", "cfy"]
-    values_plot = np.r_[np.asarray(result["cm"], dtype=float), result["cfx"], result["cfy"]]
-    ax.bar(labels, values_plot, color=["#4C78A8", "#4C78A8", "#4C78A8", "#F58518", "#F58518"])
+    values_plot = np.r_[
+        np.asarray(result["cm"], dtype=float), result["cfx"], result["cfy"]
+    ]
+    ax.bar(
+        labels,
+        values_plot,
+        color=["#4C78A8", "#4C78A8", "#4C78A8", "#F58518", "#F58518"],
+    )
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_ylabel("Residual coefficient [-]")
     ax.set_title("VSM aerodynamic trim residuals")
