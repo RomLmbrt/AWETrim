@@ -9,6 +9,7 @@ import numpy as np
 from awetrim import SystemModel
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
+from awetrim.system.factory import load_aero_input_from_system_config
 from awetrim.environment.Wind import Wind
 import casadi as ca
 import time
@@ -198,16 +199,21 @@ def run_inverse_validation(cycle_num=65):
         flight_data["up"].max() - flight_data["up"].min()
     )
 
-    # Setup system from YAML config (avoids missing JSON file)
+    # Setup system from system.yml (awesIO format)
     with open(LEI_V3_SYSTEM_CONFIG, "r") as file:
-        kite_cfg = yaml.safe_load(file)
+        system_cfg = yaml.safe_load(file)
+    kite_cfg = system_cfg["components"]["kite"]
+    wing_struct = kite_cfg["wing"]["structure"]
+    cs_struct = kite_cfg.get("control_system", {}).get("structure", {})
+    tether_struct = system_cfg["components"].get("tether", {}).get("structure", {})
 
-    aero_input = kite_cfg["wing"]["aerodynamics"]
-    mass_wing = kite_cfg["wing"].get("mass", 14)
-    area_wing = kite_cfg["wing"].get("area", 20)
-    mass_kcu = kite_cfg.get("kcu", {}).get("mass", 16)
-    mass_kcu = 8.4
-    tether_diameter = kite_cfg.get("tether", {}).get("diameter", 0.01)
+    aero_input = load_aero_input_from_system_config(
+        kite_cfg, config_path=LEI_V3_SYSTEM_CONFIG
+    )
+    mass_wing = wing_struct.get("mass", 14)
+    area_wing = wing_struct.get("projected_surface_area", 20)
+    mass_kcu = cs_struct.get("mass", 0.0)
+    tether_diameter = tether_struct.get("diameter", 0.01)
 
     tether = RigidLumpedTether(diameter=tether_diameter)
     wind_model = Wind(wind_model="logarithmic", z0=0.1)
