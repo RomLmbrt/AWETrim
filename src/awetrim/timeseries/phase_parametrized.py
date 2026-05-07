@@ -97,19 +97,25 @@ class PhaseParameterized(TimeSeries):
             self.pattern_config["sim_parameters"]["end_time"]
             / self.pattern_config["sim_parameters"]["n_points"]
         )
+        # Capture numeric wind speed before residual_solver replaces it with a symbolic
+        _wind_raw_euler = km_copy.wind.speed_wind_ref_value
+        try:
+            wind_ref_euler = float(_wind_raw_euler) if _wind_raw_euler is not None else 0.0
+        except (TypeError, RuntimeError):
+            wind_ref_euler = 0.0
+
         intg = self.integrator(time_step=time_step, kite_model=km_copy)
         qs_solver = self.residual_solver(km_copy)
 
+        sim_params_euler = self.pattern_config.get("sim_parameters", {})
+        depower_val = (
+            state_obj.input_depower
+            if state_obj.input_depower is not None
+            else sim_params_euler.get("input_depower", 0.0)
+        )
+
         # print("New state:", qs_solver)
         if self.quasi_steady:
-            depower_val = getattr(
-                state_obj,
-                "input_depower",
-                self.pattern_config.get("sim_parameters", {}).get("input_depower", 0.0),
-            )
-            wind_ref = getattr(km_copy.wind, "speed_wind_ref_value", None)
-            if wind_ref is None:
-                wind_ref = 0.0
             x0 = ca.vertcat(
                 state_obj.tension_tether_ground,
                 state_obj.input_steering,
@@ -117,21 +123,13 @@ class PhaseParameterized(TimeSeries):
                 state_obj.speed_radial,
             )
             p = ca.vertcat(
-                state_obj.s, state_obj.distance_radial, depower_val, wind_ref
+                state_obj.s, state_obj.distance_radial, depower_val, wind_ref_euler
             )
             lbx, ubx, lbg, ubg = km_copy.get_boundaries(state_obj, unknown_vars)
             sol = qs_solver(x0=x0, p=p, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx)
             x0 = p
             z0 = sol["x"]
         else:
-            depower_val = getattr(
-                state_obj,
-                "input_depower",
-                self.pattern_config.get("sim_parameters", {}).get("input_depower", 0.0),
-            )
-            wind_ref = getattr(km_copy.wind, "speed_wind_ref_value", None)
-            if wind_ref is None:
-                wind_ref = 0.0
             x0 = ca.vertcat(
                 state_obj.tension_tether_ground,
                 state_obj.input_steering,
@@ -143,7 +141,7 @@ class PhaseParameterized(TimeSeries):
                 state_obj.s_dot,
                 state_obj.distance_radial,
                 depower_val,
-                wind_ref,
+                wind_ref_euler,
             )
             lbx, ubx, lbg, ubg = km_copy.get_boundaries(state_obj, unknown_vars)
             sol = qs_solver(x0=x0, p=p, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx)
@@ -400,6 +398,16 @@ class PhaseParameterized(TimeSeries):
         if km_copy.is_tether_rigid:
             qs_unknown_vars[0] = "tension_tether_ground"
 
+        # Capture numeric wind speed before residual_solver replaces it with a symbolic.
+        # speed_wind_ref_value can be a plain float, a CasADi DM (logarithmic model), or a
+        # symbolic MX (already parametrized). float() works for the first two; RuntimeError
+        # is raised for MX, in which case we fall back to 0.0.
+        _wind_raw = km_copy.wind.speed_wind_ref_value
+        try:
+            wind_speed_init = float(_wind_raw) if _wind_raw is not None else 0.0
+        except (TypeError, RuntimeError):
+            wind_speed_init = 0.0
+
         # Temporarily use quasi-steady residual solver to align the initial state
         original_qs_flag = self.quasi_steady
         self.quasi_steady = True
@@ -418,7 +426,7 @@ class PhaseParameterized(TimeSeries):
             state_obj.s,
             state_obj.distance_radial,
             state_obj.input_depower,
-            getattr(km_copy.wind, "speed_wind_ref_value", 0.0),
+            wind_speed_init,
         )
         lbx_init, ubx_init, lbg_init, ubg_init = km_copy.get_boundaries(
             state_obj, qs_unknown_vars
@@ -1077,6 +1085,8 @@ class PhaseParameterized(TimeSeries):
         if km_copy is None:
             km_copy = self.kite_model
 
+        wind_speed_ref = ca.MX.sym("speed_wind_ref")
+        km_copy.wind.speed_wind_ref = wind_speed_ref
         km_copy.establish_residual()
         if quasi_steady:
             if km_copy.is_tether_rigid:
@@ -1095,7 +1105,7 @@ class PhaseParameterized(TimeSeries):
                 self.s,
                 km_copy.distance_radial,
                 km_copy.input_depower,
-                km_copy.wind.speed_wind_ref,
+                wind_speed_ref,
             )
 
         else:
@@ -1116,7 +1126,7 @@ class PhaseParameterized(TimeSeries):
                 self.s_dot,
                 km_copy.distance_radial,
                 km_copy.input_depower,
-                km_copy.wind.speed_wind_ref,
+                wind_speed_ref,
             )
 
         alg = km_copy.residual
@@ -1136,7 +1146,6 @@ class PhaseParameterized(TimeSeries):
             "g": alg,
             "p": p,
         }
-        print(p)
         solver_options = {
             "ipopt": {
                 "print_level": 0,  # Suppresses IPOPT output
