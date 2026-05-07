@@ -231,20 +231,10 @@ def load_config_from_folder(
         aero_config = yaml.safe_load(f)
 
     # Check for an optional structural geometry file.
-    # Prefer the exact canonical name first, then any YAML containing "struc_geometry".
-    struc_geometry_path = None
-    if use_struc_geometry:
-        candidate_paths = [
-            config_folder / "struc_geometry.yaml",
-            *sorted(config_folder.glob("*struc_geometry*.yaml")),
-        ]
-        for candidate_path in candidate_paths:
-            if candidate_path.exists():
-                struc_geometry_path = candidate_path
-                break
+    struc_geometry_path = config_folder / "struc_geometry.yaml"
 
     # Select property source based on whether struc_geometry exists
-    kite_node = system_config.get("components", {}).get("kite", {})
+    kite_node = system_config.get("components", {}).get("kite", {}).get("structure", {})
 
     if struc_geometry_path:
         # Using bridles/KCU: extract aggregate properties from kite root
