@@ -37,7 +37,6 @@ When you add, remove, or rename public functions, dataclasses, config keys, or f
 |------|------|
 | `awegroup/Vortex-Step-Method` | Standalone VSM solver. AWETrim does not contain VSM code — polars enter as `aero_input` dicts. |
 | **AWETrim** (this repo) | Aerodynamic trim, ROM, identification, trajectory optimisation. |
-| `ASKITE` | PSM–VSM aerostructural FSI solver. Imports AWETrim's `aerostructural/` module. |
 
 ---
 
