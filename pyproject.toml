@@ -63,7 +63,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 
   # License type
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
 
   # Python versions your software supports. This is not checked by pip install, and is different from "requires-python".
   "Programming Language :: Python :: 3",

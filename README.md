@@ -222,4 +222,6 @@ pytest --cov=src --cov-report=term-missing
 
 ## License
 
-MIT — see `LICENSE`.
+LGPL-3.0 — see `LICENSE`.
+
+Modifications to AWETrim must be released under the same license. Contributions via pull requests to the [main repository](https://github.com/awegroup/AWETrim) are very welcome.
