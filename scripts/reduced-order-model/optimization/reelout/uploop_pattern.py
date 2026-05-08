@@ -33,6 +33,12 @@ To modify parameters:
 KITE_CONFIG_PATH = LEI_V3_SYSTEM_CONFIG
 CYCLE_CONFIG_PATH = LEI_V3_UPLOOP_SPLINE_CONFIG
 
+SAVE_TIMESERIES = True
+
+RESULTS_DIR = (
+    Path("results") / KITE_CONFIG_PATH.parent.name / "optimization" / "uploops"
+)
+
 # Load configurations from YAML
 REELOUT_CONFIG, REELIN_CONFIG = load_cycle_config_from_yaml(CYCLE_CONFIG_PATH)
 WIND_CONFIG = {
@@ -112,17 +118,15 @@ def main(run_plots=False):
     depower_prefix = "depower_" if "input_depower" in optimization_params else ""
     filename = f"{depower_prefix}uploop_optimized_config_wind_{WIND_CONFIG['speed_wind_at_100']}_z0_{WIND_CONFIG['z0']}_{WIND_CONFIG['model_type']}_spline.yaml"
 
-    solution.save_config_to_yaml(Path("results/optimized_configs/uploops") / filename)
-    phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes, phase_sim=True)
-
-    # reelout.pattern_config["path_parameters"]["kappa"] = 1
-    # phase, _ = reelout.run_simulation(run_plots=run_plots, axes=axes)
+    solution.save_config_to_yaml(RESULTS_DIR / filename)
+    phase, _ = reelout.run_simulation(run_plots=True, axes=axes, phase_sim=True)
     print(phase.energy_metrics())
 
-    plt.show()
+    if SAVE_TIMESERIES:
+        phase.save_timeseries_csv(
+            RESULTS_DIR / filename.replace(".yaml", "_timeseries.csv")
+        )
 
-    phase.plot_overview(x_param="t")
-    plt.show()
     return reelout
 
 
