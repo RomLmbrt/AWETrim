@@ -219,9 +219,16 @@ pytest --cov=src --cov-report=term-missing
 | pandas / h5py | Data I/O |
 
 ---
-
 ## License
 
-LGPL-3.0 — see `LICENSE`.
+This package is licensed under the GNU Lesser General Public License v3.0 or later.
 
-Modifications to AWETrim must be released under the same license. Contributions via pull requests to the [main repository](https://github.com/awegroup/AWETrim) are very welcome.
+You may use this package in academic, private, commercial, and closed-source systems. You may also use it internally to develop, operate, or control commercial products.
+
+Your own software does not need to be open-sourced merely because it imports, links to, or uses this package.
+
+If you modify this package itself and distribute the modified version outside your organization, you must make the source code of the modified package available to the recipients under the same LGPL license.
+
+We encourage users who improve this package to contribute their changes back to the upstream repository, although the LGPL does not require upstream contribution.
+
+See the `LICENSE` file for the full license text.
