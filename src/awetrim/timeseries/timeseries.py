@@ -126,6 +126,57 @@ class TimeSeries:
 
         return np.array(var)
 
+    def to_dataframe(self, extra_variables=None):
+        """Return all timeseries data as a pandas DataFrame.
+
+        Primary state variables come from ``self.states``. A standard set of
+        derived quantities is then appended via ``return_variable``; failures
+        are silently skipped so the method works regardless of which expressions
+        the model exposes.
+        """
+        import pandas as pd
+
+        derived = [
+            "lift_coefficient",
+            "drag_coefficient",
+            "angle_of_attack",
+            "mechanical_power",
+            "speed_tangential",
+            "angle_course",
+            "angle_elevation",
+            "angle_azimuth",
+            "x",
+            "y",
+            "z",
+        ]
+        if extra_variables:
+            derived += [v for v in extra_variables if v not in derived]
+
+        df = pd.DataFrame(self.states)
+        for var in derived:
+            if var in df.columns:
+                continue
+            try:
+                df[var] = self.return_variable(var)
+            except Exception:
+                pass
+        return df
+
+    def save_timeseries_csv(self, path, extra_variables=None):
+        """Save the timeseries to a CSV file.
+
+        Args:
+            path: destination file path (parent directories are created).
+            extra_variables: additional derived variable names to include beyond
+                the default set computed by ``to_dataframe``.
+        """
+        from pathlib import Path as _Path
+
+        path = _Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.to_dataframe(extra_variables=extra_variables).to_csv(path, index=False)
+        print(f"Timeseries saved to {path}")
+
     def plot_trace_on_plane(
         self,
         plot_markers=True,

@@ -54,6 +54,7 @@ class SimulationResult:
         >>> result.save_config_to_yaml("data/LEI-V3-KITE/v3_optimized_config.yaml")
         """
         output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Convert config to YAML-friendly format (numpy arrays -> lists)
         yaml_config = self._prepare_config_for_yaml(self.optimized_config)
