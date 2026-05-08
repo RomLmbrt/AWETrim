@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from awetrim.aerostructural.logging_config import *  # noqa: F401,F403  (sets up root logger)
-from awetrim.aerostructural.actuation import update_steering_tape_actuation
+from awetrim.aerostructural.pss.actuation import update_steering_tape_actuation
 from awetrim.aerostructural.mapping import BilinearAeroToStructuralLoadMapper
 from awetrim.aerostructural.results import (
     aerostructural_results_root,
@@ -44,20 +44,19 @@ from awetrim.aerostructural.utils import (
     load_yaml,
     rotate_geometry,
 )
-from awetrim.aerostructural import (
+from awetrim.aerostructural.pss import (
     aerodynamic_vsm,
     aerostructural_coupled_solver_qsm,
     structural_geometry_io,
     structural_pss,
 )
-from awetrim.system.system_model import SystemModel
 from awetrim.system.tether import RigidLumpedTether
 from awesio.validator import validate as awesio_validate
 from common import (
     CONFIG_DEFAULTS,
     DEFAULT_KITE_NAME,
     build_actuation_case_folder,
-    configure_system_model_from_config,
+    build_system_model,
     resolve_initial_geometry_rotation_kwargs,
     resolve_kite_paths,
     resolve_starting_rest_lengths,
@@ -325,9 +324,9 @@ def main() -> None:
             diameter=tether_struct["diameter"],
             density=tether_struct.get("density", 970.0),
         )
-        system_model = SystemModel(tether=tether)
-        system_model.mass_wing = float(np.sum(m_arr))
-        configure_system_model_from_config(system_model, cfg)
+        system_model = build_system_model(
+            system_config_path, tether, float(np.sum(m_arr)), cfg
+        )
 
         # ── Aero–structure mapping (created per-run with current geometry) ────────
         aero2struc_mapping = (
@@ -431,3 +430,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

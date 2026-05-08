@@ -1,10 +1,48 @@
 from __future__ import annotations
 
-from typing import Protocol, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Protocol, Union
 
 import casadi as ca
 
 Symbolic = Union[ca.MX, ca.SX, ca.DM]
+
+
+@dataclass
+class FlightCondition:
+    """Inputs that fully specify a quasi-steady trim condition.
+
+    Passed to ``KiteAeroModel.solve_quasi_steady``; the solver fills in all
+    derived quantities and returns them in a ``State``.
+    """
+
+    distance_radial: float          # tether length / radial distance [m]
+    angle_elevation: float          # elevation angle β [rad]
+    angle_course: float             # course angle χ [rad]
+    speed_radial: float             # reelout speed vr [m/s]
+    wind_speed: float               # wind speed at reference height [m/s]
+    input_depower: float = 0.0      # depower setting [-]
+    angle_azimuth: float = 0.0      # azimuth angle φ [rad]
+    input_steering: float = 0.0         # steering input [-]
+
+
+class KiteAeroModel(Protocol):
+    """Shared interface for ROM and VSM/aerostructural aerodynamic models.
+
+    Both ``SystemModel`` (ROM) and ``VSMAeroModelAdapter`` (VSM/PSS) must
+    satisfy this protocol so that the identification pipeline and validation
+    scripts can use either backend interchangeably.
+    """
+
+    def solve_quasi_steady(self, condition: FlightCondition) -> "State": ...
+
+    def get_aero_coefficients(self, state: "State") -> Dict[str, float]:
+        """Return at minimum {'CL': ..., 'CD': ..., 'CS': ...}."""
+        ...
+
+    def compute_forces(self, state: "State") -> Dict[str, Any]:
+        """Return tether tension and aerodynamic force vector in course frame."""
+        ...
 
 
 class KiteModel(Protocol):

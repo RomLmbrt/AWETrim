@@ -1,6 +1,6 @@
 """Aerostructural interfaces and adapters."""
 
-from awetrim.aerostructural.coupling import PssKineticDampingSolver, PssQsmCoupler
+from awetrim.aerostructural.pss.coupling import PssKineticDampingSolver, PssQsmCoupler
 from awetrim.aerostructural.protocols import (
     AeroToStructuralLoadMapper,
     AeroToStructureMap,

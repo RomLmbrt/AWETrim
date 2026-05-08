@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -22,16 +22,23 @@ class State:
     angle_pitch: Optional[float] = None
     angle_yaw: Optional[float] = None
 
-    # Optional outputs
+    # Optional outputs — ROM and VSM
     angle_of_attack: Optional[float] = None
     lift_coefficient: Optional[float] = None
     drag_coefficient: Optional[float] = None
+    side_force_coefficient: Optional[float] = None
     speed_apparent_wind: Optional[float] = None
     # Parametrization
     s: Optional[float] = None
     s_dot: Optional[float] = None
     s_ddot: Optional[float] = None
     t: Optional[float] = None
+    # VSM / aerostructural outputs — None when filled by ROM solver
+    lift_distribution: Optional[Any] = None           # np.ndarray (n_panels,)
+    drag_distribution: Optional[Any] = None           # np.ndarray (n_panels,)
+    circulation_distribution: Optional[Any] = None    # np.ndarray (n_panels,)
+    angle_of_attack_sections: Optional[Any] = None    # np.ndarray (n_panels,)
+    loaded_geometry: Optional[Any] = None             # np.ndarray (n_nodes, 3), PSS output
 
     def to_dict(self):
         return asdict(self)

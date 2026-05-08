@@ -101,7 +101,9 @@ The external solvers (VSM, PSS, EKF-AWE) are installed automatically from GitHub
 src/awetrim/
   system/          CasADi system model: SystemModel, Kite, Tether variants, Wind, Winch
   aerodynamics/    VSM quasi-steady trim wrapper: solve_vsm_quasi_steady_trim, sweeps, derivatives
-  aerostructural/  PSS/QSM fixed-point coupling: PssQsmCoupler, mapping, actuation, results I/O
+  aerostructural/  Shared: protocols, mapping, convergence, forces, results, tracking, utils
+    pss/           PSS/QSM fixed-point coupling: PssQsmCoupler, structural_pss, aerodynamic_vsm, actuation
+    fem/           FEM-based coupling (placeholder, not yet implemented)
   kinematics/      Course-frame kinematics and parametrised path patterns (B-spline, helix, …)
   timeseries/      Cycle simulation helpers: PhaseParameterized, Reelout, Reelin, Cycle
   environment/     Wind models: uniform, logarithmic, tabulated

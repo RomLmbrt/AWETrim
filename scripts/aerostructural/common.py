@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from awetrim.aerostructural.utils import load_sim_output
+from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.system.system_model import SystemModel
 
 DEFAULT_KITE_NAME = "LEI-V3-KITE"
@@ -103,6 +104,26 @@ def resolve_initial_geometry_rotation_kwargs(config: dict) -> dict:
             CONFIG_DEFAULTS["initial_geometry_rotation_axes"],
         ),
     }
+
+
+def build_system_model(
+    system_yaml_path: Path,
+    tether,
+    mass_wing: float,
+    config: dict,
+) -> SystemModel:
+    """Create a SystemModel from system.yaml, override tether and mass, apply config.
+
+    Using ``create_system_model_from_yaml`` ensures the Kite is fully populated
+    from YAML (aero coefficients, KCU mass, etc.) rather than the bare default.
+    The PSS particle mass overrides the YAML wing mass since it is the authoritative
+    value for aerostructural simulations.
+    """
+    system_model = create_system_model_from_yaml(system_yaml_path)
+    system_model.tether = tether
+    system_model.kite.mass_wing = mass_wing
+    configure_system_model_from_config(system_model, config)
+    return system_model
 
 
 def configure_system_model_from_config(system_model: SystemModel, config: dict) -> None:

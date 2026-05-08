@@ -3,7 +3,7 @@
 import numpy as np
 import logging
 
-from awetrim.aerostructural.utils import calculate_cg, calculate_inertia
+from ..utils import calculate_cg, calculate_inertia
 
 
 def compute_wing_stats_from_pss(struc_geometry):
@@ -619,3 +619,4 @@ def main(struc_geometry, config=None, system_config=None):
         pulley_line_indices,
         pulley_line_to_other_node_pair_dict,
     )
+

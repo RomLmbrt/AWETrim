@@ -15,7 +15,9 @@ implements the winch/tether physics for pumping-cycle simulation.
 src/awetrim/
   system/            ✅  Wing, Kite, SystemModel, Tether, Winch
   aerodynamics/      ✅  VSM quasi-steady trim — see src/awetrim/aerodynamics/AGENTS.md
-  aerostructural/    ✅  PSS/QSM coupled solver — see src/awetrim/aerostructural/AGENTS.md
+  aerostructural/    ✅  Shared interfaces: protocols, mapping, convergence, forces, results, utils
+    pss/             ✅  PSS/QSM coupled solver — see src/awetrim/aerostructural/AGENTS.md
+    fem/             🔴  FEM-based coupling — NOT YET BUILT (placeholder only)
   kinematics/        ✅  course-frame kinematics, B-spline path patterns
   timeseries/        ✅  PhaseParameterized, ReeloutSimple, ReelinSimple, Cycle
   environment/       ✅  Wind (logarithmic / uniform / tabulated)

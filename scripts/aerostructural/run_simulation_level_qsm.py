@@ -20,19 +20,18 @@ from awetrim.aerostructural.utils import (
     printing_rest_lengths,
     rotate_geometry,
 )
-from awetrim.aerostructural import (
+from awetrim.aerostructural.pss import (
     aerodynamic_vsm,
     aerostructural_coupled_solver_qsm,
     structural_geometry_io,
     structural_pss,
 )
-from awetrim.system.system_model import SystemModel
 from awetrim.system.tether import RigidLumpedTether
 from common import (
     CONFIG_DEFAULTS,
     DEFAULT_KITE_NAME,
     build_actuation_case_folder,
-    configure_system_model_from_config,
+    build_system_model,
     resolve_initial_geometry_rotation_kwargs,
     resolve_kite_paths,
 )
@@ -604,12 +603,9 @@ def main():
         diameter=tether_struct["diameter"],
         density=tether_struct.get("density", 970.0),
     )
-    system_model = SystemModel(tether=tether)
-    system_model.mass_wing = float(np.sum(m_arr))
-    print(
-        f"Total mass of the wing (sum of particle masses): {system_model.mass_wing:.3f} kg"
-    )
-    configure_system_model_from_config(system_model, config)
+    mass_wing = float(np.sum(m_arr))
+    print(f"Total mass of the wing (sum of particle masses): {mass_wing:.3f} kg")
+    system_model = build_system_model(system_config_path, tether, mass_wing, config)
 
     ########################################
     ### AEROSTUCTURAL COUPLED SIMULATION ###
@@ -680,3 +676,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

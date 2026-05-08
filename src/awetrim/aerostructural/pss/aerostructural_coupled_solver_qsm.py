@@ -2,26 +2,21 @@ import time
 from tqdm import tqdm
 import numpy as np
 import logging
-from awetrim.aerostructural import (
-    aerodynamic_vsm,
-    structural_pss,
-    tracking,
-    plotting,
-    aerodynamic_bridle_line_drag,
-)
-from awetrim.aerostructural.actuation import (
+from . import aerodynamic_vsm, structural_pss, aerodynamic_bridle_line_drag
+from .. import tracking, plotting
+from .actuation import (
     update_power_tape_actuation,
     update_steering_tape_actuation_progressive,
 )
-from awetrim.aerostructural.convergence import check_convergence, compute_adaptive_dt
-from awetrim.aerostructural.forces import distribute_total_force_by_particle_mass
-from awetrim.aerostructural.mapping import (
+from ..convergence import check_convergence, compute_adaptive_dt
+from ..forces import distribute_total_force_by_particle_mass
+from ..mapping import (
     BilinearAeroToStructuralLoadMapper,
     LinearStructuralToAeroMapper,
     check_moment_preservation,
 )
-from awetrim.aerostructural.protocols import AeroToStructureMap
-from awetrim.aerostructural.utils import (
+from ..protocols import AeroToStructureMap
+from ..utils import (
     calculate_cg,
     rotate_geometry,
 )
@@ -845,3 +840,4 @@ def main(
     }
 
     return tracking_data, meta
+

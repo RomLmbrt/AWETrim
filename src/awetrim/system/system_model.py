@@ -363,6 +363,10 @@ class SystemModel(KiteKinematics):
         # return solver, inputs_name, unknown_vars
 
     def solve_quasi_steady(self, state_obj, unknown_vars=None):
+        from awetrim.system.protocols import FlightCondition
+        if isinstance(state_obj, FlightCondition):
+            state_obj = self._condition_to_state(state_obj)
+
         if unknown_vars is None:
             unknown_vars = self.default_unknown_vars
 
@@ -403,6 +407,38 @@ class SystemModel(KiteKinematics):
             state_dict[name] = float(func(*args))
 
         return State(**state_dict)
+
+    def _condition_to_state(self, condition) -> State:
+        """Convert a FlightCondition to a State and apply wind speed to the model."""
+        self.wind.speed_wind_ref = condition.wind_speed
+        return State(
+            distance_radial=condition.distance_radial,
+            angle_elevation=condition.angle_elevation,
+            angle_azimuth=condition.angle_azimuth,
+            angle_course=condition.angle_course,
+            speed_radial=condition.speed_radial,
+            input_depower=condition.input_depower,
+            input_steering=condition.input_steering,
+            s=0.0,
+            s_dot=10.0,
+            tension_tether_ground=1e4,
+        )
+
+    def get_aero_coefficients(self, state: State) -> dict:
+        """Return {'CL': ..., 'CD': ..., 'CS': ...} from a solved State."""
+        return {
+            "CL": state.lift_coefficient,
+            "CD": state.drag_coefficient,
+            "CS": state.side_force_coefficient or 0.0,
+        }
+
+    def compute_forces(self, state: State) -> dict:
+        """Return tether tension and mechanical power from a solved State."""
+        tension = state.tension_tether_ground or 0.0
+        return {
+            "tension_tether_ground": tension,
+            "mechanical_power": tension * (state.speed_radial or 0.0),
+        }
 
     def get_boundaries(
         self,

@@ -1,5 +1,6 @@
 """Aerodynamic analysis interfaces for AWETrim."""
 
+from awetrim.aerodynamics.vsm_adapter import VSMAeroModelAdapter
 from awetrim.aerodynamics.vsm_quasi_steady import (
     DEFAULT_AXES,
     DEFAULT_BOUNDS_LOWER,
@@ -13,6 +14,7 @@ from awetrim.aerodynamics.vsm_quasi_steady import (
 )
 
 __all__ = [
+    "VSMAeroModelAdapter",
     "DEFAULT_AXES",
     "DEFAULT_BOUNDS_LOWER",
     "DEFAULT_BOUNDS_UPPER",

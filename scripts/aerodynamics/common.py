@@ -329,19 +329,30 @@ def build_body(args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
 
 
 def build_system_model(args: argparse.Namespace, mass_wing: float | None = None):
+    from awetrim.system.factory import create_system_model_from_yaml
     from awetrim.system.system_model import SystemModel
     from awetrim.system.tether import RigidLumpedTether
 
-    # Use provided mass_wing or extract from args (fallback to 30.0)
-    mass = (
-        mass_wing
-        if mass_wing is not None
-        else (args.mass_wing if args.mass_wing is not None else 30.0)
+    config_folder = Path(args.config_folder)
+    system_yaml = next(
+        (config_folder / name for name in ("system.yaml", "system.yml")
+         if (config_folder / name).exists()),
+        None,
     )
 
-    system = SystemModel(tether=RigidLumpedTether(diameter=args.tether_diameter))
-    system.mass_wing = mass
-    system.kite.mass_wing = mass
+    if system_yaml is not None:
+        system = create_system_model_from_yaml(system_yaml)
+        if args.tether_diameter:
+            system.tether = RigidLumpedTether(diameter=args.tether_diameter)
+    else:
+        system = SystemModel(tether=RigidLumpedTether(diameter=args.tether_diameter))
+
+    # Explicit overrides take precedence over YAML values
+    if mass_wing is not None:
+        system.kite.mass_wing = mass_wing
+    elif getattr(args, "mass_wing", None) is not None:
+        system.kite.mass_wing = args.mass_wing
+
     system.angle_elevation = np.deg2rad(args.elevation_deg)
     system.angle_azimuth = np.deg2rad(args.azimuth_deg)
     system.angle_course = np.deg2rad(args.course_deg)

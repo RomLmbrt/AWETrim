@@ -7,12 +7,12 @@ from typing import Any
 
 import numpy as np
 
-from awetrim.aerostructural.mapping import (
+from ..mapping import (
     BilinearAeroToStructuralLoadMapper,
     LinearStructuralToAeroMapper,
     check_moment_preservation,
 )
-from awetrim.aerostructural.protocols import (
+from ..protocols import (
     AeroToStructuralLoadMapper,
     PssStructuralSolver,
     QsmCouplingRequest,
