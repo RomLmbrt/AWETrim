@@ -27,6 +27,8 @@ src/awetrim/aerostructural/
   plotting.py                      set_plot_style, plot_normalized_elongation
   utils.py                         rotate_geometry, calculate_cg, calculate_inertia, load_yaml
   logging_config.py                Package-level logging setup
+  aerodynamic_vsm.py               VSM body initialisation and run_vsm_package wrapper (shared)
+  aerodynamic_bridle_line_drag.py  Bridle line aerodynamic drag (shared)
 
   # ── PSS-based solver ──────────────────────────────────────────────────────
   pss/
@@ -34,14 +36,16 @@ src/awetrim/aerostructural/
     coupling.py                    PssQsmCoupler (fixed-point loop)
     structural_pss.py              PSS instantiation and kinetic-damping solve
     structural_geometry_io.py      Parse struc_geometry.yaml → StructuralGeometry arrays
-    aerodynamic_vsm.py             VSM body initialisation and run_vsm_package wrapper
     actuation.py                   update_steering_tape_actuation, update_power_tape_actuation
-    aerodynamic_bridle_line_drag.py  Bridle line aerodynamic drag
     aerostructural_coupled_solver_qsm.py  Legacy high-level driver (used by production scripts)
 
-  # ── FEM-based solver (future) ─────────────────────────────────────────────
+  # ── FEM-based solver ──────────────────────────────────────────────────────
   fem/
-    __init__.py                    Placeholder — not yet implemented
+    __init__.py                    Re-exports all four FEM modules
+    aerostructural_coupled_solver_level_2.py  FEM/QSM high-level driver
+    aero2struc_level_2.py          Aero-to-structural force mapping and moment preservation check
+    read_struc_geometry_yaml_level_2.py  Parse level-2 struc_geometry YAML (strut tubes, LE tubes)
+    structural_kite_fem_level_2.py FEM structure instantiation and solve
 
 scripts/aerostructural/
   common.py                        CONFIG_DEFAULTS, build_system_model, shared helpers
@@ -62,13 +66,14 @@ aero_geometry.yaml
 Fixed-point loop (pss/coupling.PssQsmCoupler.solve  or  pss/aerostructural_coupled_solver_qsm.main):
   1. mapping.LinearStructuralToAeroMapper.map(nodes) → LE/TE points          [common]
   2. body_aero.update_from_points(LE, TE, polar_data)
-  3. pss/aerodynamic_vsm.run_vsm_package() → panel forces + trim state       [pss]
+  3. aerodynamic_vsm.run_vsm_package() → panel forces + trim state           [common]
   4. mapping.BilinearAeroToStructuralLoadMapper.map_loads(panel_forces) → nodal aero forces  [common]
   5. forces.distribute_total_force_by_particle_mass(inertial+gravity) → nodal inertial forces [common]
-  6. pss/structural_pss.run_pss(psystem, total_external_force) → new node positions           [pss]
-  7. Aitken relaxation on node displacement
-  8. pss/actuation.update_*_tape_actuation() (every N iterations)            [pss]
-  9. convergence.check_convergence() → break or continue                     [common]
+  6. aerodynamic_bridle_line_drag.main() → nodal bridle drag forces           [common]
+  7. pss/structural_pss.run_pss(psystem, total_external_force) → new node positions           [pss]
+  8. Aitken relaxation on node displacement
+  9. pss/actuation.update_*_tape_actuation() (every N iterations)            [pss]
+  10. convergence.check_convergence() → break or continue                    [common]
 ```
 
 ## Key Dataclasses (protocols.py)
@@ -109,7 +114,7 @@ Node positions are updated as `nodes += factor * (solved_nodes - nodes)` where `
 
 - No CasADi symbolics enter this module. All quantities are numeric numpy arrays.
 - VSM solver internals (`VSM.core`) are accessed only through `aerodynamic_vsm.py`; the rest of the module is VSM-agnostic.
-- `pss/structural_pss.py` and `pss/aerodynamic_vsm.py` hold the PSS and VSM dependencies. All common files (`mapping.py`, `convergence.py`, etc.) depend only on numpy and the module's own protocols.
+- `aerodynamic_vsm.py` and `aerodynamic_bridle_line_drag.py` live at the root level and are shared by all solvers. `pss/structural_pss.py` holds the PSS dependency. All other common files (`mapping.py`, `convergence.py`, etc.) depend only on numpy and the module's own protocols.
 - `pss/aerostructural_coupled_solver_qsm.py` is a legacy high-level driver retained for production scripts. New protocol-level code should go through `pss/coupling.PssQsmCoupler`.
 - When adding a new structural solver, create a new subfolder (e.g., `fem/`) mirroring the `pss/` layout. Common files at the root level are shared by all solvers.
 

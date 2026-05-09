@@ -23,23 +23,23 @@ timeder_speed_radial: !!float 0.0
 power_tape_extension_step: !!float 0.05 
 power_tape_final_extension: !!float 0.0 #0.3 #0.05
 steering_tape_extension_step: !!float 0.05
-steering_tape_final_extension: !!float 0.0
+steering_tape_final_extension: !!float 0.1
 
 ## output settings
 is_with_initial_structure_plot: !!bool false
 is_with_coupling_plot_per_iteration: !!bool false
 is_with_struc_plot_per_iteration: !!bool false
 is_with_aero_plot_per_iteration: !!bool false
-is_with_final_plot: !!bool false
-is_save_geometry_snapshots: !!bool false
+is_with_final_plot: !!bool true
+is_save_geometry_snapshots: !!bool true
 
 ## aerodynamic
 aerodynamic:
   n_aero_panels_per_struc_section: !!int 3
   spanwise_panel_distribution: !!str 'uniform'
-  max_iterations: !!int 1000
+  max_iterations: !!int 1500
   allowed_error: !!float 2e-6
-  relaxation_factor: !!float 0.05
+  relaxation_factor: !!float 0.025
   reference_point: !!seq [0.0, 0.0, 0.0]
 
 ## quasi-steady trim optimization (used by aero_structural_solver with aero_solve_type='qsm')
@@ -89,6 +89,7 @@ aero2struc:
   coupling_method: !!str 'NN'
   eps: !!float 1e-6
   power_for_inverse_weighting: !!float 2.0
+  cp_distribution_path: data/LEI-V3-KITE/cp_distributions/cp_AOA_8.dat
 
 ## coupled
 aero_structural_solver:
@@ -110,6 +111,33 @@ aero_structural_solver:
 grav_constant: !!seq [0, 0, -9.81]
 rho: !!float 1.225 # air density in kg/m^3
 mu: !!float 1.789e-05 # dynamic viscosity in kg/(m*s)
+
+
+## structural kite_fem
+structural_kite_fem:
+  max_iterations: !!int 200 #used to be 2000
+  tolerance: !!float 0.01
+  step_limit: !!float 0.2       # kite_fem default
+  relax_init: !!float 0.5       # kite_fem default
+  relax_update: !!float 0.95    # kite_fem default
+  k_update: !!int 1
+  I_stiffness: !!int 25         # kite_fem default
+  is_with_diagnostics: !!bool false
+  num_node_diagnostics: !!int 34
+  # Regularizes K for Newton-Raphson stability. Does NOT affect
+  # the equilibrium (fe=fi is independent of I_stiffness).
+  # if pseudo_dt != 0 it overrides I_stiffness when set.
+  pseudo_dt: !!float 0.1 #0.05 # pseudo-transient timestep [s] for mass-proportional regularization.
+  k_reg_min: !!float 200.0 # minimum regularization stiffness [N/m] floor for light bridle/steering nodes
+  print_info: !!bool false
+  update_stiffness: !!bool true #Stiffen each spring with elongations higher than 1% on each iteration
+  max_stiffness: !!int 5000 #Maximum value of spring stiffness, when updated using update_stiffness
+  # relaxbridles: pre-simulation bridle relaxation applied once at initialisation.
+  # pull_down_force_z pulls the KCU node (node 0) downward to tension the bridles
+  # from the unloaded YAML geometry to a realistic hanging position.
+  # A too-small force leaves bridles slack; too large may cause FEM divergence.
+  relaxbridles_pull_down_force_z: !!float -1000.0
+  relaxbridles_settle_force_z: !!float -100.0
 
 
 # tether.diameter is now defined in system.yml (awesIO format)

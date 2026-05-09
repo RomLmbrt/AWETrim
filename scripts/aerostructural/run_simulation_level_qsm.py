@@ -20,8 +20,8 @@ from awetrim.aerostructural.utils import (
     printing_rest_lengths,
     rotate_geometry,
 )
+from awetrim.aerostructural import aerodynamic_vsm
 from awetrim.aerostructural.pss import (
-    aerodynamic_vsm,
     aerostructural_coupled_solver_qsm,
     structural_geometry_io,
     structural_pss,

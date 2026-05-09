@@ -2,8 +2,8 @@ import time
 from tqdm import tqdm
 import numpy as np
 import logging
-from . import aerodynamic_vsm, structural_pss, aerodynamic_bridle_line_drag
-from .. import tracking, plotting
+from . import structural_pss
+from .. import aerodynamic_vsm, aerodynamic_bridle_line_drag, tracking, plotting
 from .actuation import (
     update_power_tape_actuation,
     update_steering_tape_actuation_progressive,
