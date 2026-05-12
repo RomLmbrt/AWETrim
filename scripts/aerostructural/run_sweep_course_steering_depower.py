@@ -32,8 +32,11 @@ from awetrim.aerostructural.mapping import BilinearAeroToStructuralLoadMapper
 from awetrim.aerostructural.results import (
     aerostructural_results_root,
     append_sweep_csv_row,
+    build_deformed_aero_geometry,
+    build_deformed_struc_geometry,
     build_sweep_csv_row,
     candidate_case_dirs,
+    save_geometry_snapshot,
     save_input_snapshot,
     save_sim_output,
     steering_values_from_count_or_step,
@@ -256,6 +259,7 @@ def main() -> None:
 
     base_config = load_yaml(config_path)
     struc_geometry = load_yaml(struc_geometry_path)
+    aero_geometry = load_yaml(aero_geometry_path)
 
     # Structural arrays from geometry
     (
@@ -376,11 +380,8 @@ def main() -> None:
                 case_dir = results_root / case_folder
                 case_dir.mkdir(parents=True, exist_ok=True)
 
-                # Persist effective config, and input geometries when enabled in config.
                 results_dir = save_input_snapshot(
                     config=cfg,
-                    struc_geometry_path=struc_geometry_path,
-                    aero_geometry_path=aero_geometry_path,
                     results_dir=case_dir,
                 )
 
@@ -569,6 +570,13 @@ def main() -> None:
                 # Save run state for post-processing.
                 if tracking_data is not None:
                     save_sim_output(tracking_data, meta, results_dir)
+                    final_nodes = np.asarray(tracking_data["positions"][meta["n_iter"] - 1])
+                    save_geometry_snapshot(
+                        cfg,
+                        build_deformed_struc_geometry(struc_geometry, final_nodes),
+                        build_deformed_aero_geometry(aero_geometry, final_nodes, struc_node_le_indices, struc_node_te_indices),
+                        results_dir,
+                    )
 
                 # ── Append result to CSV ───────────────────────────────────────────────
                 csv_row = build_sweep_csv_row(
