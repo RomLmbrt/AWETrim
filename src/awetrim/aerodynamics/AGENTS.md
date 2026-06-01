@@ -80,6 +80,16 @@ Public functions should use these names:
 - `vsm_quasi_steady_sweep_to_dataframe`
 - `plot_vsm_quasi_steady_sweep`
 
+## Stability Script Configuration
+
+`scripts/aerodynamics/compute_stability_derivatives.py` accepts an optional
+YAML stability config with:
+
+- `states`: list or comma-separated string of stability state names, or `all`
+- `coupled`: boolean selecting coupled vs longitudinal/lateral block assembly
+- `frame`: `course` or `body`; course is the default, body requires an
+  identified rigid-body result so principal body axes are available
+
 ## Trim State Convention
 
 The VSM trim unknown vector is ordered as:
