@@ -682,6 +682,60 @@ def main():
 
     printing_rest_lengths(tracking_data, struc_geometry)
 
+    # --- Front/back bridle force distribution at KCU (node 0) ---
+    final_nodes = np.asarray(tracking_data["positions"][meta["n_iter"] - 1])
+    front_line_names = {"amain"}
+    back_line_names = {"Power Tape", "Steering Tape"}
+
+    bridle_set = {
+        tuple(sorted(c)): (float(l0_arr[i]), float(k_arr[i]))
+        for i, c in enumerate(kite_connectivity_arr)
+        if 0 in c
+    }
+
+    F_front = np.zeros(3)
+    F_back = np.zeros(3)
+    T_front = 0.0
+    T_back = 0.0
+    per_line = []
+    for row in struc_geometry["bridle_connections"]["data"]:
+        name = row[0]
+        ci, cj = int(row[1]), int(row[2])
+        if 0 not in (ci, cj):
+            continue
+        l0, k = bridle_set[tuple(sorted((ci, cj)))]
+        other = cj if ci == 0 else ci
+        vec = final_nodes[other] - final_nodes[0]
+        length = float(np.linalg.norm(vec))
+        tension = max(0.0, k * (length - l0)) if length > 1e-12 else 0.0
+        F = tension * vec / length if length > 1e-12 else np.zeros(3)
+        per_line.append((name, ci, cj, tension, F))
+        if name in front_line_names:
+            F_front += F
+            T_front += tension
+        elif name in back_line_names:
+            F_back += F
+            T_back += tension
+
+    print("\n=== Bridle forces at KCU (node 0) ===")
+    print(f"{'line':14s} {'ci':>4s}->{'cj':<4s} {'|T| [N]':>10s}   F [N]")
+    for name, ci, cj, T, F in per_line:
+        print(f"{name:14s} {ci:>4d}->{cj:<4d} {T:>10.2f}   [{F[0]:+8.2f}, {F[1]:+8.2f}, {F[2]:+8.2f}]")
+    print(f"\nFront sum (A-side, amain):                |T|={T_front:.2f} N, F={F_front}")
+    print(f"Back  sum (Power Tape + Steering Tape):   |T|={T_back:.2f} N, F={F_back}")
+    print(f"Resultant at KCU:                         F={F_front + F_back}\n")
+
+    bridle_csv_path = results_dir / "kcu_bridle_forces.csv"
+    with bridle_csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["line", "ci", "cj", "side", "tension_N", "Fx_N", "Fy_N", "Fz_N"])
+        for name, ci, cj, T, F in per_line:
+            side = "front" if name in front_line_names else ("back" if name in back_line_names else "other")
+            writer.writerow([name, ci, cj, side, f"{T:.6f}", f"{F[0]:.6f}", f"{F[1]:.6f}", f"{F[2]:.6f}"])
+        writer.writerow(["FRONT_SUM", "", "", "front", f"{T_front:.6f}", f"{F_front[0]:.6f}", f"{F_front[1]:.6f}", f"{F_front[2]:.6f}"])
+        writer.writerow(["BACK_SUM", "", "", "back", f"{T_back:.6f}", f"{F_back[0]:.6f}", f"{F_back[1]:.6f}", f"{F_back[2]:.6f}"])
+    print(f"Saved KCU bridle force distribution to {bridle_csv_path}")
+
 
 if __name__ == "__main__":
     main()

@@ -6,7 +6,7 @@ import numpy as np
 import yaml
 from ruamel.yaml import YAML
 
-from awetrim.aerostructural.structural_geometry_io import (
+from awetrim.aerostructural.pss.structural_geometry_io import (
     compute_bridle_stats_from_pss,
     compute_wing_stats_from_pss,
     main as pss_initialize,

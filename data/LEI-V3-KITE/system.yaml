@@ -6,9 +6,6 @@ metadata:
   awesIO_version: 0.1.0
   schema: system_schema.yml
 
-assembly:
-  airborne_type: soft_kite
-  generation_type: pumping_ground_gen
 
 components:
   kite:
@@ -39,25 +36,25 @@ components:
       version: 3.0
       structure:
         # Populated by populate_system_yml.py
-        projected_surface_area: 19.75 # m²
-        span: 8.4701                   # m
-        mass: 11.4746                  # kg
+        projected_surface_area: 17.2119 # m²
+        span: 8.282                    # m
+        mass: 10.9926                  # kg
         center_of_mass:                         # m
-        - -0.1435
-        - 0.0
-        - 10.166
+        - -0.0413
+        - -0.0
+        - 10.3105
         inertia_tensor:
-        - - 98.2423
+        - - 84.6787
+          - 0.0
+          - 0.8031
+        - - 0.0
+          - 18.6955
           - -0.0
-          - 0.6985
-        - - -0.0
-          - 19.4389
-          - 0.0
-        - - 0.6985
-          - 0.0
-          - 100.6775
-        side_projected_area: 1.2616
-        planform_surface_area: 21.2764
+        - - 0.8031
+          - -0.0
+          - 88.6081
+        side_projected_area: 0.2923
+        planform_surface_area: 21.0559
     bridle:
       name: LEI-V3 Bridle
       type: LEI_soft_kite_bridle
@@ -65,14 +62,14 @@ components:
       structure:
         bridle_point_node: [0, 0, 0]
         # Populated by populate_system_yml.py
-        total_nominal_line_length: 80.22868  # m, sum of unique bridle_line l0 values
-        avg_line_diameter: 0.00276           # m, connection-length-weighted average
+        total_nominal_line_length: 79.922    # m, sum of unique bridle_line l0 values
+        avg_line_diameter: 0.00285           # m, connection-length-weighted average
         material:
           type: dyneema
           density: 724.0           # kg/m³
           youngs_modulus: 20.0e9   # Pa
           damping_per_stiffness: 0.0
-        mass: 1.3649                         # kg, lines + pulleys
+        mass: 2.5999                         # kg, lines + pulleys
 
     control_system:
       name: LEI-V3 KCU
@@ -81,9 +78,24 @@ components:
       structure:
         length: 1.0      # m
         diameter: 0.48   # m
-        mass: 8.4        # kg
+        mass: 16        # kg
         center_of_mass: [0.0, 0.0, 0.0]  # m, same as bridle_point_node
 
+    mass: 29.5925
+    center_of_mass:
+    - -0.0178
+    - 0.0004
+    - 4.3094
+    inertia_tensor:
+    - - 818.4665
+      - -0.0017
+      - 3.8795
+    - - -0.0017
+      - 740.8662
+      - 0.0332
+    - - 3.8795
+      - 0.0332
+      - 101.8298
   tether:
     name: LEI-V3 Tether
     type: non_conductive_tether
@@ -104,17 +116,30 @@ components:
     version: 1.0
     structure:
       mass: 0.0
+
+    assembly:
+
     drum:
-      type: electric_winch
-      max_tether_speed: 10.0
-    generator:
-      type: permanent_magnet_synchronous
-      max_power: 40000.0  # W
-      efficiency: 1
-    storage:
-      type: battery_bank
-      capacity: 100000.0       # Wh
-      max_charge_rate: 50000.0    # W
-      max_discharge_rate: 50000.0  # W
-      efficiency: 1
-      state_of_charge_initial: 0.5
+      name: LEI-V3 Drum
+      type: drum
+      joints:
+        tether_attachment_point:
+          id: T1
+        shaft:
+          id: S1
+
+    mechanical2electrical:
+      name: LEI-V3 Mechanical-to-Electrical
+      type: mechanical_to_electrical
+      components:
+        electric_machine/generator:
+
+        
+
+        power_converter:
+        storage:
+
+        gearbox:
+          name: LEI-V3 Gearbox
+          type: gearbox
+          gear_ratio: 1.0

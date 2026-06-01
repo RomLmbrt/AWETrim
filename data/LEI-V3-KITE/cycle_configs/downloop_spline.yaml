@@ -28,7 +28,7 @@ reelout:
     end_time: 20
     start_angle: 0
     end_angle: 1
-    n_points: 100
+    n_points: 50
     input_depower: -0.5
 
 
