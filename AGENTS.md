@@ -147,7 +147,7 @@ Each kite under `data/<kite_name>/` should include at minimum the following file
 - `struc_geometry.yaml` — structural geometry describing wing nodes, LE/TE positions, bridle nodes and connectivity, spring/rest-length definitions, pulley info.
 - `aero_geometry.yaml` — VSM aerodynamic geometry describing wing sections, paneling, and references to airfoil polars; may reference a subfolder with airfoil `.dat` or polar CSVs.
 - `as_config.yaml` (or `aerostructural_configs/config.yaml`) — aerostructural solver settings (time-step, tolerances, actuation options, initialisation flags).
-- `aero_coeffs_rom.yaml` — reduced-order aerodynamic coefficient definitions used by ROM or identification flows.
+- `rom_config.yaml` — reduced-order aerodynamic coefficient definitions (plus ROM tether settings) used by ROM or identification flows.
 - `ekf_config/` — EKF configuration files and model-specific tuning parameters used by the `experimental` EKF pipeline.
 
 Optional but recommended:

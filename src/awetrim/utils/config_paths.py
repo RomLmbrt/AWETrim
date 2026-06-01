@@ -8,7 +8,7 @@ DATA_DIR = REPO_ROOT / "data"
 LEI_V3_DATA_DIR = DATA_DIR / "LEI-V3-KITE"
 # Primary system config in awesIO format (physical system parameters)
 LEI_V3_SYSTEM_CONFIG = LEI_V3_DATA_DIR / "system.yaml"
-LEI_V3_ROM_AERO_CONFIG = LEI_V3_DATA_DIR / "aero_coeffs_rom.yaml"
+LEI_V3_ROM_AERO_CONFIG = LEI_V3_DATA_DIR / "rom_config.yaml"
 LEI_V3_CYCLE_CONFIG_DIR = LEI_V3_DATA_DIR / "cycle_configs"
 LEI_V3_DOWNLOOP_SPLINE_CONFIG = LEI_V3_CYCLE_CONFIG_DIR / "downloop_spline.yaml"
 LEI_V3_UPLOOP_SPLINE_CONFIG = LEI_V3_CYCLE_CONFIG_DIR / "uploop_spline.yaml"

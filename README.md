@@ -61,7 +61,7 @@ An Extended Kalman Filter for Airborne Wind Energy flight data. It processes raw
 │        ▼ sweep over flight conditions                               │
 │  2. ROM IDENTIFICATION                                              │
 │  Fit quasi-steady CL/CD/CS(α, β, δs, δp) from sweep results        │
-│  → aero_coeffs_rom.yaml                                             │
+│  → rom_config.yaml                                                  │
 │                                                                     │
 │        │                                                            │
 │        ▼                                                            │
@@ -185,7 +185,7 @@ data/
     aero_geometry.yaml                      VSM panel sections and airfoil polars
     struc_geometry.yaml                     PSS node positions and spring connectivity
     as_config.yaml                          aerostructural coupling settings (dt, tolerances, actuation)
-    aero_coeffs_rom.yaml                    quasi-steady ROM coefficients (output of aerostructural sweep)
+    rom_config.yaml                         quasi-steady ROM coefficients + tether settings
     ekf_config.yaml                         EKF simulation / tuning parameters
     2D_polars_CFD_NF_combined/              section-by-section 2D polar CSVs and comparison PDFs
     cycle_configs/                          optimised path splines: uploop, downloop, helix
