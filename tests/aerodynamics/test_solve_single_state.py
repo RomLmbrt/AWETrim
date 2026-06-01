@@ -132,6 +132,7 @@ class TestSolveSingleStateIntegration:
         """build_system_model correctly configures a SystemModel."""
 
         class MockArgs:
+            config_folder = str(PROJECT_DIR / "data" / "LEI-V3-KITE")
             tether_diameter = 0.01
             mass_wing = 30.0
             elevation_deg = 0.0
@@ -144,11 +145,10 @@ class TestSolveSingleStateIntegration:
         system = build_system_model(MockArgs())
 
         # Verify system has required attributes
-        assert hasattr(system, "mass_wing")
         assert hasattr(system, "kite")
         assert hasattr(system, "wind")
         assert hasattr(system, "tether")
-        assert system.mass_wing == 30.0
+        assert system.kite.mass_wing == 30.0
         assert system.distance_radial == 200.0
         assert system.wind.speed_wind_ref == 6.0
 
@@ -156,6 +156,7 @@ class TestSolveSingleStateIntegration:
         """build_system_model enforces quasi-steady assumptions."""
 
         class MockArgs:
+            config_folder = str(PROJECT_DIR / "data" / "LEI-V3-KITE")
             tether_diameter = 0.01
             mass_wing = 30.0
             elevation_deg = 0.0
@@ -263,6 +264,7 @@ class TestSolveSingleStateEndToEnd:
 
         class Args:
             vsm_src = None
+            config_folder = str(PROJECT_DIR / "data" / "LEI-V3-KITE")
             geometry_yaml = str(
                 PROJECT_DIR
                 / "data"
@@ -312,7 +314,7 @@ class TestSolveSingleStateEndToEnd:
         """build_system_model correctly configures system from mock args."""
         system = build_system_model(mock_args)
 
-        assert system.mass_wing == mock_args.mass_wing
+        assert system.kite.mass_wing == mock_args.mass_wing
         assert system.distance_radial == mock_args.distance_radial
         assert system.wind.speed_wind_ref == mock_args.wind_speed
 
@@ -380,6 +382,7 @@ class TestSystemModelCasADiStructure:
         """SystemModel properties can be used in CasADi operations."""
 
         class MockArgs:
+            config_folder = str(PROJECT_DIR / "data" / "LEI-V3-KITE")
             tether_diameter = 0.01
             mass_wing = 30.0
             elevation_deg = 0.0
@@ -392,6 +395,6 @@ class TestSystemModelCasADiStructure:
         system = build_system_model(MockArgs())
 
         # These should be numeric or CasADi-compatible
-        assert isinstance(system.mass_wing, (float, int, np.ndarray))
+        assert isinstance(system.kite.mass_wing, (float, int, np.ndarray))
         assert isinstance(system.distance_radial, (float, int, np.ndarray))
         assert hasattr(system.wind, "speed_wind_ref")

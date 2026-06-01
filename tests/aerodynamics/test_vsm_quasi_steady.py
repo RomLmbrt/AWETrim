@@ -261,7 +261,108 @@ def test_compute_vsm_trim_stability_derivatives_bad_x_trim_raises():
 
 
 # ---------------------------------------------------------------------------
-# New — verify backward-compatibility aliases
+# New — full-state Jacobian + user-selectable subset / coupling
+# ---------------------------------------------------------------------------
+
+
+def test_compute_vsm_trim_stability_derivatives_full_state_outputs():
+    """J_full (6, 10) and A_full (10, 10) are always present, in canonical order."""
+    from awetrim.aerodynamics.vsm_quasi_steady import ALL_STATE_NAMES
+
+    result = compute_vsm_trim_stability_derivatives(
+        body_aero=_MockBody(),
+        center_of_gravity=np.zeros(3),
+        reference_point=np.zeros(3),
+        x_trim=_X_TRIM,
+        trim_result=_TRIM_RESULT,
+        solver=_MockSolver(),
+        mass=15.0,
+        inertia_xx=100.0,
+        inertia_yy=20.0,
+        inertia_zz=100.0,
+    )
+    assert result["J_full"].shape == (6, 10)
+    assert result["A_full"].shape == (10, 10)
+    assert result["eig_full"].shape == (10,)
+    assert result["vec_full"].shape == (10, 10)
+    assert result["state_names_full"] == list(ALL_STATE_NAMES)
+
+    # phi/theta/psi rows of A_full must be pure kinematics: phi_dot=p, etc.
+    phi_idx = ALL_STATE_NAMES.index("phi")
+    p_idx = ALL_STATE_NAMES.index("p")
+    z_idx = ALL_STATE_NAMES.index("z")
+    w_idx = ALL_STATE_NAMES.index("w")
+    assert result["A_full"][phi_idx, p_idx] == pytest.approx(1.0)
+    assert result["A_full"][phi_idx, p_idx + 0] == pytest.approx(1.0)
+    assert result["A_full"][z_idx, w_idx] == pytest.approx(1.0)
+    # No selection by default: selected-* keys must be absent.
+    assert "A_selected" not in result
+    assert "A_selected_long" not in result
+
+
+def test_compute_vsm_trim_stability_derivatives_with_w_state():
+    """Adding `w` to the longitudinal set extends A_selected_long to 4×4."""
+    result = compute_vsm_trim_stability_derivatives(
+        body_aero=_MockBody(),
+        center_of_gravity=np.zeros(3),
+        reference_point=np.zeros(3),
+        x_trim=_X_TRIM,
+        trim_result=_TRIM_RESULT,
+        solver=_MockSolver(),
+        mass=15.0,
+        inertia_xx=100.0,
+        inertia_yy=20.0,
+        inertia_zz=100.0,
+        states=["u", "w", "theta", "q", "v", "phi", "psi", "p", "r"],
+        coupled=False,
+    )
+    assert result["states_selected_long"] == ["u", "w", "theta", "q"]
+    assert result["A_selected_long"].shape == (4, 4)
+    assert result["A_selected_lat"].shape == (5, 5)
+    # theta_dot = q kinematic row
+    theta_row = result["states_selected_long"].index("theta")
+    q_col = result["states_selected_long"].index("q")
+    assert result["A_selected_long"][theta_row, q_col] == pytest.approx(1.0)
+
+
+def test_compute_vsm_trim_stability_derivatives_coupled_selection():
+    """coupled=True assembles a single A matrix over the selected states."""
+    sel = ["u", "w", "theta", "q", "v", "phi", "psi", "p", "r"]
+    result = compute_vsm_trim_stability_derivatives(
+        body_aero=_MockBody(),
+        center_of_gravity=np.zeros(3),
+        reference_point=np.zeros(3),
+        x_trim=_X_TRIM,
+        trim_result=_TRIM_RESULT,
+        solver=_MockSolver(),
+        mass=15.0,
+        inertia_xx=100.0,
+        inertia_yy=20.0,
+        inertia_zz=100.0,
+        states=sel,
+        coupled=True,
+    )
+    assert result["coupled_selected"] is True
+    assert result["A_selected"].shape == (9, 9)
+    assert result["J_selected"].shape == (6, 9)
+    assert result["states_selected"] == sel
+
+
+def test_compute_vsm_trim_stability_derivatives_rejects_unknown_state():
+    with pytest.raises(ValueError, match="Unknown stability state"):
+        compute_vsm_trim_stability_derivatives(
+            body_aero=_MockBody(),
+            center_of_gravity=np.zeros(3),
+            reference_point=np.zeros(3),
+            x_trim=_X_TRIM,
+            trim_result=_TRIM_RESULT,
+            solver=_MockSolver(),
+            states=["u", "not_a_state"],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Existing — verify backward-compatibility aliases
 # ---------------------------------------------------------------------------
 
 

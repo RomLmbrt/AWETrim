@@ -48,6 +48,18 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Ignore any structural geometry file and run aero-only.",
     )
+    parser.add_argument(
+        "--deformed-from",
+        default=None,
+        help=(
+            "Aerostructural results case directory (must contain "
+            "aero_geometry.yaml and struc_geometry.yaml). When set, the deformed "
+            "geometries from this directory are used in place of the ones in "
+            "--config-folder. system.yaml (mass/inertia/CoG/tether) is still "
+            "read from --config-folder and is NOT recomputed from the deformed "
+            "shape."
+        ),
+    )
     parser.add_argument("--n-panels", type=int, default=18)
     parser.add_argument("--spanwise-panel-distribution", default="uniform")
     parser.add_argument("--reference-point", default="0,0,0")
@@ -58,15 +70,24 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Wing mass in kg (default: from system.yaml)",
     )
-    parser.add_argument("--tether-diameter", type=float, default=0.0)
-    parser.add_argument("--wind-speed", type=float, default=5.0)
+    parser.add_argument(
+        "--tether-diameter",
+        type=float,
+        default=0.0,
+        help=(
+            "If > 0, force a RigidLumpedTether of this diameter, overriding the "
+            "tether model from as_config.yaml/system.yaml. Default 0.0 keeps the "
+            "configured tether (e.g. WilliamsTether)."
+        ),
+    )
+    parser.add_argument("--wind-speed", type=float, default=8.0)
     parser.add_argument("--elevation-deg", type=float, default=0.0)
     parser.add_argument("--azimuth-deg", type=float, default=0.0)
     parser.add_argument("--course-deg", type=float, default=90.0)
     parser.add_argument("--radial-speed", type=float, default=0.0)
     parser.add_argument("--distance-radial", type=float, default=200.0)
-    parser.add_argument("--x-guess", default="25,0,0,0,0")
-    parser.add_argument("--bounds-lower", default="2,-15,-15,-15,-5")
+    parser.add_argument("--x-guess", default="40,0,0,0,0")
+    parser.add_argument("--bounds-lower", default="-2,-15,-15,-15,-5")
     parser.add_argument("--bounds-upper", default="80,15,15,15,5")
     parser.add_argument(
         "--inertia-xx",
@@ -157,7 +178,9 @@ def _resolve_csv_paths(config: dict, config_folder: Path) -> dict:
 
 
 def _merge_aero_and_structural_geometry(
-    aero_geometry_path: Path, struc_geometry_path: Path
+    aero_geometry_path: Path,
+    struc_geometry_path: Path,
+    csv_root: Path | None = None,
 ) -> dict:
     """Load profiles from aero_geometry.yaml and geometry from struc_geometry.yaml.
 
@@ -167,6 +190,11 @@ def _merge_aero_and_structural_geometry(
 
     The structural file is still used separately via `bridle_path` and for
     physical properties in `load_config_from_folder`.
+
+    ``csv_root`` is the directory used to resolve relative ``csv_file_path``
+    entries. Defaults to the aero_geometry.yaml parent; pass the original
+    config folder when ``aero_geometry_path`` lives in a separate (e.g.
+    deformed-results) directory so the polar CSVs are still found.
     """
     import yaml
 
@@ -179,7 +207,7 @@ def _merge_aero_and_structural_geometry(
     merged_config = dict(aero_config)
 
     # Resolve CSV file paths to absolute paths
-    _resolve_csv_paths(merged_config, aero_geometry_path.parent)
+    _resolve_csv_paths(merged_config, csv_root or aero_geometry_path.parent)
 
     return merged_config
 
@@ -188,6 +216,7 @@ def load_config_from_folder(
     config_folder: Path | str,
     *,
     use_struc_geometry: bool = True,
+    deformed_from: Path | str | None = None,
 ) -> dict[str, Any]:
     """Load aerodynamic and physical properties from a config folder.
 
@@ -200,6 +229,11 @@ def load_config_from_folder(
     - If struc_geometry.yaml EXISTS: extract from components.kite (aggregate: wing+bridle+KCU)
     - If struc_geometry.yaml NOT FOUND: extract from components.kite.structure (wing only)
 
+    If ``deformed_from`` is given, aero_geometry.yaml and struc_geometry.yaml are
+    read from that directory instead (e.g. an aerostructural results case dir).
+    system.yaml is still read from ``config_folder`` -- mass/inertia/CoG are
+    NOT recomputed from the deformed geometry.
+
     Returns a dict with:
     - 'body_config': dict ready for VSM BodyAerodynamics.instantiate
     - 'mass': mass from system.yaml (kite if struc exists, wing structure else)
@@ -211,8 +245,15 @@ def load_config_from_folder(
     import yaml
 
     config_folder = Path(config_folder).expanduser().resolve()
+    geom_folder = (
+        Path(deformed_from).expanduser().resolve()
+        if deformed_from is not None
+        else config_folder
+    )
+    if not geom_folder.exists():
+        raise FileNotFoundError(f"deformed_from directory not found: {geom_folder}")
 
-    # Load system.yaml (physical properties)
+    # Load system.yaml (physical properties) — always from config_folder.
     system_yml = config_folder / "system.yaml"
     if not system_yml.exists():
         system_yml = config_folder / "system.yml"
@@ -222,16 +263,16 @@ def load_config_from_folder(
     with open(system_yml, "r") as f:
         system_config = yaml.safe_load(f)
 
-    # Load aero_geometry.yaml
-    aero_geometry_path = config_folder / "aero_geometry.yaml"
+    # Load aero_geometry.yaml from the geometry folder.
+    aero_geometry_path = geom_folder / "aero_geometry.yaml"
     if not aero_geometry_path.exists():
-        raise FileNotFoundError(f"aero_geometry.yaml not found in {config_folder}")
+        raise FileNotFoundError(f"aero_geometry.yaml not found in {geom_folder}")
 
     with open(aero_geometry_path, "r") as f:
         aero_config = yaml.safe_load(f)
 
-    # Check for an optional structural geometry file.
-    struc_geometry_path = config_folder / "struc_geometry.yaml"
+    # Optional structural geometry file (also from the geometry folder).
+    struc_geometry_path = geom_folder / "struc_geometry.yaml"
 
     # Select property source based on whether struc_geometry exists
     kite_node = system_config.get("components", {}).get("kite", {}).get("structure", {})
@@ -256,14 +297,16 @@ def load_config_from_folder(
             "center_of_mass": wing_struct.get("center_of_mass", [0.0, 0.0, 0.0]),
         }
 
-    # Build body config: merge aero + struc if available, else use aero alone
+    # Build body config: merge aero + struc if available, else use aero alone.
+    # Polar CSV paths are resolved against ``config_folder`` so they still
+    # work when ``deformed_from`` points the geometry yamls at a results dir
+    # that doesn't ship the polar files.
     if struc_geometry_path:
         body_config = _merge_aero_and_structural_geometry(
-            aero_geometry_path, struc_geometry_path
+            aero_geometry_path, struc_geometry_path, csv_root=config_folder
         )
     else:
         body_config = aero_config
-        # Resolve CSV paths to absolute even when not merging
         _resolve_csv_paths(body_config, config_folder)
 
     return {
@@ -295,6 +338,7 @@ def build_body(args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
     config = load_config_from_folder(
         args.config_folder,
         use_struc_geometry=not getattr(args, "no_struc_geometry", False),
+        deformed_from=getattr(args, "deformed_from", None),
     )
     body_config = config["body_config"]
 
@@ -329,19 +373,30 @@ def build_body(args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
 
 
 def build_system_model(args: argparse.Namespace, mass_wing: float | None = None):
+    import yaml
     from awetrim.system.factory import create_system_model_from_yaml
     from awetrim.system.system_model import SystemModel
     from awetrim.system.tether import RigidLumpedTether
 
     config_folder = Path(args.config_folder)
     system_yaml = next(
-        (config_folder / name for name in ("system.yaml", "system.yml")
-         if (config_folder / name).exists()),
+        (
+            config_folder / name
+            for name in ("system.yaml", "system.yml")
+            if (config_folder / name).exists()
+        ),
         None,
     )
 
+    as_config_path = config_folder / "as_config.yaml"
+    tether_cfg = None
+    if as_config_path.exists():
+        with open(as_config_path, "r") as f:
+            as_cfg = yaml.safe_load(f) or {}
+        tether_cfg = as_cfg.get("tether")
+
     if system_yaml is not None:
-        system = create_system_model_from_yaml(system_yaml)
+        system = create_system_model_from_yaml(system_yaml, tether_config=tether_cfg)
         if args.tether_diameter:
             system.tether = RigidLumpedTether(diameter=args.tether_diameter)
     else:

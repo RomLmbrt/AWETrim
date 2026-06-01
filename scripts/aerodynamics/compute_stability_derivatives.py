@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import yaml
 from matplotlib.animation import FuncAnimation
 
 from common import (
@@ -15,13 +18,112 @@ from common import (
     print_trim_summary,
     save_figure,
     write_json,
+    DEFAULT_OUTPUT_ROOT,
 )
 
 from awetrim.aerodynamics.vsm_quasi_steady import (
+    ALL_STATE_NAMES,
     DEFAULT_AXES,
+    LAT_STATES,
+    LONG_STATES,
     compute_vsm_trim_stability_derivatives,
+    solve_vsm_qs_trim_with_williams_tether,
     solve_vsm_quasi_steady_trim,
 )
+from awetrim.aerodynamics.protocols import AxisDefinition
+from awetrim.system.williams_tether import WilliamsTether
+
+_SRC_DIR = Path(__file__).resolve().parents[2] / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from awetrim.aerostructural.utils import load_sim_output
+from awetrim.identification.rigid_body_axes import (
+    compute_rigid_body_axes,
+    load_psm_nodes_and_masses,
+)
+
+# ---------------------------------------------------------------------------
+# Operating condition (edit here)
+# ---------------------------------------------------------------------------
+# These set the trim/stability operating point. They become the argument
+# defaults, so the matching CLI flags (--elevation-deg, --azimuth-deg,
+# --course-deg, --wind-speed, --radial-speed, --distance-radial) still
+# override them when provided.
+OPERATING_CONDITION = {
+    "elevation_deg": 35.0,
+    "azimuth_deg": 0.0,
+    "course_deg": 45.0,
+    "wind_speed": 8.0,
+    "radial_speed": 1.5,
+    "distance_radial": 200.0,
+}
+
+
+def _load_rigid_body_axes_from_result(result_path: Path, struc_override: Path | None):
+    """Load RigidBodyAxes from a structural result directory or struc_geometry YAML.
+
+    Priority (same as plot_body_axes.py):
+      1. struc_override (explicit --rigid-body-struc)
+      2. {result_path}/struc_geometry.yaml  (deformed, saved by save_geometry_snapshot)
+      3. HDF5 positions + data/{kite}/struc_geometry.yaml  (fallback)
+    """
+    result_path = result_path.resolve()
+    case_dir = result_path if result_path.is_dir() else result_path.parent
+
+    if struc_override is not None:
+        struc_path = struc_override.resolve()
+        with struc_path.open("r", encoding="utf-8") as f:
+            sg = yaml.safe_load(f)
+        nodes, m_arr = load_psm_nodes_and_masses(sg)
+    else:
+        saved = case_dir / "struc_geometry.yaml"
+        if saved.exists():
+            with saved.open("r", encoding="utf-8") as f:
+                sg = yaml.safe_load(f)
+            nodes, m_arr = load_psm_nodes_and_masses(sg)
+        else:
+            h5 = case_dir / "sim_output.h5"
+            if not h5.exists():
+                raise FileNotFoundError(
+                    f"No sim_output.h5 or struc_geometry.yaml in {case_dir}"
+                )
+            _, tracking = load_sim_output(h5)
+            nodes = np.asarray(tracking["positions"][-1], dtype=float)
+            # infer struc_geometry from path layout
+            parts = case_dir.parts
+            try:
+                ri = next(i for i, p in enumerate(parts) if p == "results")
+                kite_name = (
+                    parts[ri + 2]
+                    if parts[ri + 1] == "aerostructural"
+                    else parts[ri + 1]
+                )
+                project_root = Path(*parts[:ri])
+                fallback = project_root / "data" / kite_name / "struc_geometry.yaml"
+            except (StopIteration, IndexError):
+                raise FileNotFoundError(
+                    "Could not infer struc_geometry path from result layout."
+                )
+            if not fallback.exists():
+                raise FileNotFoundError(
+                    f"Fallback struc_geometry not found: {fallback}"
+                )
+            with fallback.open("r", encoding="utf-8") as f:
+                sg = yaml.safe_load(f)
+            _, m_arr = load_psm_nodes_and_masses(sg)
+
+    return compute_rigid_body_axes(nodes, m_arr)
+
+
+def _axes_to_dict(axes: AxisDefinition) -> dict[str, list[float]]:
+    """JSON-friendly axis definition."""
+    return {
+        "course": np.asarray(axes.course, dtype=float).tolist(),
+        "normal": np.asarray(axes.normal, dtype=float).tolist(),
+        "radial": np.asarray(axes.radial, dtype=float).tolist(),
+    }
+
 
 # ---------------------------------------------------------------------------
 # Animation helpers
@@ -137,73 +239,6 @@ def load_bridle_geometry(bridle_yaml_path) -> dict | None:
     }
 
 
-def _build_mode_figure(
-    panel_corners, origin, eig, label, block_title, mode_index, bridle_geom=None
-):
-    """Create the figure skeleton shared by both animation functions."""
-    fig = plt.figure(figsize=(12, 8))
-    ax3d = fig.add_subplot(121, projection="3d")
-    stab_char = "stable" if eig.real < 0 else "UNSTABLE"
-    freq = abs(eig.imag) / (2 * np.pi)
-    ax3d.set_title(
-        f"{block_title} mode {mode_index}  [{stab_char}]\n"
-        f"λ = {eig.real:+.3f}{eig.imag:+.3f}j  f={freq:.3f} Hz",
-        fontsize=9,
-    )
-    ax3d.set_xlabel("x [m]")
-    ax3d.set_ylabel("y [m]")
-    ax3d.set_zlabel("z [m]")
-    ax3d.grid(True, alpha=0.25)
-
-    all_pts = panel_corners.reshape(-1, 3)
-    ctr = np.mean(all_pts, axis=0)
-    hr = max(0.6 * np.max(np.ptp(all_pts, axis=0)), 1.0)
-    ax3d.set_xlim(ctr[0] - hr, ctr[0] + hr)
-    ax3d.set_ylim(ctr[1] - hr, ctr[1] + hr)
-    ax3d.set_zlim(ctr[2] - hr, ctr[2] + hr)
-    ax3d.view_init(elev=20, azim=-120)
-
-    panel_lines = [
-        ax3d.plot([], [], [], color="tab:blue", linewidth=1.1)[0]
-        for _ in range(panel_corners.shape[0])
-    ]
-
-    # Pre-build animated line objects for bridle if geometry is available
-    wing_struct_lines: list = []
-    bridle_lines: list = []
-    kcu_marker = None
-    if bridle_geom is not None:
-        for _ in bridle_geom["wing_edges"]:
-            (ln,) = ax3d.plot([], [], [], color="0.55", linewidth=0.7, zorder=1)
-            wing_struct_lines.append(ln)
-        for _ in bridle_geom["bridle_edges"]:
-            (ln,) = ax3d.plot(
-                [], [], [], color="tab:orange", linewidth=0.6, linestyle="--", zorder=1
-            )
-            bridle_lines.append(ln)
-        kcu_pt = bridle_geom["kcu_point"]
-        (kcu_marker,) = ax3d.plot(
-            [kcu_pt[0]],
-            [kcu_pt[1]],
-            [kcu_pt[2]],
-            "D",
-            color="tab:red",
-            markersize=5,
-            zorder=6,
-        )
-
-    status_txt = ax3d.text2D(0.02, 0.96, "", transform=ax3d.transAxes, fontsize=8)
-    return (
-        fig,
-        ax3d,
-        panel_lines,
-        wing_struct_lines,
-        bridle_lines,
-        kcu_marker,
-        status_txt,
-    )
-
-
 def _update_bridle_lines(
     bridle_geom,
     wing_struct_lines,
@@ -236,12 +271,137 @@ def _update_bridle_lines(
         kcu_marker.set_3d_properties([kcu_pt[2]])
 
 
-def animate_longitudinal_mode(
+# Per-state metadata used by the generic animator. `category` drives both the
+# 3D rotation contribution and the side-plot units. `trim_key` indexes into
+# trim_result["opt_x"] via _trim_baseline_rad below; states with trim_key=None
+# are zero at trim (e.g. v, w, p, q).
+_STATE_META = {
+    "u": {"category": "velocity", "label": "u", "unit": "m/s", "trim_key": "u"},
+    "v": {"category": "velocity", "label": "v", "unit": "m/s", "trim_key": None},
+    "w": {"category": "velocity", "label": "w", "unit": "m/s", "trim_key": None},
+    "z": {"category": "position", "label": "z", "unit": "m", "trim_key": None},
+    "phi": {"category": "angle", "label": "phi", "unit": "deg", "trim_key": "phi"},
+    "theta": {
+        "category": "angle",
+        "label": "theta",
+        "unit": "deg",
+        "trim_key": "theta",
+    },
+    "psi": {"category": "angle", "label": "psi", "unit": "deg", "trim_key": "psi"},
+    "p": {"category": "rate", "label": "p", "unit": "rad/s", "trim_key": None},
+    "q": {"category": "rate", "label": "q", "unit": "rad/s", "trim_key": None},
+    "r": {"category": "rate", "label": "r", "unit": "rad/s", "trim_key": "r"},
+}
+
+
+def _trim_baseline_rad(trim_result: dict) -> dict[str, float]:
+    """Trim values for states that have one. Angles are returned in radians."""
+    opt_x = trim_result["opt_x"]
+    return {
+        "u": float(opt_x[0]),
+        "phi": float(np.deg2rad(opt_x[1])),
+        "theta": float(np.deg2rad(opt_x[2])),
+        "psi": float(np.deg2rad(opt_x[3])),
+        "r": float(opt_x[4]),
+    }
+
+
+def _nondim_weights(states: list[str], U_ref: float, L_ref: float) -> np.ndarray:
+    """Per-state weight that converts a dimensional eigenvector component to a
+    common dimensionless basis.
+
+      velocity  →  v / U_ref               (m/s -> ratio of airspeed)
+      angle     →  unchanged               (already in radians)
+      rate      →  omega * L_ref / U_ref   (standard aerodynamic non-dim)
+
+    With these weights every component is dimensionless and directly
+    comparable: 1.0 means "a swing of one trim airspeed", "one radian",
+    or "a rotation that sweeps L_ref in time L_ref/U_ref".
+    """
+    if U_ref <= 0.0:
+        U_ref = 1.0
+    if L_ref <= 0.0:
+        L_ref = 1.0
+    w = np.ones(len(states), dtype=float)
+    for i, s in enumerate(states):
+        cat = _STATE_META[s]["category"]
+        if cat == "velocity":
+            w[i] = 1.0 / U_ref
+        elif cat == "position":
+            w[i] = 1.0 / L_ref
+        elif cat == "rate":
+            w[i] = L_ref / U_ref
+    return w
+
+
+def _characteristic_length(body_aero) -> float:
+    """Half-span of the body's panel geometry, used as L_ref for non-dim rates."""
+    try:
+        corners = np.array(
+            [panel.corner_points for panel in body_aero.panels], dtype=float
+        ).reshape(-1, 3)
+        half_span = float(np.max(np.abs(corners[:, 1])))
+        if half_span > 1e-3:
+            return half_span
+        max_chord = max(float(panel.chord) for panel in body_aero.panels)
+        return max(max_chord, 1.0)
+    except Exception:
+        return 1.0
+
+
+def _scale_mode_dimensionless(
+    mode_vec: np.ndarray,
+    weights: np.ndarray,
+    amplitude_rad: float,
+) -> np.ndarray:
+    """Scale the dimensional eigenvector so its largest dimensionless component
+    reaches ``amplitude_rad``.
+
+    Avoids the "u blows up to 50 m/s because the attitude component happened to
+    be tiny" artefact of normalising on a single physical quantity.
+    """
+    nondim_mag = np.abs(mode_vec) * weights
+    max_nd = nondim_mag.max() if nondim_mag.size else 0.0
+    if max_nd < 1e-12:
+        return mode_vec
+    return mode_vec * (amplitude_rad / max_nd)
+
+
+def _pick_dominant_states(
+    response: np.ndarray,
+    states: list[str],
+    *,
+    weights: np.ndarray | None = None,
+    max_n: int = 4,
+    rel_threshold: float = 0.05,
+) -> list[int]:
+    """Return state indices to plot, ranked by peak |response| (weighted to a
+    dimensionless basis when ``weights`` is given) above a relative cutoff."""
+    if response.size == 0:
+        return []
+    peaks = np.max(np.abs(response), axis=1)
+    if weights is not None:
+        peaks = peaks * np.asarray(weights)
+    if peaks.max() < 1e-12:
+        return []
+    cutoff = rel_threshold * peaks.max()
+    ranked = sorted(
+        (i for i in range(len(states)) if peaks[i] >= cutoff),
+        key=lambda i: peaks[i],
+        reverse=True,
+    )
+    return ranked[:max_n]
+
+
+def animate_eigenmode(
     body_aero,
     trim_result: dict,
-    stability: dict,
+    eig: complex,
+    mode_vec: np.ndarray,
+    states: list[str],
     mode_index: int,
     *,
+    block_title: str,
     out_path,
     fps: int = 8,
     n_frames: int = 60,
@@ -251,98 +411,243 @@ def animate_longitudinal_mode(
     reference_point: np.ndarray | None = None,
     bridle_geom: dict | None = None,
 ) -> None:
-    """Save a GIF/MP4 of one longitudinal eigenmode (pitch + speed).
+    """Animate one eigenmode for an arbitrary state selection.
 
-    Physics duration is auto-computed from the eigenvalue so the animation
-    always covers the interesting transient. All time axes show real physics time.
+    The 3D body rotation is composed from whichever of ``phi``, ``theta``, ``psi``
+    are in ``states`` (others stay at trim). The side panel shows the time
+    response of only the most relevant states for this mode (peak |component|
+    >= 15 % of the mode's maximum, capped at 4 plots).
     """
-    eig_long = np.asarray(stability["eig_long"], dtype=complex)
-    vec_long = np.asarray(stability["vec_long"], dtype=complex)
+    states = list(states)
+    mode_vec = np.asarray(mode_vec, dtype=complex).copy()
 
-    eig = eig_long[mode_index]
-    mode_vec = vec_long[:, mode_index].copy()
-
-    norm_factor = max(abs(mode_vec[1]), 1e-12)  # normalise by theta (index 1)
-    mode_vec = mode_vec / norm_factor
+    # Non-dimensionalisation reference values. U_ref is the trim apparent-wind
+    # magnitude; L_ref is the body half-span. Used to put velocities, angles
+    # and rates on a common dimensionless basis for both mode-vector scaling
+    # and mode-shape comparison.
+    U_ref = float(trim_result.get("Umag", trim_result["opt_x"][0]))
+    if U_ref <= 0.0:
+        U_ref = 1.0
+    L_ref = _characteristic_length(body_aero)
+    weights = _nondim_weights(states, U_ref, L_ref)
+    mode_vec = _scale_mode_dimensionless(mode_vec, weights, amplitude_rad)
 
     t_phys_end = _physics_duration(eig, max_s=max_physics_s)
     t_phys = np.linspace(0.0, t_phys_end, n_frames)
+    response = _mode_time_response(eig, mode_vec, t_phys, 1.0)  # (n_states, n_frames)
 
-    response = _mode_time_response(eig, mode_vec, t_phys, amplitude_rad)
-    u_perturb = response[0, :]
-    theta_perturb = response[1, :]
-
-    trim_pitch_rad = np.deg2rad(float(trim_result["opt_x"][2]))
-    trim_speed = float(trim_result["opt_x"][0])
+    trim_rad = _trim_baseline_rad(trim_result)
+    state_to_idx = {s: i for i, s in enumerate(states)}
+    dominant_indices = _pick_dominant_states(response, states, weights=weights)
+    n_plots = max(len(dominant_indices), 1)
 
     panel_corners = np.array(
         [panel.corner_points for panel in body_aero.panels], dtype=float
     )
     origin = np.asarray(
-        reference_point if reference_point is not None else [0.0, 0.0, 0.0], dtype=float
+        reference_point if reference_point is not None else [0.0, 0.0, 0.0],
+        dtype=float,
     )
 
-    fig, ax3d, panel_lines, wing_struct_lines, bridle_lines, kcu_marker, status_txt = (
-        _build_mode_figure(
-            panel_corners,
-            origin,
-            eig,
-            "θ",
-            "Longitudinal",
-            mode_index,
-            bridle_geom=bridle_geom,
+    fig = plt.figure(figsize=(15, max(6.0, 2.0 * n_plots + 1.5)))
+    gs = fig.add_gridspec(n_plots, 3, width_ratios=[1.3, 0.55, 1.0])
+    ax3d = fig.add_subplot(gs[:, 0], projection="3d")
+    ax_bars = fig.add_subplot(gs[:, 1])
+
+    stab_char = "stable" if eig.real < 0 else "UNSTABLE"
+    freq = abs(eig.imag) / (2 * np.pi)
+    ax3d.set_title(
+        f"{block_title} mode {mode_index}  [{stab_char}]\n"
+        f"states={states}\n"
+        f"λ = {eig.real:+.3f}{eig.imag:+.3f}j  f={freq:.3f} Hz",
+        fontsize=8,
+    )
+    ax3d.set_xlabel("x [m]")
+    ax3d.set_ylabel("y [m]")
+    ax3d.set_zlabel("z [m]")
+    ax3d.grid(True, alpha=0.25)
+
+    all_pts = panel_corners.reshape(-1, 3)
+    ctr = np.mean(all_pts, axis=0)
+    hr = max(0.6 * np.max(np.ptp(all_pts, axis=0)), 1.0)
+    ax3d.set_xlim(ctr[0] - hr, ctr[0] + hr)
+    ax3d.set_ylim(ctr[1] - hr, ctr[1] + hr)
+    ax3d.set_zlim(ctr[2] - hr, ctr[2] + hr)
+    ax3d.view_init(elev=20, azim=-120)
+
+    panel_lines = [
+        ax3d.plot([], [], [], color="tab:blue", linewidth=1.1)[0]
+        for _ in range(panel_corners.shape[0])
+    ]
+
+    wing_struct_lines: list = []
+    bridle_lines: list = []
+    kcu_marker = None
+    if bridle_geom is not None:
+        for _ in bridle_geom["wing_edges"]:
+            (ln,) = ax3d.plot([], [], [], color="0.55", linewidth=0.7, zorder=1)
+            wing_struct_lines.append(ln)
+        for _ in bridle_geom["bridle_edges"]:
+            (ln,) = ax3d.plot(
+                [], [], [], color="tab:orange", linewidth=0.6, linestyle="--", zorder=1
+            )
+            bridle_lines.append(ln)
+        kcu_pt = bridle_geom["kcu_point"]
+        (kcu_marker,) = ax3d.plot(
+            [kcu_pt[0]],
+            [kcu_pt[1]],
+            [kcu_pt[2]],
+            "D",
+            color="tab:red",
+            markersize=5,
+            zorder=6,
         )
+
+    status_txt = ax3d.text2D(0.02, 0.96, "", transform=ax3d.transAxes, fontsize=8)
+
+    # Mode-shape bar chart: per state in canonical order, drawn from the
+    # *dimensionless* eigenvector so velocities (m/s) don't dwarf attitudes
+    # (rad) just because of units. Each component is multiplied by its
+    # non-dim weight, then normalised by the largest dimensionless component.
+    # Bars below the relevance threshold are drawn faded so the user can see
+    # all components at once. For complex modes the phase of each component
+    # (deg) is annotated next to the bar.
+    _category_color = {
+        "velocity": "tab:blue",
+        "position": "tab:purple",
+        "angle": "tab:orange",
+        "rate": "tab:green",
+    }
+    rel_threshold = 0.15
+    nondim_mag = np.abs(mode_vec) * weights
+    norm = nondim_mag.max() if nondim_mag.size else 1.0
+    if norm < 1e-12:
+        norm = 1.0
+    rel_mag = nondim_mag / norm
+    is_complex_mode = bool(np.any(np.abs(mode_vec.imag) > 1e-9))
+    phases_deg = np.rad2deg(np.angle(mode_vec))
+
+    y_positions = np.arange(len(states))
+    for k, s in enumerate(states):
+        meta = _STATE_META[s]
+        color = _category_color[meta["category"]]
+        alpha = 1.0 if rel_mag[k] >= rel_threshold else 0.35
+        ax_bars.barh(y_positions[k], rel_mag[k], color=color, alpha=alpha, height=0.7)
+        annotation = f"{rel_mag[k] * 100:.0f}%"
+        if is_complex_mode:
+            annotation += f"  ∠{phases_deg[k]:+.0f}°"
+        ax_bars.text(
+            min(rel_mag[k] + 0.03, 1.02),
+            y_positions[k],
+            annotation,
+            va="center",
+            fontsize=7,
+            color="0.25" if alpha == 1.0 else "0.55",
+        )
+
+    ax_bars.set_yticks(y_positions)
+    ax_bars.set_yticklabels([_STATE_META[s]["label"] for s in states], fontsize=8)
+    ax_bars.invert_yaxis()
+    ax_bars.set_xlim(0.0, 1.25)
+    ax_bars.set_xticks([0.0, 0.5, 1.0])
+    ax_bars.set_xlabel("|v|·w / max(|v|·w)", fontsize=8)
+    ax_bars.set_title(
+        f"Mode shape (non-dim)\nU_ref={U_ref:.1f} m/s, L_ref={L_ref:.2f} m",
+        fontsize=8,
     )
+    ax_bars.axvline(rel_threshold, color="0.5", linestyle="--", linewidth=0.7)
+    ax_bars.tick_params(axis="x", labelsize=7)
+    ax_bars.grid(True, axis="x", alpha=0.25)
 
-    ax_u = fig.add_subplot(222)
-    ax_u.set_title("Speed perturbation  u(t)", fontsize=9)
-    ax_u.set_xlabel("t [s]", fontsize=8)
-    ax_u.set_ylabel("u [m/s]", fontsize=8)
-    u_total = trim_speed + u_perturb
-    ax_u.plot(t_phys, u_total, color="0.7", linewidth=1)
-    (u_line,) = ax_u.plot([], [], color="tab:blue", linewidth=2)
-    (u_marker,) = ax_u.plot([], [], "o", color="tab:blue")
-    ax_u.set_xlim(0.0, t_phys_end)
-    pad = max(0.05 * np.ptp(u_total), 0.1)
-    ax_u.set_ylim(u_total.min() - pad, u_total.max() + pad)
-    ax_u.grid(True, alpha=0.3)
+    # Build a side plot per dominant state. Plot trim+perturbation; convert
+    # angle states to degrees for display.
+    side_axes: list[tuple] = (
+        []
+    )  # (ax, state_idx, total_series, unit, label, line, marker)
+    plot_colors = ["tab:blue", "tab:orange", "tab:green", "tab:red"]
+    for k, sidx in enumerate(dominant_indices):
+        state = states[sidx]
+        meta = _STATE_META[state]
+        perturb = np.real(response[sidx, :])
+        trim_val = trim_rad[meta["trim_key"]] if meta["trim_key"] is not None else 0.0
+        total = trim_val + perturb
+        if meta["category"] == "angle":
+            display_series = np.rad2deg(total)
+        else:
+            display_series = total
+        ax = fig.add_subplot(gs[k, 2])
+        color = plot_colors[k % len(plot_colors)]
+        ax.set_title(f"{meta['label']}(t)", fontsize=9)
+        ax.set_xlabel("t [s]", fontsize=8)
+        ax.set_ylabel(f"{meta['label']} [{meta['unit']}]", fontsize=8)
+        ax.plot(t_phys, display_series, color="0.7", linewidth=1)
+        (line,) = ax.plot([], [], color=color, linewidth=2)
+        (marker,) = ax.plot([], [], "o", color=color)
+        ax.set_xlim(0.0, t_phys_end)
+        pad = max(0.05 * np.ptp(display_series), 0.1)
+        ax.set_ylim(display_series.min() - pad, display_series.max() + pad)
+        ax.grid(True, alpha=0.3)
+        side_axes.append(
+            (ax, sidx, display_series, meta["unit"], meta["label"], line, marker)
+        )
 
-    ax_theta = fig.add_subplot(224)
-    ax_theta.set_title("Pitch  θ(t)", fontsize=9)
-    ax_theta.set_xlabel("t [s]", fontsize=8)
-    ax_theta.set_ylabel("θ [deg]", fontsize=8)
-    theta_total_deg = np.rad2deg(trim_pitch_rad + theta_perturb)
-    ax_theta.plot(t_phys, theta_total_deg, color="0.7", linewidth=1)
-    (theta_line,) = ax_theta.plot([], [], color="tab:orange", linewidth=2)
-    (theta_marker,) = ax_theta.plot([], [], "o", color="tab:orange")
-    ax_theta.set_xlim(0.0, t_phys_end)
-    pad = max(0.05 * np.ptp(theta_total_deg), 0.1)
-    ax_theta.set_ylim(theta_total_deg.min() - pad, theta_total_deg.max() + pad)
-    ax_theta.grid(True, alpha=0.3)
+    if not dominant_indices:
+        ax = fig.add_subplot(gs[0, 2])
+        ax.text(
+            0.5,
+            0.5,
+            "No state in this mode exceeds the\nrelevance threshold.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=10,
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
 
     extra = [*wing_struct_lines, *bridle_lines] + ([kcu_marker] if kcu_marker else [])
+    animated_lines = [side[5] for side in side_axes]
+    animated_markers = [side[6] for side in side_axes]
+
+    def _attitude_perturb_rad(fi: int) -> tuple[float, float, float]:
+        """Per-frame attitude offsets (roll, pitch, yaw) in radians."""
+        phi_p = (
+            float(np.real(response[state_to_idx["phi"], fi]))
+            if "phi" in state_to_idx
+            else 0.0
+        )
+        theta_p = (
+            float(np.real(response[state_to_idx["theta"], fi]))
+            if "theta" in state_to_idx
+            else 0.0
+        )
+        psi_p = (
+            float(np.real(response[state_to_idx["psi"], fi]))
+            if "psi" in state_to_idx
+            else 0.0
+        )
+        return phi_p, theta_p, psi_p
 
     def init():
         for ln in panel_lines:
             ln.set_data([], [])
             ln.set_3d_properties([])
-        u_line.set_data([], [])
-        u_marker.set_data([], [])
-        theta_line.set_data([], [])
-        theta_marker.set_data([], [])
-        return [
-            *panel_lines,
-            *extra,
-            status_txt,
-            u_line,
-            u_marker,
-            theta_line,
-            theta_marker,
-        ]
+        for line in animated_lines:
+            line.set_data([], [])
+        for marker in animated_markers:
+            marker.set_data([], [])
+        return [*panel_lines, *extra, status_txt, *animated_lines, *animated_markers]
 
     def update(fi: int):
-        theta_t = trim_pitch_rad + float(theta_perturb[fi])
-        R = _rot_rad(DEFAULT_AXES.normal, theta_t)
+        phi_p, theta_p, psi_p = _attitude_perturb_rad(fi)
+        phi_t = trim_rad["phi"] + phi_p
+        theta_t = trim_rad["theta"] + theta_p
+        psi_t = trim_rad["psi"] + psi_p
+        R = (
+            _rot_rad(DEFAULT_AXES.radial, psi_t)
+            @ _rot_rad(DEFAULT_AXES.normal, theta_t)
+            @ _rot_rad(DEFAULT_AXES.course, phi_t)
+        )
         rot = _rotate_pts(panel_corners, R, origin)
         for idx, ln in enumerate(panel_lines):
             c = np.vstack([rot[idx], rot[idx][0]])
@@ -351,165 +656,18 @@ def animate_longitudinal_mode(
         _update_bridle_lines(
             bridle_geom, wing_struct_lines, bridle_lines, kcu_marker, R, origin
         )
-        u_t = trim_speed + float(u_perturb[fi])
-        status_txt.set_text(
-            f"t={t_phys[fi]:.4f} s  |  u={u_t:+.2f} m/s  θ={np.rad2deg(theta_t):+.2f}°"
-        )
-        u_line.set_data(t_phys[: fi + 1], u_total[: fi + 1])
-        u_marker.set_data([t_phys[fi]], [u_total[fi]])
-        theta_line.set_data(t_phys[: fi + 1], theta_total_deg[: fi + 1])
-        theta_marker.set_data([t_phys[fi]], [theta_total_deg[fi]])
-        return [
-            *panel_lines,
-            *extra,
-            status_txt,
-            u_line,
-            u_marker,
-            theta_line,
-            theta_marker,
-        ]
-
-    anim = FuncAnimation(
-        fig, update, init_func=init, frames=n_frames, interval=1000.0 / fps, blit=False
-    )
-    fig.tight_layout()
-    _save_animation(anim, out_path, fps=fps, fmt=fmt)
-    plt.close(fig)
-
-
-def animate_lateral_mode(
-    body_aero,
-    trim_result: dict,
-    stability: dict,
-    mode_index: int,
-    *,
-    out_path,
-    fps: int = 8,
-    n_frames: int = 60,
-    amplitude_rad: float = np.deg2rad(5.0),
-    max_physics_s: float = 30.0,
-    fmt: str = "gif",
-    reference_point: np.ndarray | None = None,
-    bridle_geom: dict | None = None,
-) -> None:
-    """Save a GIF/MP4 of one lateral eigenmode (roll + yaw).
-
-    Physics duration is auto-computed from the eigenvalue. All time axes show
-    real physics time in seconds.
-    """
-    eig_lat = np.asarray(stability["eig_lat"], dtype=complex)
-    vec_lat = np.asarray(stability["vec_lat"], dtype=complex)
-
-    eig = eig_lat[mode_index]
-    mode_vec = vec_lat[:, mode_index].copy()
-
-    # Normalise by the largest of phi/psi (indices 1, 2)
-    norm_factor = max(np.max(np.abs(mode_vec[1:3])), 1e-12)
-    mode_vec = mode_vec / norm_factor
-
-    t_phys_end = _physics_duration(eig, max_s=max_physics_s)
-    t_phys = np.linspace(0.0, t_phys_end, n_frames)
-
-    response = _mode_time_response(eig, mode_vec, t_phys, amplitude_rad)
-    phi_perturb = response[1, :]
-    psi_perturb = response[2, :]
-
-    trim_roll_rad = np.deg2rad(float(trim_result["opt_x"][1]))
-    trim_yaw_rad = np.deg2rad(float(trim_result["opt_x"][3]))
-
-    panel_corners = np.array(
-        [panel.corner_points for panel in body_aero.panels], dtype=float
-    )
-    origin = np.asarray(
-        reference_point if reference_point is not None else [0.0, 0.0, 0.0], dtype=float
-    )
-
-    fig, ax3d, panel_lines, wing_struct_lines, bridle_lines, kcu_marker, status_txt = (
-        _build_mode_figure(
-            panel_corners,
-            origin,
-            eig,
-            "φ/ψ",
-            "Lateral",
-            mode_index,
-            bridle_geom=bridle_geom,
-        )
-    )
-
-    ax_phi = fig.add_subplot(222)
-    ax_phi.set_title("Roll  φ(t)", fontsize=9)
-    ax_phi.set_xlabel("t [s]", fontsize=8)
-    ax_phi.set_ylabel("φ [deg]", fontsize=8)
-    phi_total_deg = np.rad2deg(trim_roll_rad + phi_perturb)
-    ax_phi.plot(t_phys, phi_total_deg, color="0.7", linewidth=1)
-    (phi_line,) = ax_phi.plot([], [], color="tab:blue", linewidth=2)
-    (phi_marker,) = ax_phi.plot([], [], "o", color="tab:blue")
-    ax_phi.set_xlim(0.0, t_phys_end)
-    pad = max(0.05 * np.ptp(phi_total_deg), 0.1)
-    ax_phi.set_ylim(phi_total_deg.min() - pad, phi_total_deg.max() + pad)
-    ax_phi.grid(True, alpha=0.3)
-
-    ax_psi = fig.add_subplot(224)
-    ax_psi.set_title("Yaw  ψ(t)", fontsize=9)
-    ax_psi.set_xlabel("t [s]", fontsize=8)
-    ax_psi.set_ylabel("ψ [deg]", fontsize=8)
-    psi_total_deg = np.rad2deg(trim_yaw_rad + psi_perturb)
-    ax_psi.plot(t_phys, psi_total_deg, color="0.7", linewidth=1)
-    (psi_line,) = ax_psi.plot([], [], color="tab:orange", linewidth=2)
-    (psi_marker,) = ax_psi.plot([], [], "o", color="tab:orange")
-    ax_psi.set_xlim(0.0, t_phys_end)
-    pad = max(0.05 * np.ptp(psi_total_deg), 0.1)
-    ax_psi.set_ylim(psi_total_deg.min() - pad, psi_total_deg.max() + pad)
-    ax_psi.grid(True, alpha=0.3)
-
-    extra = [*wing_struct_lines, *bridle_lines] + ([kcu_marker] if kcu_marker else [])
-
-    def init():
-        for ln in panel_lines:
-            ln.set_data([], [])
-            ln.set_3d_properties([])
-        phi_line.set_data([], [])
-        phi_marker.set_data([], [])
-        psi_line.set_data([], [])
-        psi_marker.set_data([], [])
-        return [
-            *panel_lines,
-            *extra,
-            status_txt,
-            phi_line,
-            phi_marker,
-            psi_line,
-            psi_marker,
-        ]
-
-    def update(fi: int):
-        phi_t = trim_roll_rad + float(phi_perturb[fi])
-        psi_t = trim_yaw_rad + float(psi_perturb[fi])
-        R = _rot_rad(DEFAULT_AXES.radial, psi_t) @ _rot_rad(DEFAULT_AXES.course, phi_t)
-        rot = _rotate_pts(panel_corners, R, origin)
-        for idx, ln in enumerate(panel_lines):
-            c = np.vstack([rot[idx], rot[idx][0]])
-            ln.set_data(c[:, 0], c[:, 1])
-            ln.set_3d_properties(c[:, 2])
-        _update_bridle_lines(
-            bridle_geom, wing_struct_lines, bridle_lines, kcu_marker, R, origin
-        )
-        status_txt.set_text(
-            f"t={t_phys[fi]:.4f} s  |  φ={np.rad2deg(phi_t):+.2f}°  ψ={np.rad2deg(psi_t):+.2f}°"
-        )
-        phi_line.set_data(t_phys[: fi + 1], phi_total_deg[: fi + 1])
-        phi_marker.set_data([t_phys[fi]], [phi_total_deg[fi]])
-        psi_line.set_data(t_phys[: fi + 1], psi_total_deg[: fi + 1])
-        psi_marker.set_data([t_phys[fi]], [psi_total_deg[fi]])
-        return [
-            *panel_lines,
-            *extra,
-            status_txt,
-            phi_line,
-            phi_marker,
-            psi_line,
-            psi_marker,
-        ]
+        # Status line shows the dominant state's current value.
+        if dominant_indices:
+            parts = []
+            for _, sidx, series, unit, label, _line, _marker in side_axes:
+                parts.append(f"{label}={series[fi]:+.2f} {unit}")
+            status_txt.set_text(f"t={t_phys[fi]:.3f} s | " + "  ".join(parts))
+        else:
+            status_txt.set_text(f"t={t_phys[fi]:.3f} s")
+        for _, sidx, series, _unit, _label, line, marker in side_axes:
+            line.set_data(t_phys[: fi + 1], series[: fi + 1])
+            marker.set_data([t_phys[fi]], [series[fi]])
+        return [*panel_lines, *extra, status_txt, *animated_lines, *animated_markers]
 
     anim = FuncAnimation(
         fig, update, init_func=init, frames=n_frames, interval=1000.0 / fps, blit=False
@@ -529,9 +687,41 @@ def main() -> None:
         description="Solve VSM aerodynamic trim and compute stability derivatives."
     )
     add_common_arguments(parser)
+    # Apply the script-level operating condition as defaults (CLI still overrides).
+    parser.set_defaults(**OPERATING_CONDITION)
+    parser.add_argument(
+        "--deformed-case",
+        default=None,
+        help=(
+            "Name of a result case folder under --deformed-root "
+            "(e.g. depower_p0000mm_steer_p0200mm). Uses that case's deformed "
+            "aero_geometry.yaml/struc_geometry.yaml for the trim (shortcut for "
+            "--deformed-from). Mass/inertia/CoG/tether still come from "
+            "system.yaml in --config-folder."
+        ),
+    )
+    parser.add_argument(
+        "--deformed-root",
+        default=None,
+        help=(
+            "Directory holding the deformed result cases "
+            "(default: results/<kite>/aerostructural, derived from --config-folder)."
+        ),
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List available deformed cases under --deformed-root and exit.",
+    )
     parser.add_argument("--eps-vel", type=float, default=0.1)
     parser.add_argument("--eps-angle-deg", type=float, default=0.5)
     parser.add_argument("--eps-rate", type=float, default=0.01)
+    parser.add_argument(
+        "--eps-position",
+        type=float,
+        default=0.5,
+        help="Finite-difference step [m] for radial position state `z`.",
+    )
     parser.add_argument(
         "--no-animate",
         action="store_true",
@@ -567,15 +757,190 @@ def main() -> None:
         default=30.0,
         help="Cap on real physics time shown per animation (default: 30 s).",
     )
+    parser.add_argument(
+        "--states",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated stability states from "
+            f"{{{', '.join(ALL_STATE_NAMES)}}}. "
+            "Defaults to the 9-state rigid-body set "
+            f"{','.join(list(LONG_STATES) + list(LAT_STATES))} "
+            "(full state minus lateral velocity `v`). "
+            "Use 'all' to select every state. Overrides --stability-config."
+        ),
+    )
+    parser.add_argument(
+        "--include-w",
+        action="store_true",
+        help="Convenience: add `w` (vertical body speed) to the default state set.",
+    )
+    parser.add_argument(
+        "--coupled",
+        action="store_true",
+        help=(
+            "Assemble a single coupled A matrix from the selected states "
+            "(default: split into longitudinal + lateral sub-blocks). "
+            "Overrides --stability-config."
+        ),
+    )
+    parser.add_argument(
+        "--stability-config",
+        type=Path,
+        default=None,
+        help=(
+            "Optional YAML file with `states:` (list), `coupled:` (bool), "
+            "and `frame:` ('course' or 'body') keys. CLI flags "
+            "(--states / --coupled / --include-w / --stability-frame) override "
+            "this file when both are provided."
+        ),
+    )
+    parser.add_argument(
+        "--stability-frame",
+        choices=["course", "body"],
+        default=None,
+        help=(
+            "Frame used for stability perturbations and force/moment outputs. "
+            "`course` uses course/normal/radial axes (default). `body` uses "
+            "identified rigid-body principal axes and requires --rigid-body-result."
+        ),
+    )
+    parser.add_argument(
+        "--rigid-body-result",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a structural result directory (or sim_output.h5). "
+            "Loads identified body axes, CG, and inertia from the PSM model, "
+            "overriding --center-of-gravity and --inertia-xx/yy/zz."
+        ),
+    )
+    parser.add_argument(
+        "--rigid-body-struc",
+        type=Path,
+        default=None,
+        help="struc_geometry.yaml to use with --rigid-body-result (auto-detected if omitted).",
+    )
     args = parser.parse_args()
+
+    # Resolve the deformed-results case selection (--deformed-case / --list-cases).
+    kite_name = Path(args.config_folder).name
+    deformed_root = (
+        Path(args.deformed_root)
+        if args.deformed_root
+        else DEFAULT_OUTPUT_ROOT.parent / kite_name / "aerostructural"
+    )
+    if args.list_cases:
+        print(f"Deformed-result cases under {deformed_root}:")
+        if deformed_root.is_dir():
+            cases = sorted(
+                d.name
+                for d in deformed_root.iterdir()
+                if d.is_dir() and (d / "aero_geometry.yaml").exists()
+            )
+            for name in cases:
+                print(f"  {name}")
+            if not cases:
+                print("  (none found)")
+        else:
+            print("  (directory does not exist)")
+        return
+    if args.deformed_case:
+        case_dir = deformed_root / args.deformed_case
+        if not case_dir.is_dir():
+            parser.error(
+                f"--deformed-case '{args.deformed_case}' not found under {deformed_root}. "
+                "Use --list-cases to see available cases."
+            )
+        # build_body reads args.deformed_from to use the frozen deformed geometry.
+        args.deformed_from = str(case_dir)
+        print(f"Using deformed geometry from: {case_dir}")
+
     values = parsed_common(args)
     out_dir = output_dir(args, "stability_derivatives")
+
+    if args.stability_config is None:
+        default_cfg = Path(args.config_folder) / "stability_config.yaml"
+        if not default_cfg.exists():
+            default_cfg = Path(args.config_folder) / "stability_config.yml"
+        if default_cfg.exists():
+            args.stability_config = default_cfg
+
+    # Resolve user-selected stability states. Precedence:
+    #   1. --states CLI flag
+    #   2. --include-w shortcut
+    #   3. --stability-config YAML
+    #   4. historical default (no `w`)
+    # --coupled CLI flag overrides YAML when set; otherwise YAML wins.
+    cfg_states: list[str] | None = None
+    cfg_coupled: bool | None = None
+    cfg_frame: str | None = None
+    stability_config_path: Path | None = None
+    if args.stability_config is not None:
+        stability_config_path = args.stability_config.resolve()
+        with stability_config_path.open("r", encoding="utf-8") as f:
+            stab_cfg = yaml.safe_load(f) or {}
+        if not isinstance(stab_cfg, dict):
+            parser.error(
+                f"--stability-config {args.stability_config} must be a mapping; "
+                f"got {type(stab_cfg).__name__}."
+            )
+        raw_states = stab_cfg.get("states")
+        if raw_states is not None:
+            if isinstance(raw_states, str):
+                if raw_states.strip().lower() == "all":
+                    cfg_states = list(ALL_STATE_NAMES)
+                else:
+                    cfg_states = [s.strip() for s in raw_states.split(",") if s.strip()]
+            elif isinstance(raw_states, (list, tuple)):
+                cfg_states = [str(s).strip() for s in raw_states]
+            else:
+                parser.error(
+                    "stability-config `states` must be a list or comma-string."
+                )
+        if "coupled" in stab_cfg:
+            cfg_coupled = bool(stab_cfg["coupled"])
+        if "frame" in stab_cfg:
+            cfg_frame = str(stab_cfg["frame"]).strip().lower()
+            if cfg_frame not in {"course", "body"}:
+                parser.error(
+                    "stability-config `frame` must be either 'course' or 'body'."
+                )
+
+    # Default 9-state rigid-body set: the full state minus the lateral velocity
+    # ``v`` -> longitudinal (u, w, z, theta, q) + lateral (phi, psi, p, r).
+    default_states = list(LONG_STATES) + list(LAT_STATES)
+
+    if args.states is not None:
+        if args.states.strip().lower() == "all":
+            sel_states: list[str] = list(ALL_STATE_NAMES)
+        else:
+            sel_states = [s.strip() for s in args.states.split(",") if s.strip()]
+    elif args.include_w:
+        sel_states = list(default_states)
+    elif cfg_states is not None:
+        sel_states = list(cfg_states)
+    else:
+        sel_states = list(default_states)
+
+    unknown = [s for s in sel_states if s not in ALL_STATE_NAMES]
+    if unknown:
+        parser.error(f"Unknown state names {unknown}. Valid: {list(ALL_STATE_NAMES)}")
+
+    coupled = args.coupled or (cfg_coupled if cfg_coupled is not None else False)
+    stability_frame = args.stability_frame or cfg_frame or "course"
+    if stability_frame == "body" and args.rigid_body_result is None:
+        parser.error("--stability-frame body requires --rigid-body-result.")
+
+    if stability_config_path is not None:
+        print(f"Loaded stability config: {stability_config_path}")
+    print(f"Output directory: {out_dir.resolve()}")
+    print(f"Resolved stability states: {sel_states}")
+    print(f"Resolved coupled: {coupled}")
 
     # Load body and properties from config folder
     body, props = build_body(args)
 
-    # DEBUG: Check what props contains
-    # Use properties from system.yaml if not explicitly overridden via args
     mass_wing = (
         args.mass_wing if args.mass_wing is not None else props.get("mass", 30.0)
     )
@@ -597,35 +962,214 @@ def main() -> None:
         inertia_yy = args.inertia_yy if args.inertia_yy is not None else 20.0
         inertia_zz = args.inertia_zz if args.inertia_zz is not None else 100.0
 
-    result, solved_body = solve_vsm_quasi_steady_trim(
-        body_aero=body,
-        center_of_gravity=values["center_of_gravity"],
-        reference_point=values["reference_point"],
-        system_model=build_system_model(args, mass_wing=mass_wing),
-        x_guess=values["x_guess"],
-        bounds_lower=values["bounds_lower"],
-        bounds_upper=values["bounds_upper"],
-        include_gravity=args.include_gravity,
-        moment_tolerance=args.moment_tolerance,
-        return_timing_breakdown=True,
-        max_nfev=args.max_nfev,
+    center_of_gravity = values["center_of_gravity"]
+    trim_axes = DEFAULT_AXES
+    stability_axes = DEFAULT_AXES
+    rigid_body_axes = None
+    deformed_aero_path: Path | None = None  # set below when deformed geometry is found
+    deformed_struc_path: Path | None = None  # set below when deformed geometry is found
+
+    # Optionally load identified rigid-body properties and deformed geometry.
+    # The stability frame is selected explicitly below; loading a rigid-body
+    # result no longer implies body-frame derivatives.
+    if args.rigid_body_result is not None:
+        from common import _resolve_csv_paths, add_vsm_path as _add_vsm_path
+        import tempfile
+
+        rb = _load_rigid_body_axes_from_result(
+            args.rigid_body_result, args.rigid_body_struc
+        )
+        rigid_body_axes = AxisDefinition(
+            course=rb.body_axes[0],  # x_body - roll
+            normal=rb.body_axes[1],  # y_body - pitch
+            radial=rb.body_axes[2],  # z_body - yaw
+        )
+        center_of_gravity = rb.cg
+        inertia_xx, inertia_yy, inertia_zz = rb.principal_moments
+
+        case_dir = args.rigid_body_result.resolve()
+        if case_dir.is_file():
+            case_dir = case_dir.parent
+
+        _aero_candidate = case_dir / "aero_geometry.yaml"
+        _struc_candidate = case_dir / "struc_geometry.yaml"
+
+        if _aero_candidate.exists():
+            deformed_aero_path = _aero_candidate
+            _add_vsm_path(args.vsm_src)
+            from VSM.core.BodyAerodynamics import BodyAerodynamics as _BA
+
+            with deformed_aero_path.open("r", encoding="utf-8") as _f:
+                aero_cfg = yaml.safe_load(_f)
+            _resolve_csv_paths(aero_cfg, Path(args.config_folder))
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+            ) as _tmp:
+                yaml.dump(aero_cfg, _tmp)
+                _tmp_path = _tmp.name
+            try:
+                body = _BA.instantiate(
+                    n_panels=args.n_panels,
+                    file_path=_tmp_path,
+                    spanwise_panel_distribution=args.spanwise_panel_distribution,
+                    bridle_path=props.get("struc_geometry_path"),
+                )
+            finally:
+                Path(_tmp_path).unlink()
+            print(f"VSM body rebuilt from deformed aero_geometry: {deformed_aero_path}")
+        else:
+            print(
+                f"Warning: no deformed aero_geometry.yaml in {case_dir}. "
+                "Run with is_save_geometry_snapshots: true to save it. "
+                "Falling back to data/ geometry."
+            )
+
+        if _struc_candidate.exists():
+            deformed_struc_path = _struc_candidate
+
+        print(f"\nRigid-body axes loaded from: {args.rigid_body_result}")
+        print(f"  CG (structural frame):  {rb.cg}")
+        print(f"  Inertia [Ix, Iy, Iz]:   {rb.principal_moments}")
+        print(f"  x_body (roll):   {rb.body_axes[0]}")
+        print(f"  y_body (pitch):  {rb.body_axes[1]}")
+        print(f"  z_body (yaw):    {rb.body_axes[2]}\n")
+
+    if stability_frame == "body":
+        stability_axes = rigid_body_axes
+    else:
+        stability_axes = DEFAULT_AXES
+
+    print(f"Stability derivative frame: {stability_frame}")
+    print(f"  trim axes:      course")
+    print(f"  stability axes: {stability_frame}")
+
+    system_model = build_system_model(args, mass_wing=mass_wing)
+    # Robust Williams detection: ``isinstance`` can miss it when ``awetrim`` is
+    # importable via two paths (the src path injected by common.py and an
+    # installed copy), giving two distinct class objects.
+    _tether = getattr(system_model, "tether", None)
+    use_williams = (
+        isinstance(_tether, WilliamsTether)
+        or type(_tether).__name__ == "WilliamsTether"
     )
+    if use_williams:
+        print("Tether model: WilliamsTether -> running joint trim+tether solve.")
+        result, solved_body = solve_vsm_qs_trim_with_williams_tether(
+            body_aero=body,
+            center_of_gravity=center_of_gravity,
+            reference_point=values["reference_point"],
+            system_model=system_model,
+            x_guess=values["x_guess"],
+            bounds_lower=values["bounds_lower"],
+            bounds_upper=values["bounds_upper"],
+            include_gravity=args.include_gravity,
+            moment_tolerance=args.moment_tolerance,
+            max_nfev=args.max_nfev,
+            axes=trim_axes,
+        )
+    else:
+        result, solved_body = solve_vsm_quasi_steady_trim(
+            body_aero=body,
+            center_of_gravity=center_of_gravity,
+            reference_point=values["reference_point"],
+            system_model=system_model,
+            x_guess=values["x_guess"],
+            bounds_lower=values["bounds_lower"],
+            bounds_upper=values["bounds_upper"],
+            include_gravity=args.include_gravity,
+            moment_tolerance=args.moment_tolerance,
+            return_timing_breakdown=True,
+            max_nfev=args.max_nfev,
+            axes=trim_axes,
+        )
     print_trim_summary(result)
 
     stability = compute_vsm_trim_stability_derivatives(
         body_aero=solved_body,
-        center_of_gravity=values["center_of_gravity"],
+        center_of_gravity=center_of_gravity,
         reference_point=values["reference_point"],
         x_trim=np.asarray(result["opt_x"], dtype=float),
         trim_result=result,
+        system_model=system_model,
         mass=mass_wing,
         inertia_xx=inertia_xx,
         inertia_yy=inertia_yy,
         inertia_zz=inertia_zz,
+        axes=stability_axes,
         distance_radial=args.distance_radial,
         eps_vel=args.eps_vel,
         eps_angle_deg=args.eps_angle_deg,
         eps_rate=args.eps_rate,
+        eps_position=args.eps_position,
+        states=sel_states,
+        coupled=coupled,
+    )
+
+    # --- Diagnostic: is the Williams radial-position dependency captured? ----
+    print("\n--- radial-position (z) dependency diagnostic ---")
+    print(
+        "tether_radial_position_model:",
+        stability.get("tether_radial_position_model"),
+    )
+    print(f"  use_williams (this run): {use_williams}")
+    print(
+        "  actual tether class:    "
+        f"{type(_tether).__name__}  (module={type(_tether).__module__})"
+    )
+    print(f"  config_folder:          {args.config_folder}")
+    print(f"  eps_position requested:  {args.eps_position:g} m")
+    print(f"  eps_position used:       {stability.get('eps_position_used'):g} m")
+    J_full = np.asarray(stability["J_full"], dtype=float)
+    z_col = J_full[:, list(ALL_STATE_NAMES).index("z")]
+    out_names = stability.get("output_names", [])
+    print("  J[:, z]  (force/moment sensitivity to radial distance):")
+    for name, val in zip(out_names, z_col):
+        print(f"    d{name}/dz = {val:+.6e}")
+    print(f"  ||J[:, z]|| = {np.linalg.norm(z_col):.6e}")
+    if not coupled and "A_selected_long" in stability:
+        sel_long = list(stability.get("states_selected_long", []))
+        if "z" in sel_long and "w" in sel_long:
+            A_long = np.asarray(stability["A_selected_long"], dtype=float)
+            wz = A_long[sel_long.index("w"), sel_long.index("z")]
+            print(f"  A_long[w, z] (radial stiffness / mass): {wz:+.6e} 1/s^2")
+    print("  (near-zero ||J[:, z]|| => radial dependency NOT captured)")
+    print("--- end diagnostic ---\n")
+
+    print(f"\nSelected states: {sel_states}  (coupled={coupled})")
+    if coupled:
+        print("A_selected:")
+        print(np.array2string(stability["A_selected"], precision=6))
+        print(
+            "eig_selected:",
+            np.array2string(stability["eig_selected"], precision=6),
+        )
+        print("stable_selected:", stability["stable_selected"])
+    else:
+        sel_long = stability.get("states_selected_long", [])
+        sel_lat = stability.get("states_selected_lat", [])
+        print(f"  longitudinal states: {sel_long}")
+        print(f"  lateral states:      {sel_lat}")
+        if sel_long:
+            print("A_selected_long:")
+            print(np.array2string(stability["A_selected_long"], precision=6))
+            print(
+                "eig_selected_long:",
+                np.array2string(stability["eig_selected_long"], precision=6),
+            )
+            print("stable_selected_long:", stability["stable_selected_long"])
+        if sel_lat:
+            print("A_selected_lat:")
+            print(np.array2string(stability["A_selected_lat"], precision=6))
+            print(
+                "eig_selected_lat:",
+                np.array2string(stability["eig_selected_lat"], precision=6),
+            )
+            print("stable_selected_lat:", stability["stable_selected_lat"])
+
+    # Historical default split — always printed for reference.
+    print(
+        "\nDefault decoupled blocks (states_long=[u,theta,q], states_lat=[phi,psi,p,r]):"
     )
     print("J_long:")
     print(np.array2string(stability["J_long"], precision=6))
@@ -647,20 +1191,61 @@ def main() -> None:
                 "inertia_yy": inertia_yy,
                 "inertia_zz": inertia_zz,
             },
+            "frame": {
+                "trim_frame": "course",
+                "stability_frame": stability_frame,
+                "trim_axes": _axes_to_dict(trim_axes),
+                "stability_axes": _axes_to_dict(stability_axes),
+            },
+            "run_settings": {
+                "stability_config": (
+                    str(stability_config_path)
+                    if stability_config_path is not None
+                    else None
+                ),
+                "output_dir": str(out_dir.resolve()),
+                "selected_states": sel_states,
+                "coupled": coupled,
+            },
             "properties": props,
         },
     )
 
     fig_eig, ax_eig = plt.subplots(figsize=(5, 5))
-    eig_long = np.asarray(stability["eig_long"])
-    eig_lat = np.asarray(stability["eig_lat"])
-    ax_eig.scatter(eig_long.real, eig_long.imag, label="longitudinal", color="#4C78A8")
-    ax_eig.scatter(eig_lat.real, eig_lat.imag, label="lateral", color="#F58518")
+    if coupled and "eig_selected" in stability:
+        eig_sel = np.asarray(stability["eig_selected"])
+        ax_eig.scatter(
+            eig_sel.real, eig_sel.imag, label="coupled (selected)", color="#54A24B"
+        )
+    else:
+        eig_long_sel = np.asarray(
+            stability.get("eig_selected_long", stability["eig_long"])
+        )
+        eig_lat_sel = np.asarray(
+            stability.get("eig_selected_lat", stability["eig_lat"])
+        )
+        if eig_long_sel.size:
+            ax_eig.scatter(
+                eig_long_sel.real,
+                eig_long_sel.imag,
+                label="longitudinal",
+                color="#4C78A8",
+            )
+        if eig_lat_sel.size:
+            ax_eig.scatter(
+                eig_lat_sel.real,
+                eig_lat_sel.imag,
+                label="lateral",
+                color="#F58518",
+            )
     ax_eig.axvline(0.0, color="black", linewidth=0.8)
     ax_eig.axhline(0.0, color="black", linewidth=0.8)
     ax_eig.set_xlabel("Real part [1/s]")
     ax_eig.set_ylabel("Imaginary part [1/s]")
-    ax_eig.set_title("VSM trim stability eigenvalues")
+    ax_eig.set_title(
+        f"VSM trim stability eigenvalues - {stability_frame} frame\n"
+        f"states={sel_states}"
+    )
     ax_eig.legend()
     ax_eig.grid(True, alpha=0.3)
     fig_eig.tight_layout()
@@ -690,56 +1275,122 @@ def main() -> None:
         fmt = args.animation_format
         ext = f".{fmt}"
         amplitude_rad = np.deg2rad(args.animation_amplitude_deg)
-        anim_body, _ = build_body(args)  # fresh baseline geometry for animation
-        bridle_geom = load_bridle_geometry(props.get("struc_geometry_path"))
+        # Use deformed geometries for animation when available, so both the
+        # aerodynamic panels (blue) and structural skeleton (grey) match the
+        # same deformed state used for the stability analysis.
+        if deformed_aero_path is not None:
+            from common import _resolve_csv_paths, add_vsm_path as _add_vsm_path
+            from VSM.core.BodyAerodynamics import BodyAerodynamics as _BA
+            import tempfile
 
-        n_long = len(stability["eig_long"])
-        for i in range(n_long):
-            eig_i = stability["eig_long"][i]
-            t_end = _physics_duration(eig_i, max_s=args.animation_max_physics_s)
-            print(
-                f"Rendering longitudinal mode {i}/{n_long - 1} "
-                f"(λ={eig_i.real:+.3f}{eig_i.imag:+.3f}j  "
-                f"t_phys={t_end:.4f} s  frames={args.animation_frames})…"
+            with deformed_aero_path.open("r", encoding="utf-8") as _f:
+                _aero_cfg = yaml.safe_load(_f)
+            _resolve_csv_paths(_aero_cfg, Path(args.config_folder))
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+            ) as _tmp:
+                yaml.dump(_aero_cfg, _tmp)
+                _tmp_path = _tmp.name
+            try:
+                anim_body = _BA.instantiate(
+                    n_panels=args.n_panels,
+                    file_path=_tmp_path,
+                    spanwise_panel_distribution=args.spanwise_panel_distribution,
+                    bridle_path=props.get("struc_geometry_path"),
+                )
+            finally:
+                Path(_tmp_path).unlink()
+        else:
+            anim_body, _ = build_body(args)
+
+        bridle_geom = load_bridle_geometry(
+            str(deformed_struc_path)
+            if deformed_struc_path is not None
+            else props.get("struc_geometry_path")
+        )
+
+        # Build the list of (block_title, slug, eigenvalues, eigenvectors,
+        # states) tuples to animate. Always falls back to the default long/lat
+        # split when the user did not supply --states/--coupled.
+        animation_blocks: list[tuple[str, str, np.ndarray, np.ndarray, list[str]]] = []
+        if coupled and "eig_selected" in stability:
+            animation_blocks.append(
+                (
+                    "Coupled",
+                    "coupled",
+                    np.asarray(stability["eig_selected"], dtype=complex),
+                    np.asarray(stability["vec_selected"], dtype=complex),
+                    list(stability["states_selected"]),
+                )
             )
-            animate_longitudinal_mode(
-                anim_body,
-                result,
-                stability,
-                mode_index=i,
-                out_path=out_dir / f"mode_long_{i}{ext}",
-                fps=args.animation_fps,
-                n_frames=args.animation_frames,
-                amplitude_rad=amplitude_rad,
-                max_physics_s=args.animation_max_physics_s,
-                fmt=fmt,
-                reference_point=values["reference_point"],
-                bridle_geom=bridle_geom,
+        elif "states_selected_long" in stability:
+            if stability["A_selected_long"].size > 0:
+                animation_blocks.append(
+                    (
+                        "Longitudinal",
+                        "long",
+                        np.asarray(stability["eig_selected_long"], dtype=complex),
+                        np.asarray(stability["vec_selected_long"], dtype=complex),
+                        list(stability["states_selected_long"]),
+                    )
+                )
+            if stability["A_selected_lat"].size > 0:
+                animation_blocks.append(
+                    (
+                        "Lateral",
+                        "lat",
+                        np.asarray(stability["eig_selected_lat"], dtype=complex),
+                        np.asarray(stability["vec_selected_lat"], dtype=complex),
+                        list(stability["states_selected_lat"]),
+                    )
+                )
+        else:
+            animation_blocks.append(
+                (
+                    "Longitudinal",
+                    "long",
+                    np.asarray(stability["eig_long"], dtype=complex),
+                    np.asarray(stability["vec_long"], dtype=complex),
+                    ["u", "theta", "q"],
+                )
+            )
+            animation_blocks.append(
+                (
+                    "Lateral",
+                    "lat",
+                    np.asarray(stability["eig_lat"], dtype=complex),
+                    np.asarray(stability["vec_lat"], dtype=complex),
+                    ["v", "phi", "psi", "p", "r"],
+                )
             )
 
-        n_lat = len(stability["eig_lat"])
-        for i in range(n_lat):
-            eig_i = stability["eig_lat"][i]
-            t_end = _physics_duration(eig_i, max_s=args.animation_max_physics_s)
-            print(
-                f"Rendering lateral mode {i}/{n_lat - 1} "
-                f"(λ={eig_i.real:+.3f}{eig_i.imag:+.3f}j  "
-                f"t_phys={t_end:.4f} s  frames={args.animation_frames})…"
-            )
-            animate_lateral_mode(
-                anim_body,
-                result,
-                stability,
-                mode_index=i,
-                out_path=out_dir / f"mode_lat_{i}{ext}",
-                fps=args.animation_fps,
-                n_frames=args.animation_frames,
-                amplitude_rad=amplitude_rad,
-                max_physics_s=args.animation_max_physics_s,
-                fmt=fmt,
-                reference_point=values["reference_point"],
-                bridle_geom=bridle_geom,
-            )
+        for block_title, slug, eigvals, eigvecs, block_states in animation_blocks:
+            n_modes = len(eigvals)
+            for i in range(n_modes):
+                eig_i = eigvals[i]
+                t_end = _physics_duration(eig_i, max_s=args.animation_max_physics_s)
+                print(
+                    f"Rendering {block_title.lower()} mode {i}/{n_modes - 1} "
+                    f"(λ={eig_i.real:+.3f}{eig_i.imag:+.3f}j  "
+                    f"t_phys={t_end:.4f} s  frames={args.animation_frames})…"
+                )
+                animate_eigenmode(
+                    anim_body,
+                    result,
+                    eig_i,
+                    eigvecs[:, i],
+                    block_states,
+                    mode_index=i,
+                    block_title=block_title,
+                    out_path=out_dir / f"mode_{slug}_{i}{ext}",
+                    fps=args.animation_fps,
+                    n_frames=args.animation_frames,
+                    amplitude_rad=amplitude_rad,
+                    max_physics_s=args.animation_max_physics_s,
+                    fmt=fmt,
+                    reference_point=values["reference_point"],
+                    bridle_geom=bridle_geom,
+                )
 
 
 if __name__ == "__main__":
