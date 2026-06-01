@@ -2,8 +2,10 @@ import time
 from tqdm import tqdm
 import numpy as np
 import logging
+import matplotlib.pyplot as plt
 from . import structural_pss
-from .. import aerodynamic_vsm, aerodynamic_bridle_line_drag, tracking, plotting
+from .. import aerodynamic_vsm, aerodynamic_bridle_line_drag, tracking
+from awetrim import plotting
 from .actuation import (
     update_power_tape_actuation,
     update_steering_tape_actuation_progressive,
@@ -150,7 +152,8 @@ def main(
     max_iter = config["aero_structural_solver"]["max_iter"]
     # Keep index 0 for the pre-loop initial state and reserve max_iter loop slots.
     t_vector = np.linspace(0, max_iter, max_iter + 1)
-    tracking_data = tracking.setup_tracking_arrays(len(struc_nodes), t_vector)
+    n_panels = len(body_aero.panels) if body_aero is not None else 0
+    tracking_data = tracking.setup_tracking_arrays(len(struc_nodes), t_vector, n_panels=n_panels)
     is_convergence = False
     f_residual_list = []
     f_tether_drag = np.zeros(3)
@@ -263,6 +266,11 @@ def main(
     )
     logging.debug(
         f"Aero symmetry check, f_aero_y: {np.sum([force[1] for force in f_aero_wing_vsm_format])}"
+    )
+    tracking.update_aero_tracking(
+        tracking_data, 0,
+        results_aero.get("alpha_at_ac"),
+        results_aero.get("stall_mask"),
     )
     roll, pitch, yaw = results_aero["opt_x"][1:4]
     struc_nodes = rotate_geometry(struc_nodes, angle_deg=[roll, pitch, yaw])
@@ -595,6 +603,12 @@ def main(
                 f_ext_flat,
                 f_residual,
             )
+            tracking.update_aero_tracking(
+                tracking_data,
+                i + 1,
+                results_aero.get("alpha_at_ac"),
+                results_aero.get("stall_mask"),
+            )
 
             ### PROGRESS BAR
             pbar.set_postfix(
@@ -754,6 +768,18 @@ def main(
             vel_app=vel_app,
         )
 
+    if config.get("is_with_aero_frame_final_plot", False):
+        panel_cp = np.asarray(results_aero["panel_cp_locations"])
+        aerodynamic_vsm.plot_aero_forces_with_frames(
+            struc_nodes=struc_nodes,
+            kite_connectivity_arr=kite_connectivity_arr,
+            m_arr=m_arr,
+            panel_cp_locations=panel_cp,
+            f_aero_panel=np.asarray(f_aero_wing_vsm_format),
+            title="Aero forces, body frame and course frame",
+        )
+        plt.show()
+
     # Calculate cl, cd, tether force, and va for output
     opt_x = np.asarray(results_aero.get("opt_x", np.full(5, np.nan)), dtype=float)
     kite_speed = opt_x[0] if opt_x.size > 0 else np.nan
@@ -831,13 +857,26 @@ def main(
         "cl": float(cl),
         "cd": float(cd),
         "tether_force": float(tether_force),
-        "rest_lengths": rest_lengths,  # ensure numeric array
+        "rest_lengths": rest_lengths,
+        "panel_cp_locations": np.asarray(results_aero.get("panel_cp_locations", []), dtype=float),
+        "f_aero_panel": np.asarray(f_aero_wing_vsm_format, dtype=float),
         # Convert kite_connectivity to a numeric array for HDF5 compatibility
         "kite_connectivity": np.array(
             [[int(row[0]), int(row[1])] for row in np.array(kite_connectivity_arr)],
             dtype=np.int32,
         ),
     }
+
+    # Summary stall flag: which panels stalled at least once across all iterations.
+    if "stall_mask" in tracking_data:
+        meta["panels_ever_stalled"] = tracking_data["stall_mask"].any(axis=0)
+        n_ever_stalled = int(meta["panels_ever_stalled"].sum())
+        if n_ever_stalled > 0:
+            logging.warning(
+                "STALL summary: %d/%d panels stalled at least once during the simulation.",
+                n_ever_stalled,
+                tracking_data["stall_mask"].shape[1],
+            )
 
     return tracking_data, meta
 

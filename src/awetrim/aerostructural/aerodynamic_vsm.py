@@ -1,5 +1,7 @@
+import logging
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
 import copy
 from VSM.core.BodyAerodynamics import BodyAerodynamics
@@ -27,6 +29,60 @@ roll_bounds = (
 DEFAULT_GUESS_QS = np.array(
     [30.0, 0.0, 0.0, 0.0, -0.0]
 )  # [kite_speed, roll, pitch, yaw, course_rate_body]
+
+
+def _alpha_stall_from_polar(polar_data: np.ndarray) -> float:
+    """Return the stall angle of attack [rad] from a 2-D polar table.
+
+    Stall is defined as the **first local Cl maximum** in the positive-Cl
+    region of the polar (the onset of stall, not any post-stall Cl recovery).
+    The polar table must have columns [alpha_rad, Cl, Cd, Cm].
+
+    Returns ``math.inf`` if no peak is found within the table range, meaning
+    stall is not detectable from this polar and the panel is never flagged.
+    """
+    import math
+    polar = np.asarray(polar_data)
+    cl = polar[:, 1]
+    alpha = polar[:, 0]
+
+    # Only search in the positive-Cl region to ignore noise at negative alpha.
+    pos = np.where(cl > 0)[0]
+    if len(pos) == 0:
+        return math.inf
+
+    # Find the first local maximum within the positive-Cl rows.
+    for k in pos[1:-1]:
+        if cl[k] > cl[k - 1] and cl[k] > cl[k + 1]:
+            return float(alpha[k])
+
+    # No interior peak found — polar does not cover stall.
+    return math.inf
+
+
+def check_panel_stall(
+    alpha_at_ac: np.ndarray,
+    panel_polar_data: list,
+) -> np.ndarray:
+    """Return a boolean mask flagging panels whose local AoA exceeds stall.
+
+    Args:
+        alpha_at_ac: Local angle of attack per panel [rad], shape (n_panels,).
+        panel_polar_data: List of polar arrays (one per panel), each shaped
+            (N, 4) with columns [alpha_rad, Cl, Cd, Cm].
+
+    Returns:
+        stall_mask: Boolean array of shape (n_panels,); True where panel stalls.
+    """
+    alpha = np.ravel(alpha_at_ac)
+    n = len(alpha)
+    stall_mask = np.zeros(n, dtype=bool)
+    for i, polar in enumerate(panel_polar_data):
+        if i >= n:
+            break
+        alpha_stall = _alpha_stall_from_polar(polar)
+        stall_mask[i] = alpha[i] > alpha_stall
+    return stall_mask
 
 
 def _run_vsm_direct_fallback(body_aero, solver, system_model, current_guess):
@@ -66,6 +122,7 @@ def _run_vsm_direct_fallback(body_aero, solver, system_model, current_guess):
         "panel_cp_locations": res.get("panel_cp_locations"),
         "F_distribution": res.get("F_distribution"),
         "alpha_at_ac": res.get("alpha_at_ac"),
+        "stall_mask": None,
     }
 
 
@@ -249,4 +306,133 @@ def run_vsm_package(
         )
     if is_with_plot:
         plot_vsm_geometry(body_aero)
+
+    # Stall detection: compare local AoA against each panel's polar Cl-peak angle.
+    alpha_at_ac = results.get("alpha_at_ac")
+    if alpha_at_ac is not None and initial_polar_data:
+        stall_mask = check_panel_stall(alpha_at_ac, initial_polar_data)
+        results["stall_mask"] = stall_mask
+        n_stalled = int(stall_mask.sum())
+        if n_stalled > 0:
+            stalled_indices = np.where(stall_mask)[0].tolist()
+            logging.warning(
+                "STALL detected: %d/%d panels stalled (indices: %s)",
+                n_stalled,
+                len(stall_mask),
+                stalled_indices,
+            )
+            print(
+                f"  *** STALL: {n_stalled}/{len(stall_mask)} panels stalled "
+                f"(indices: {stalled_indices})"
+            )
+    else:
+        results["stall_mask"] = None
+
     return np.array(results["F_distribution"]), body_aero, results
+
+
+def plot_aero_forces_with_frames(
+    struc_nodes: np.ndarray,
+    kite_connectivity_arr,
+    m_arr: np.ndarray,
+    panel_cp_locations: np.ndarray,
+    f_aero_panel: np.ndarray,
+    title: str = "Aero forces, body frame and course frame",
+) -> plt.Figure:
+    """3-D plot of the deformed kite structure with:
+
+    - structural connectivity (thin grey lines)
+    - total aerodynamic force arrow at each panel aerodynamic centre
+    - course frame triad at the origin (dashed)
+    - body frame triad (principal inertia axes) at the CG (solid)
+
+    All coordinates are in the structural/VSM frame.  The course-frame unit
+    vectors in that frame are X_C=[-1,0,0], Y_C=[0,-1,0], Z_C=[0,0,1].
+    """
+    from awetrim.identification.rigid_body_axes import compute_rigid_body_axes
+
+    # ── body axes ────────────────────────────────────────────────────────────
+    rba = compute_rigid_body_axes(struc_nodes, m_arr)
+    cg = rba.cg
+    body_axes = rba.body_axes  # rows: x_K, y_K, z_K in structural frame
+
+    # ── arrow scale: 20 % of the bounding-box diagonal ───────────────────────
+    bbox_diag = np.linalg.norm(struc_nodes.max(axis=0) - struc_nodes.min(axis=0))
+    frame_len = 0.20 * bbox_diag
+
+    # Scale force arrows so the largest force == frame_len
+    f_mags = np.linalg.norm(f_aero_panel, axis=1)
+    f_max = f_mags.max() if f_mags.max() > 0 else 1.0
+    force_scale = frame_len / f_max
+
+    fig = plt.figure(figsize=(12, 9))
+    ax = fig.add_subplot(111, projection="3d")
+
+    # ── structural connectivity ───────────────────────────────────────────────
+    for conn in kite_connectivity_arr:
+        i, j = int(conn[0]), int(conn[1])
+        xs = [struc_nodes[i, 0], struc_nodes[j, 0]]
+        ys = [struc_nodes[i, 1], struc_nodes[j, 1]]
+        zs = [struc_nodes[i, 2], struc_nodes[j, 2]]
+        ax.plot(xs, ys, zs, color="dimgrey", linewidth=0.8, alpha=0.6)
+
+    ax.scatter(
+        struc_nodes[:, 0], struc_nodes[:, 1], struc_nodes[:, 2],
+        s=10, c="dimgrey", alpha=0.5, zorder=2,
+    )
+
+    # ── aerodynamic force arrows at panel ACs ─────────────────────────────────
+    cp = np.asarray(panel_cp_locations)
+    for k in range(len(cp)):
+        fvec = f_aero_panel[k] * force_scale
+        ax.quiver(
+            cp[k, 0], cp[k, 1], cp[k, 2],
+            fvec[0], fvec[1], fvec[2],
+            color="tab:orange", linewidth=1.2, arrow_length_ratio=0.2,
+        )
+    # single legend proxy for forces
+    ax.quiver([], [], [], [], [], [], color="tab:orange", linewidth=1.2,
+              label=f"Aero force (max={f_max:.1f} N)")
+
+    # ── frame triads: shared colours (x=red, y=green, z=blue) ────────────────
+    frame_colors = ["tab:red", "tab:green", "tab:blue"]
+
+    # course frame at origin (dashed, thinner)
+    course_axes = np.array([[-1., 0., 0.], [0., -1., 0.], [0., 0., 1.]])
+    course_labels = ["$X_C$", "$Y_C$", "$Z_C$"]
+    for k, (col, lbl) in enumerate(zip(frame_colors, course_labels)):
+        tip = course_axes[k] * frame_len * 0.6
+        ax.quiver(0, 0, 0, tip[0], tip[1], tip[2],
+                  color=col, linewidth=1.0, arrow_length_ratio=0.15,
+                  linestyle="dashed", alpha=0.55)
+        ax.text(*(tip * 1.08), lbl, color=col, fontsize=7)
+    ax.plot([], [], color="grey", linestyle="dashed", linewidth=1.0,
+            label="Course frame $C$")
+
+    # body frame at CG (solid, thicker)
+    body_labels = ["$x_K$", "$y_K$", "$z_K$"]
+    for k, (col, lbl) in enumerate(zip(frame_colors, body_labels)):
+        tip = body_axes[k] * frame_len
+        ax.quiver(*cg, tip[0], tip[1], tip[2],
+                  color=col, linewidth=2.2, arrow_length_ratio=0.15)
+        ax.text(*(cg + tip * 1.08), lbl, color=col, fontsize=7)
+    ax.plot([], [], color="grey", linestyle="solid", linewidth=2.0,
+            label="Body frame $K$ (inertia)")
+
+    ax.scatter(*cg, s=80, c="black", marker="*", zorder=5, label="CG")
+
+    # ── equal aspect ratio ────────────────────────────────────────────────────
+    all_pts = np.vstack([struc_nodes, cp])
+    mid = (all_pts.max(axis=0) + all_pts.min(axis=0)) / 2
+    half = (all_pts.max(axis=0) - all_pts.min(axis=0)).max() / 2 * 1.15
+    ax.set_xlim(mid[0] - half, mid[0] + half)
+    ax.set_ylim(mid[1] - half, mid[1] + half)
+    ax.set_zlim(mid[2] - half, mid[2] + half)
+
+    ax.set_xlabel("$x_{struc}$ (m)")
+    ax.set_ylabel("$y_{struc}$ (m)")
+    ax.set_zlabel("$z_{struc}$ (m)")
+    ax.set_title(title)
+    ax.legend(loc="upper left", fontsize=8)
+
+    return fig

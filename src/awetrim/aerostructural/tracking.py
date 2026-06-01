@@ -1,25 +1,49 @@
 import numpy as np
 
 
-def setup_tracking_arrays(n_pts, t_vector):
+def setup_tracking_arrays(n_pts, t_vector, n_panels=0):
     """
     Initialize tracking arrays for simulation results.
 
     Args:
         n_pts (int): Number of nodes/particles.
         t_vector (np.ndarray): Array of time steps.
+        n_panels (int): Number of aerodynamic panels (0 skips aero tracking arrays).
 
     Returns:
         dict: Dictionary with preallocated arrays for positions, forces, and tracking metrics.
     """
     nt = len(t_vector)
-    return {
+    arrays = {
         "positions": np.zeros((nt, n_pts, 3)),
         "f_ext": np.zeros((nt, n_pts, 3)),
         "f_int": np.zeros((nt, n_pts, 3)),
         "residual_norm": np.zeros(nt),
         "max_residual": np.zeros(nt),
     }
+    if n_panels > 0:
+        arrays["alpha_at_ac"] = np.full((nt, n_panels), np.nan)
+        arrays["stall_mask"] = np.zeros((nt, n_panels), dtype=bool)
+    return arrays
+
+
+def update_aero_tracking(tracking_data, idx, alpha_at_ac, stall_mask):
+    """Store per-panel aerodynamic state for one iteration.
+
+    Args:
+        tracking_data: Tracking dict (must contain 'alpha_at_ac' and 'stall_mask').
+        idx: Current iteration index.
+        alpha_at_ac: Per-panel local AoA [rad], shape (n_panels,) or None.
+        stall_mask: Boolean stall flag per panel, shape (n_panels,) or None.
+    """
+    if "alpha_at_ac" not in tracking_data or alpha_at_ac is None:
+        return
+    alpha = np.ravel(alpha_at_ac)
+    n = tracking_data["alpha_at_ac"].shape[1]
+    tracking_data["alpha_at_ac"][idx, : min(len(alpha), n)] = alpha[: n]
+    if stall_mask is not None:
+        mask = np.ravel(stall_mask).astype(bool)
+        tracking_data["stall_mask"][idx, : min(len(mask), n)] = mask[: n]
 
 
 def update_tracking_arrays(
