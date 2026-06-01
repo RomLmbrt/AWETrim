@@ -83,11 +83,18 @@ def compute_rigid_body_axes(
         abs_dots[i, :] = -1.0  # mark eigenvec i as consumed
         abs_dots[:, j] = -1.0  # mark canonical axis j as consumed
 
+    # Course-frame unit vectors expressed in the structural frame.
+    # The structural frame has X and Y negated relative to the course frame:
+    #   T_structural_from_C = diag(-1, -1, 1)
+    # so the course canonical directions in structural coordinates are:
+    #   X_C → [-1, 0, 0],  Y_C → [0, -1, 0],  Z_C → [0, 0, 1]
+    _COURSE_IN_STRUC = np.array([[-1., 0., 0.], [0., -1., 0.], [0., 0., 1.]])
+
     body_axes = np.zeros((3, 3))
     principal_moments = np.zeros(3)
     for body_j, eigen_i in enumerate(assigned):
         axis = eigenvectors[:, eigen_i].copy()
-        if axis[body_j] < 0:  # flip if pointing opposite to canonical e_j
+        if np.dot(axis, _COURSE_IN_STRUC[body_j]) < 0:  # flip to match course-frame sense
             axis = -axis
         body_axes[body_j] = axis
         principal_moments[body_j] = eigenvalues[eigen_i]

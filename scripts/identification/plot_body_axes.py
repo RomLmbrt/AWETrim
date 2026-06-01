@@ -136,31 +136,43 @@ def plot_body_axes(
 
     ax.scatter(*cg, s=120, c="black", marker="*", zorder=5, label="CG")
 
+    # Body frame (principal inertia axes) at CG — solid, thick
     body_colors = ["tab:red", "tab:green", "tab:blue"]
     body_labels = [
-        f"$x_b$  $I_x$={result.principal_moments[0]:.3f} kg·m²",
-        f"$y_b$  $I_y$={result.principal_moments[1]:.3f} kg·m²",
-        f"$z_b$  $I_z$={result.principal_moments[2]:.3f} kg·m²",
+        f"$x_K$  $I_x$={result.principal_moments[0]:.3f} kg·m²",
+        f"$y_K$  $I_y$={result.principal_moments[1]:.3f} kg·m²",
+        f"$z_K$  $I_z$={result.principal_moments[2]:.3f} kg·m²",
     ]
     for i, (color, label) in enumerate(zip(body_colors, body_labels)):
         _arrow(ax, cg, body_axes[i], arrow_len, color, label, linewidth=2.5)
 
-    # global reference frame (thin grey)
-    for i, (label) in enumerate(["$e_x$", "$e_y$", "$e_z$"]):
+    # Course frame (C) at origin — dashed, thin.
+    # The structural/VSM frame has X and Y negated relative to the course frame,
+    # so the course-frame unit vectors expressed in structural coordinates are:
+    #   X_C → [-1, 0, 0]  (tangential, forward)
+    #   Y_C → [ 0,-1, 0]  (normal, lateral)
+    #   Z_C → [ 0, 0, 1]  (radial, outward along tether)
+    course_axes_in_struc = np.array([[-1., 0., 0.], [0., -1., 0.], [0., 0., 1.]])
+    course_labels = ["$X_C$ (tangential)", "$Y_C$ (normal)", "$Z_C$ (radial)"]
+    for i, (color, label) in enumerate(zip(body_colors, course_labels)):
         _arrow(
             ax,
             np.zeros(3),
-            np.eye(3)[i],
+            course_axes_in_struc[i],
             arrow_len * 0.6,
-            "grey",
+            color,
             label if i == 0 else "_nolegend_",
             linewidth=1.0,
             linestyle="dashed",
+            alpha=0.55,
         )
+    # single legend entry for the whole course-frame triad
+    ax.plot([], [], color="grey", linestyle="dashed", linewidth=1.0,
+            label="Course frame $C$ (at origin)")
 
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_zlabel("z (m)")
+    ax.set_xlabel("$x_{struc}$ (m)")
+    ax.set_ylabel("$y_{struc}$ (m)")
+    ax.set_zlabel("$z_{struc}$ (m)")
     ax.set_title(title)
     ax.legend(loc="upper left", fontsize=8)
 
@@ -178,12 +190,12 @@ def plot_body_axes(
 
 def _print_summary(result: RigidBodyAxes) -> None:
     print(f"\nCG (structural frame): [{result.cg[0]:+.4f}, {result.cg[1]:+.4f}, {result.cg[2]:+.4f}] m")
-    print(f"CG (body frame):       [{result.cg_body[0]:+.4f}, {result.cg_body[1]:+.4f}, {result.cg_body[2]:+.4f}] m")
+    print(f"CG (body frame K):     [{result.cg_body[0]:+.4f}, {result.cg_body[1]:+.4f}, {result.cg_body[2]:+.4f}] m")
     print("\nInertia tensor about CG (kg·m²):")
     for row in result.inertia_cg:
         print(f"  [{row[0]:+10.4f}  {row[1]:+10.4f}  {row[2]:+10.4f}]")
-    print("\nPrincipal body axes (unit vectors in structural frame):")
-    for name, axis, moment in zip(["x_body", "y_body", "z_body"], result.body_axes, result.principal_moments):
+    print("\nPrincipal body axes K (unit vectors in structural frame):")
+    for name, axis, moment in zip(["x_K", "y_K", "z_K"], result.body_axes, result.principal_moments):
         print(f"  {name}: [{axis[0]:+.4f}, {axis[1]:+.4f}, {axis[2]:+.4f}]   I = {moment:.4f} kg·m²")
 
 
