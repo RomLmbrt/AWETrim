@@ -150,10 +150,10 @@ def fit_winch_models_full_flight(flight_df: pd.DataFrame) -> dict:
 
 
 def read_results(year, month, day, kite_model, addition="", path_to_main=""):
-    path = "/flight_logs/"
+    path = "./results/LEI-V3-KITE/ekf/"
     date = f"{year}-{month}-{day}"
     file_name = f"{kite_model}_{date}"
-    hdf5_path = path_to_main + path + file_name + addition + ".h5"
+    hdf5_path = path + file_name + addition + ".h5"
     ekf_output_df, flight_data_df, config_data = read_results_from_hdf5(hdf5_path)
     return ekf_output_df, flight_data_df, config_data
 
@@ -471,7 +471,7 @@ def simulate_cycle(
             "s_dot": 0.02,
             "input_steering": 0,
             "tension_tether_ground": 4e3,
-            "speed_radial": 0,
+            "speed_radial": 1,
             "distance_radial": path_params["r0"],
         }
         if target_phase == 1:
@@ -491,6 +491,7 @@ def simulate_cycle(
             )
         else:
             sim_params["input_depower"] = 0.0
+        # sim_params["debug_solver"] = True
 
         phase_config = {
             "pattern_type": "spline_open",
@@ -510,7 +511,11 @@ def simulate_cycle(
             }
         )
 
-        system_model = create_system_model_from_yaml(LEI_V3_SYSTEM_CONFIG)
+        system_model = create_system_model_from_yaml(
+            LEI_V3_SYSTEM_CONFIG,
+            # tether_config={"model": "williams", "n_elements": 10, "cf": 0.01},
+        )
+
         system_model.wind = wind_model
 
         if use_dynamic:
@@ -845,9 +850,9 @@ def simulate_cycle(
 def main():
     # Configuration
     year, month, day = "2019", "10", "08"
-    kite_model = "v3"
+    kite_model = "LEI-V3-Kite"
     path_to_main = "./data/LEI-V3-KITE"
-    cycle_id = 68  # set to an int to run a single cycle, None to run all detected
+    cycle_id = 62  # set to an int to run a single cycle, None to run all detected
     downloop_cfg_path = str(LEI_V3_DOWNLOOP_SPLINE_CONFIG)
 
     # Discretization level selector: choose one of ["coarse", "medium", "fine"]

@@ -78,7 +78,7 @@ def get_time_mask(data: pd.DataFrame) -> pd.Series:
 
 
 def main():
-    default_results_dir = Path("./results/v3/")
+    default_results_dir = Path("./results/LEI-V3-KITE/ekf/")
     results_dir = Path(
         input(
             f"Enter the directory with the results files [default: {default_results_dir}]: "
