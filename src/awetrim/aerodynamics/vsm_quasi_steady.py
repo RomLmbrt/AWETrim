@@ -15,7 +15,6 @@ from awetrim.aerodynamics.protocols import (
     VsmSolver,
 )
 
-
 DEFAULT_AXES = AxisDefinition(
     course=np.array([1.0, 0.0, 0.0], dtype=float),
     normal=np.array([0.0, 1.0, 0.0], dtype=float),
@@ -46,7 +45,9 @@ def _default_vsm_solver(reference_point: np.ndarray) -> VsmSolver:
             "`VSM.core.Solver.Solver`, or pass a solver implementing VsmSolver."
         ) from exc
 
-    return Solver(reference_point=reference_point, gamma_initial_distribution_type="zero")
+    return Solver(
+        reference_point=reference_point, gamma_initial_distribution_type="zero"
+    )
 
 
 def _as_3vector(value: Any) -> np.ndarray:
@@ -84,7 +85,9 @@ def _as_numeric_3vector(system_model: AWETrimSystemModel, value: Any) -> np.ndar
     symbols = ca.symvar(value)
     if not symbols:
         return _as_3vector(ca.DM(value).full())
-    inputs = [_numeric_value_for_symbol(system_model, symbol.name()) for symbol in symbols]
+    inputs = [
+        _numeric_value_for_symbol(system_model, symbol.name()) for symbol in symbols
+    ]
     func = ca.Function("awetrim_vsm_numeric_eval", symbols, [value])
     return _as_3vector(func(*inputs).full())
 
@@ -126,7 +129,9 @@ def _force_gravity(system_model: AWETrimSystemModel) -> np.ndarray:
     if hasattr(system_model, "force_gravity"):
         return _as_numeric_3vector(system_model, system_model.force_gravity)
     if hasattr(system_model, "expression"):
-        return _as_numeric_3vector(system_model, system_model.expression("force_gravity"))
+        return _as_numeric_3vector(
+            system_model, system_model.expression("force_gravity")
+        )
     if hasattr(system_model, "kite"):
         return _as_numeric_3vector(
             system_model, system_model.kite.force_gravity_for(system_model)
@@ -258,6 +263,27 @@ def solve_vsm_quasi_steady_trim(
     reference_point = _as_3vector(reference_point)
     transformation_c_from_vsm = np.asarray(transformation_c_from_vsm, dtype=float)
 
+    # Seed kinematics so omega can be evaluated before the solver starts.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
+    # Seed kinematics so omega can be evaluated before the solver starts.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
+    # Seed kinematics so omega can be evaluated before the solver starts.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
+    # Seed kinematics so Williams omega can be evaluated before the solver.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
+    # Seed system-model kinematics so Williams can evaluate omega numerically
+    # before the solver starts iterating.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
     if transformation_c_from_vsm.shape != (3, 3):
         raise ValueError("transformation_c_from_vsm must be shape (3, 3).")
     if np.any(bounds_lower >= bounds_upper):
@@ -274,7 +300,9 @@ def solve_vsm_quasi_steady_trim(
         inertial_force = -_system_model_mass_wing(system_model) * _as_3vector(
             transformation_c_from_vsm @ _acceleration_course_body(system_model)
         )
-        gravity_force = _as_3vector(transformation_c_from_vsm @ _force_gravity(system_model))
+        gravity_force = _as_3vector(
+            transformation_c_from_vsm @ _force_gravity(system_model)
+        )
         wind_velocity = _as_numeric_3vector(
             system_model,
             transformation_c_from_vsm @ system_model.wind.velocity_wind(system_model),
@@ -425,7 +453,9 @@ def solve_vsm_quasi_steady_trim(
         and np.abs(cmz) < moment_tolerance
     )
 
-    payload = cached_eval["payload"] if np.array_equal(opt.x, cached_eval["x"]) else None
+    payload = (
+        cached_eval["payload"] if np.array_equal(opt.x, cached_eval["x"]) else None
+    )
     if payload is None:
         _ = moment_residual(opt.x)
         payload = cached_eval["payload"]
@@ -464,7 +494,9 @@ def solve_vsm_quasi_steady_trim(
     x_cp = res.get("center_of_pressure", np.nan)
     x_cp_arr = np.asarray(x_cp, dtype=float)
     x_cp_point = (
-        x_cp_arr.reshape(3) if x_cp_arr.size == 3 else np.array([float(x_cp_arr), 0.0, 0.0])
+        x_cp_arr.reshape(3)
+        if x_cp_arr.size == 3
+        else np.array([float(x_cp_arr), 0.0, 0.0])
     )
     tether_force = float(total_aero_force[2] + gravity_force[2] + inertial_force[2])
 
@@ -504,7 +536,9 @@ def solve_vsm_quasi_steady_trim(
     if return_timing_breakdown:
         residual_total = float(timing_counters["residual_total_s"])
         if residual_total > 0.0:
-            timing_counters["solver_share"] = timing_counters["solver_s"] / residual_total
+            timing_counters["solver_share"] = (
+                timing_counters["solver_s"] / residual_total
+            )
             timing_counters["body_rotate_share"] = (
                 timing_counters["body_rotate_s"] / residual_total
             )
@@ -519,6 +553,585 @@ def solve_vsm_quasi_steady_trim(
     return result, working_body
 
 
+def solve_vsm_qs_trim_with_williams_tether(
+    body_aero: VsmBodyAerodynamics,
+    center_of_gravity: np.ndarray,
+    reference_point: np.ndarray,
+    system_model: AWETrimSystemModel,
+    x_guess: np.ndarray,
+    *,
+    williams_x_guess: np.ndarray | None = None,
+    williams_bounds_lower: np.ndarray | None = None,
+    williams_bounds_upper: np.ndarray | None = None,
+    solver: VsmSolver | None = None,
+    bounds_lower: np.ndarray = DEFAULT_BOUNDS_LOWER,
+    bounds_upper: np.ndarray = DEFAULT_BOUNDS_UPPER,
+    transformation_c_from_vsm: np.ndarray = DEFAULT_TRANSFORMATION_C_FROM_VSM,
+    include_gravity: bool = True,
+    axes: AxisDefinition = DEFAULT_AXES,
+    moment_tolerance: float = 1e-2,
+    max_nfev: int | None = None,
+) -> tuple[dict[str, Any], VsmBodyAerodynamics]:
+    """Joint VSM trim + Williams tether shape solve.
+
+    The combined least-squares system has 8 unknowns and 8 residuals:
+
+      * 5 from the existing trim problem
+        ``[speed_tangential, roll_deg, pitch_deg, yaw_deg, course_rate_body]``
+        with residuals ``[cmx, cmy, cmz, cfx, cfy]``.
+      * 3 from the Williams tether model
+        ``[elevation_last, azimuth_last, tether_length]`` with residuals
+        ``ground_position - (0,0,0)`` (normalised by ``distance_radial``).
+
+    The Williams tether is fed
+    ``force_kite_resultant = total_aero_force + inertial + gravity`` where
+    inertial / gravity now include both the wing and the KCU masses (the
+    user's "all forces from the kite and KCU"). ``r_kite`` is taken as
+    ``distance_radial * axes.radial`` in the same frame the trim residual
+    operates in (course/body x = ``axes.course``, z = ``axes.radial``).
+
+    Notes / caveats:
+      * The trim residual frame and the world frame are not the same in
+        general (gravity here is the ``T_c_from_vsm @ force_gravity`` vector,
+        which is in the model's course frame, not world). For straight flight
+        with small course angles the two coincide; for circular flight there
+        will be a frame inconsistency in the tether weight direction. Treat
+        this as a first integration -- refine the transformation once the
+        rest of the wiring is in place.
+    """
+    from awetrim.system.williams_tether import WilliamsTether
+    from awetrim.utils.reference_frames import transformation_C_from_W
+
+    tether = getattr(system_model, "tether", None)
+    if not isinstance(tether, WilliamsTether):
+        raise TypeError(
+            "solve_vsm_qs_trim_with_williams_tether requires a WilliamsTether "
+            f"instance on system_model.tether; got {type(tether).__name__}."
+        )
+
+    bounds_lower = _as_5vector(bounds_lower, "bounds_lower")
+    bounds_upper = _as_5vector(bounds_upper, "bounds_upper")
+    x_guess = _as_5vector(x_guess, "x_guess")
+    center_of_gravity = _as_3vector(center_of_gravity)
+    reference_point = _as_3vector(reference_point)
+    transformation_c_from_vsm = np.asarray(transformation_c_from_vsm, dtype=float)
+
+    distance_radial = float(
+        _numeric_value_for_symbol(system_model, "distance_radial")
+        if hasattr(system_model, "distance_radial")
+        else 200.0
+    )
+    if distance_radial <= 0.0:
+        raise ValueError("distance_radial must be positive for Williams integration.")
+
+    # Straight-tether initial guess: the last-segment direction matches the
+    # direction from the ground anchor to the kite in the wind frame. The
+    # solver then perturbs it from there to satisfy the ground residual.
+    angle_az = float(_numeric_value_for_symbol(system_model, "angle_azimuth"))
+    angle_elev = float(_numeric_value_for_symbol(system_model, "angle_elevation"))
+    angle_course = float(_numeric_value_for_symbol(system_model, "angle_course"))
+    _r_kite_world_init = distance_radial * np.array(
+        [
+            np.cos(angle_elev) * np.cos(angle_az),
+            np.cos(angle_elev) * np.sin(angle_az),
+            np.sin(angle_elev),
+        ],
+        dtype=float,
+    )
+    direction_wind_init = float(
+        getattr(getattr(system_model, "wind", None), "direction_wind", 0.0)
+    )
+    _T_wind_from_world_init = np.array(
+        [
+            [np.cos(-direction_wind_init), -np.sin(-direction_wind_init), 0.0],
+            [np.sin(-direction_wind_init), np.cos(-direction_wind_init), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    _r_kite_wind_init = _T_wind_from_world_init @ _r_kite_world_init
+    elev_guess = float(
+        np.arctan2(
+            _r_kite_wind_init[2], np.hypot(_r_kite_wind_init[0], _r_kite_wind_init[1])
+        )
+    )
+    az_guess = float(np.arctan2(_r_kite_wind_init[1], _r_kite_wind_init[0]))
+    # Nudge off perfect wind-alignment (elev=0, az=0) to keep the Jacobian
+    # well-defined at the initial point: when the last segment is exactly
+    # parallel to the apparent wind, the lift direction is undefined.
+    if abs(elev_guess) < 1e-3 and abs(az_guess) < 1e-3:
+        elev_guess = 1e-2  # ~0.57 deg above the wind axis
+
+    if williams_x_guess is None:
+        williams_x_guess = np.array(
+            [elev_guess, az_guess, distance_radial * 1.02], dtype=float
+        )
+    williams_x_guess = np.asarray(williams_x_guess, dtype=float).reshape(3)
+
+    if williams_bounds_lower is None:
+        williams_bounds_lower = np.array(
+            [-np.pi / 2 + 1e-3, -2.0 * np.pi, 0.99 * distance_radial], dtype=float
+        )
+    if williams_bounds_upper is None:
+        williams_bounds_upper = np.array(
+            [np.pi / 2 - 1e-3, 2.0 * np.pi, 1.4 * distance_radial], dtype=float
+        )
+
+    lb = np.concatenate([bounds_lower, williams_bounds_lower])
+    ub = np.concatenate([bounds_upper, williams_bounds_upper])
+    x0 = np.concatenate(
+        [np.clip(x_guess, bounds_lower, bounds_upper), williams_x_guess]
+    )
+
+    if solver is None:
+        solver = _default_vsm_solver(reference_point)
+
+    # Seed the system-model kinematics so the symbolic
+    # ``velocity_rotation_course_frame`` (which depends on speed_tangential and
+    # the course rate) can be evaluated numerically below. Mirrors the seed
+    # block in ``solve_vsm_quasi_steady_trim``.
+    system_model.speed_tangential = float(x_guess[0])
+    _set_course_rate_body(system_model, float(x_guess[4]))
+
+    # --- Capture env values from system_model. The Williams tether reads
+    # wind/rho/g/omega via the explicit ``env`` argument; nothing is stored on
+    # the tether instance. ---
+    wind = getattr(system_model, "wind", None)
+    mass_wing_value = float(_system_model_mass_wing(system_model))
+    mass_kcu = float(
+        getattr(getattr(system_model, "kite", system_model), "mass_kcu", 0.0)
+    )
+    mass_total = mass_wing_value + mass_kcu
+
+    # --- Frame transformations into the wind frame Williams expects. ---
+    # The trim residual operates in VSM body axes; system_model angles are in
+    # the system course frame; the wind frame is the world frame rotated about
+    # +z by -direction_wind so that wind blows along +x (= Williams' wind law).
+    T_Csm_from_W = np.asarray(
+        ca.DM(transformation_C_from_W(angle_az, angle_elev, angle_course)).full(),
+        dtype=float,
+    )
+    T_W_from_Csm = T_Csm_from_W.T
+    # The trim code uses transformation_c_from_vsm to move course-frame
+    # quantities into the VSM body frame (the matrix is its own inverse).
+    T_Csm_from_VSM = transformation_c_from_vsm
+    direction_wind = float(
+        getattr(getattr(system_model, "wind", None), "direction_wind", 0.0)
+    )
+    T_Wind_from_W = np.array(
+        [
+            [np.cos(-direction_wind), -np.sin(-direction_wind), 0.0],
+            [np.sin(-direction_wind), np.cos(-direction_wind), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    # Composed transformations.
+    T_Wind_from_VSM = T_Wind_from_W @ T_W_from_Csm @ T_Csm_from_VSM
+    T_Wind_from_Csm = T_Wind_from_W @ T_W_from_Csm
+
+    # Resolve the system-model rotational velocity (course frame) and rotate
+    # it into the wind frame for the Williams force balance on each tether
+    # node. In a steady straight-line state this is zero; for turning states
+    # (downloop, figure-8) it gives a nonzero omega that the tether needs to
+    # account for via the per-node `v_n = omega x r_n` and `a_n = omega x v_n`
+    # terms.
+    if hasattr(system_model, "velocity_rotation_course_frame"):
+        omega_course = _as_numeric_3vector(
+            system_model, system_model.velocity_rotation_course_frame
+        )
+        omega_wind = T_Wind_from_Csm @ omega_course
+    else:
+        omega_wind = np.zeros(3)
+    omega_wind_dm = ca.DM(omega_wind)
+
+    # The tether reads wind/rho/g off ``env`` (= system_model). ``omega`` is
+    # the wind-frame rotation we just computed.
+    residual_fn, param_names = tether.residual_function(
+        env=system_model, omega=omega_wind_dm
+    )
+    jac_fn, _ = tether.residual_jacobian_function(env=system_model, omega=omega_wind_dm)
+
+    def _pack_williams_params(r_kite: np.ndarray, force_kite: np.ndarray) -> np.ndarray:
+        # ``WilliamsTether.r_kite_sym`` / ``force_kite_resultant_sym`` are
+        # 3-vector MX symbols whose ``.name()`` returns the parent name. The
+        # residual's parameter vector ``p`` is ``vertcat(r_kite, force_kite)``,
+        # so we concatenate the 3-vectors in the order ``param_names`` lists.
+        table = {
+            "r_kite": np.asarray(r_kite, dtype=float).reshape(-1),
+            "force_kite_resultant": np.asarray(force_kite, dtype=float).reshape(-1),
+        }
+        missing = [n for n in param_names if n not in table]
+        if missing:
+            raise KeyError(
+                "Williams residual still has un-bound symbols after numeric "
+                f"configuration: {missing}. Set them on the tether instance."
+            )
+        return np.concatenate([table[n] for n in param_names])
+
+    # Kite position in the wind frame: spherical (azimuth, elevation, distance)
+    # in the world frame, then rotate by -direction_wind about +z.
+    r_kite_world = distance_radial * np.array(
+        [
+            np.cos(angle_elev) * np.cos(angle_az),
+            np.cos(angle_elev) * np.sin(angle_az),
+            np.sin(angle_elev),
+        ],
+        dtype=float,
+    )
+    r_kite_wind = T_Wind_from_W @ r_kite_world
+    wind_z0 = getattr(wind, "z0", 0.07)
+    if (
+        wind is not None
+        and wind.wind_model == "logarithmic"
+        and r_kite_wind[2] <= float(wind_z0)
+    ):
+        raise ValueError(
+            f"Williams tether (log-law wind) needs the kite above the wind "
+            f"roughness height z0={wind_z0:.4g} m, but r_kite_wind[z]"
+            f"={r_kite_wind[2]:.4g} m (angle_elevation="
+            f"{np.rad2deg(angle_elev):.2f} deg, distance_radial="
+            f"{distance_radial:.2f} m). Either raise the elevation, or set "
+            "the wind model to 'uniform'."
+        )
+
+    # --- Trim residual closure (mirrors solve_vsm_quasi_steady_trim). ---
+    working_body = copy.deepcopy(body_aero)
+    baseline_sections, baseline_spanwise = _baseline_geometry(working_body)
+    projected_area_cache: dict[str, float] = {}
+
+    def _trim_payload(x: np.ndarray) -> dict[str, Any]:
+        speed_tangential, roll_deg, pitch_deg, yaw_deg, course_rate_body = x
+
+        _set_body_attitude_from_baseline(
+            working_body,
+            baseline_sections=baseline_sections,
+            baseline_spanwise=baseline_spanwise,
+            roll_deg=roll_deg,
+            pitch_deg=pitch_deg,
+            yaw_deg=yaw_deg,
+            axes=axes,
+            reference_point=reference_point,
+        )
+
+        _set_course_rate_body(system_model, course_rate_body)
+        system_model.speed_tangential = speed_tangential
+
+        accel_course = _acceleration_course_body(system_model)
+        inertial_force_wing = -mass_wing_value * _as_3vector(
+            transformation_c_from_vsm @ accel_course
+        )
+        inertial_force_kcu = -mass_kcu * _as_3vector(
+            transformation_c_from_vsm @ accel_course
+        )
+        gravity_force_total = _as_3vector(
+            transformation_c_from_vsm @ _force_gravity(system_model)
+        )
+
+        va = _as_numeric_3vector(
+            system_model,
+            transformation_c_from_vsm @ system_model.velocity_apparent_wind,
+        )
+        umag = float(np.linalg.norm(va))
+        if umag <= 0.0:
+            raise ValueError("Apparent wind magnitude must be positive.")
+        aoa_deg = float(np.rad2deg(np.arctan2(va[2], va[0])))
+        beta_deg = float(np.rad2deg(np.arctan2(va[1], np.hypot(va[0], va[2]))))
+
+        working_body.va_initialize(
+            Umag=umag,
+            angle_of_attack=aoa_deg,
+            side_slip=beta_deg,
+            body_rates=course_rate_body,
+            body_axis=-axes.radial,
+            reference_point=reference_point,
+            rates_in_body_frame=False,
+        )
+        res = solver.solve(working_body)
+
+        total_aero_force = np.array(
+            [float(res.get(k, np.nan)) for k in ("Fx", "Fy", "Fz")],
+            dtype=float,
+        )
+        cmx = float(res.get("cmx", np.nan))
+        cmy = float(res.get("cmy", np.nan))
+        cmz = float(res.get("cmz", np.nan))
+
+        if "projected_area" not in projected_area_cache:
+            projected_area_cache["projected_area"] = float(
+                working_body.wings[0].compute_projected_area()
+            )
+            projected_area_cache["max_chord"] = max(
+                float(panel.chord) for panel in working_body.panels
+            )
+        projected_area = projected_area_cache["projected_area"]
+        max_chord = projected_area_cache["max_chord"]
+        q_inf = 0.5 * float(solver.rho) * umag**2
+        denom_m = q_inf * projected_area * max_chord
+        denom_f = q_inf * projected_area
+
+        moment_vec = np.cross(
+            center_of_gravity - reference_point,
+            inertial_force_wing + inertial_force_kcu,
+        )
+        if include_gravity:
+            moment_vec += np.cross(
+                center_of_gravity - reference_point, gravity_force_total
+            )
+        dcm = moment_vec / denom_m
+        cmx += dcm[0]
+        cmy += dcm[1]
+        cmz += dcm[2]
+
+        net_force = (
+            total_aero_force
+            + inertial_force_wing
+            + inertial_force_kcu
+            + (gravity_force_total if include_gravity else 0.0)
+        )
+        cfx = float(np.dot(net_force, axes.course) / denom_f)
+        cfy = float(np.dot(net_force, axes.normal) / denom_f)
+
+        return {
+            "trim_res": np.array([cmx, cmy, cmz, cfx, cfy], dtype=float),
+            "force_kite_resultant": net_force,
+            "total_aero_force": total_aero_force,
+            "va": va,
+            "umag": umag,
+            "res": res,
+            "aoa_deg": aoa_deg,
+            "beta_deg": beta_deg,
+        }
+
+    def joint_residual(x: np.ndarray) -> np.ndarray:
+        x_trim = np.asarray(x[:5], dtype=float)
+        x_williams = np.asarray(x[5:], dtype=float)
+        payload = _trim_payload(x_trim)
+        F_kite_wind = T_Wind_from_VSM @ payload["force_kite_resultant"]
+        p = _pack_williams_params(r_kite_wind, F_kite_wind)
+        ground_res = np.asarray(residual_fn(x=x_williams, p=p)["residual"]).reshape(3)
+        # Normalise so trim (dimensionless) and tether (m) residuals are
+        # roughly comparable in magnitude.
+        ground_res = ground_res / distance_radial
+        return np.concatenate([payload["trim_res"], ground_res])
+
+    def joint_jac(x: np.ndarray) -> np.ndarray:
+        # Analytic Jacobian for the Williams block only; finite-difference
+        # the trim block. Build a (8, 8) matrix.
+        n = x.size
+        eps = 1e-6
+        f0 = joint_residual(x)
+        J = np.zeros((f0.size, n), dtype=float)
+
+        for k in range(5):
+            xk = x.copy()
+            step = eps * max(1.0, abs(xk[k]))
+            xk[k] += step
+            fk = joint_residual(xk)
+            J[:, k] = (fk - f0) / step
+
+        # Williams block: analytic
+        x_williams = x[5:]
+        x_trim = x[:5]
+        payload = _trim_payload(x_trim)
+        F_kite_wind = T_Wind_from_VSM @ payload["force_kite_resultant"]
+        p = _pack_williams_params(r_kite_wind, F_kite_wind)
+        jac_williams = np.asarray(jac_fn(x=x_williams, p=p)["jac"]) / distance_radial
+        # Williams residuals are rows 5..7, columns 5..7.
+        J[5:8, 5:8] = jac_williams
+        return J
+
+    opt = least_squares(
+        joint_residual,
+        x0,
+        jac="2-point",
+        bounds=(lb, ub),
+        max_nfev=max_nfev,
+    )
+    print(
+        f"[williams-trim] status={opt.status}  nfev={opt.nfev}  cost={opt.cost:.3e}  optimality={opt.optimality:.3e}"
+    )
+    print(f"[williams-trim] message: {opt.message}")
+    print(
+        f"[williams-trim] active_mask: {opt.active_mask}"
+    )  # 0=interior, -1=at lb, +1=at ub
+    print(f"[williams-trim] x*: trim={opt.x[:5]}  williams={opt.x[5:]}")
+
+    res_at_opt = joint_residual(opt.x)
+    trim_res = res_at_opt[:5]
+    ground_res = res_at_opt[5:] * distance_radial
+    print(f"[williams-trim] trim_res     [cmx cmy cmz cfx cfy] = {trim_res}")
+    print(f"[williams-trim] ground_res   [gx gy gz] (m)        = {ground_res}")
+    print(
+        f"[williams-trim] ||ground_res|| = {np.linalg.norm(ground_res):.4e} m  "
+        f"(distance_radial = {distance_radial:.2f} m)"
+    )
+
+    payload = _trim_payload(opt.x[:5])
+    F_kite_vsm = payload["force_kite_resultant"]
+    F_kite_wind = T_Wind_from_VSM @ F_kite_vsm
+
+    physical_success = bool(
+        np.abs(trim_res[0]) < moment_tolerance
+        and np.abs(trim_res[1]) < moment_tolerance
+        and np.abs(trim_res[2]) < moment_tolerance
+    )
+
+    elev_last, az_last, tether_length = opt.x[5:].tolist()
+
+    # Evaluate full Williams shape for plotting.
+    shape_fn, shape_param_names = tether.shape_function(
+        env=system_model, omega=omega_wind_dm
+    )
+    p_shape = _pack_williams_params(r_kite_wind, F_kite_wind)
+    shape_out = shape_fn(x=opt.x[5:], p=p_shape)
+    positions = np.asarray(shape_out["positions"])
+    tensions = np.asarray(shape_out["tensions"])
+
+    result: dict[str, Any] = {
+        "opt_x": np.asarray(opt.x[:5], dtype=float),
+        "cm": trim_res[:3].copy(),
+        "cfx": float(trim_res[3]),
+        "cfy": float(trim_res[4]),
+        "success": bool(opt.success),
+        "success_physical": physical_success,
+        "aoa_deg": payload["aoa_deg"],
+        "aoa_course_deg": payload["aoa_deg"],
+        "side_slip_deg": payload["beta_deg"],
+        "side_slip_course_deg": payload["beta_deg"],
+        "aero_roll_deg": float("nan"),
+        "cl": payload["res"].get("cl"),
+        "cd": payload["res"].get("cd"),
+        "tether_force": float(np.linalg.norm(F_kite_wind)),
+        "va_vel_world": payload["va"],
+        "Umag": payload["umag"],
+        "total_aero_force_vec": payload["total_aero_force"],
+        "force_kite_resultant": F_kite_wind,
+        "force_kite_resultant_vsm": F_kite_vsm,
+        "r_kite": r_kite_wind,
+        "r_kite_world": r_kite_world,
+        "williams_x": np.asarray(opt.x[5:], dtype=float),
+        "williams_elevation_last_deg": float(np.rad2deg(elev_last)),
+        "williams_azimuth_last_deg": float(np.rad2deg(az_last)),
+        "williams_tether_length": float(tether_length),
+        "williams_ground_residual": ground_res,
+        "williams_positions": positions,
+        "williams_tensions": tensions,
+        "optimizer": opt,
+    }
+    return result, working_body
+
+
+#: Canonical full-state ordering used by the stability linearisation.
+#:
+#:   index | name  | meaning
+#:   ------|-------|--------------------------------
+#:     0   | u     | body x velocity (course axis)
+#:     1   | v     | body y velocity (normal axis)
+#:     2   | w     | body z velocity (radial axis)  -- vertical speed
+#:     3   | z     | radial position perturbation along course-frame z/radial axis
+#:     4   | phi   | roll angle
+#:     5   | theta | pitch angle
+#:     6   | psi   | yaw angle
+#:     7   | p     | body roll rate
+#:     8   | q     | body pitch rate
+#:     9   | r     | body yaw rate
+ALL_STATE_NAMES: tuple[str, ...] = (
+    "u",
+    "v",
+    "w",
+    "z",
+    "phi",
+    "theta",
+    "psi",
+    "p",
+    "q",
+    "r",
+)
+
+#: Subsets used by the default decoupled (long + lat) split.
+LONG_STATES: tuple[str, ...] = ("u", "w", "z", "theta", "q")
+LAT_STATES: tuple[str, ...] = ("phi", "psi", "p", "r")
+
+#: Default selection — current behaviour, *no* vertical speed `w`.
+DEFAULT_STATES: tuple[str, ...] = (
+    "u",
+    "theta",
+    "q",
+    "v",
+    "phi",
+    "psi",
+    "p",
+    "r",
+)
+
+#: Row index of each force/moment output in J_full and central_diff_col output.
+#:   0..2 = F_course, F_normal, F_radial
+#:   3..5 = M_course, M_normal, M_radial
+_FORCE_OUTPUT_ROW = {"u": 0, "v": 1, "w": 2}
+_MOMENT_OUTPUT_ROW = {"p": 3, "q": 4, "r": 5}
+_KINEMATIC_RATE = {"z": "w", "phi": "p", "theta": "q", "psi": "r"}
+
+
+def _state_indices(states: Sequence[str]) -> list[int]:
+    """Map state names to their column index in J_full / A_full."""
+    full_idx = {name: idx for idx, name in enumerate(ALL_STATE_NAMES)}
+    try:
+        return [full_idx[s] for s in states]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown stability state {exc.args[0]!r}. "
+            f"Valid names: {list(ALL_STATE_NAMES)}"
+        ) from None
+
+
+def _build_state_space(
+    J_full: np.ndarray,
+    states: Sequence[str],
+    *,
+    mass: float,
+    inertia_xx: float,
+    inertia_yy: float,
+    inertia_zz: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Assemble (J_sub, A) for a chosen subset of states.
+
+    J_sub keeps all 6 force/moment rows so it can be inspected even when the
+    caller drops some states. A has one row per state — dynamics for velocity
+    and rate states, kinematics (phi_dot=p etc.) for attitude states. Kinematic
+    rows whose paired rate is not in `states` collapse to a zero row.
+    """
+    cols = _state_indices(states)
+    J_sub = J_full[:, cols]
+
+    inertia = {"p": inertia_xx, "q": inertia_yy, "r": inertia_zz}
+    n = len(states)
+    A = np.zeros((n, n))
+    for i, s in enumerate(states):
+        if s in _FORCE_OUTPUT_ROW:
+            A[i, :] = J_sub[_FORCE_OUTPUT_ROW[s], :] / mass
+        elif s in _MOMENT_OUTPUT_ROW:
+            A[i, :] = J_sub[_MOMENT_OUTPUT_ROW[s], :] / inertia[s]
+        elif s in _KINEMATIC_RATE:
+            rate = _KINEMATIC_RATE[s]
+            if rate in states:
+                A[i, states.index(rate)] = 1.0
+    return J_sub, A
+
+
+def _eig_block(A: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if A.size == 0:
+        return np.zeros(0, dtype=complex), np.zeros((0, 0), dtype=complex)
+    return np.linalg.eig(A)
+
+
+def _timescales_from_eigs(eigvals: np.ndarray) -> np.ndarray:
+    real_parts = np.real(eigvals)
+    abs_re = np.abs(real_parts)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(abs_re > 1e-12, 1.0 / abs_re, np.inf)
+
+
 def compute_vsm_trim_stability_derivatives(
     body_aero: VsmBodyAerodynamics,
     center_of_gravity: np.ndarray,
@@ -527,6 +1140,7 @@ def compute_vsm_trim_stability_derivatives(
     trim_result: Mapping[str, Any],
     *,
     solver: VsmSolver | None = None,
+    system_model: AWETrimSystemModel | None = None,
     axes: AxisDefinition = DEFAULT_AXES,
     mass: float = 15.0,
     inertia_xx: float = 100.0,
@@ -536,8 +1150,46 @@ def compute_vsm_trim_stability_derivatives(
     eps_vel: float = 0.1,
     eps_angle_deg: float = 0.5,
     eps_rate: float = 0.01,
+    eps_position: float = 0.5,
+    states: Sequence[str] | None = None,
+    coupled: bool = False,
 ) -> dict[str, Any]:
-    """Compute aerodynamic stability derivatives around a VSM trim state."""
+    """Compute aerodynamic stability derivatives around a VSM trim state.
+
+    Parameters
+    ----------
+    states
+        Subset of :data:`ALL_STATE_NAMES` to use for the *selected* state-space
+        block returned alongside the full coupled and default decoupled blocks.
+        When ``None`` (default), the function only returns the full and default
+        decoupled blocks — preserving the historical API.
+    coupled
+        If ``True`` and ``states`` is given, the selected states are assembled
+        into a single coupled A matrix. If ``False``, the selection is split
+        into a longitudinal sub-block (states in :data:`LONG_STATES`) and a
+        lateral sub-block (states in :data:`LAT_STATES`).
+
+    Always-present outputs
+    ----------------------
+    ``J_full`` (6, 9), ``A_full`` (9, 9), ``eig_full``, ``vec_full``,
+    ``Tfast_full``, ``stable_full``, ``state_names_full``, ``output_names``.
+
+    Default decoupled outputs (always present, shape preserved for back-compat)
+    --------------------------------------------------------------------------
+    ``J_long`` (3, 3), ``J_lat`` (3, 5), ``A_long`` (3, 3), ``A_lat`` (5, 5),
+    ``eig_long``, ``eig_lat``, ``vec_long``, ``vec_lat``, ``Tfast_long``,
+    ``Tfast_lat``, ``stable_long``, ``stable_lat``.
+
+    Selection outputs (only present when ``states`` is given or ``coupled``)
+    -----------------------------------------------------------------------
+    Coupled selection (``coupled=True``):
+        ``J_selected``, ``A_selected``, ``eig_selected``, ``vec_selected``,
+        ``Tfast_selected``, ``stable_selected``, ``states_selected``.
+    Decoupled selection (``coupled=False`` with explicit ``states``):
+        Additionally ``J_selected_long``, ``A_selected_long``, ...,
+        ``J_selected_lat``, ``A_selected_lat``, ... plus the partitioned state
+        name lists.
+    """
 
     center_of_gravity = _as_3vector(center_of_gravity)
     reference_point = _as_3vector(reference_point)
@@ -546,19 +1198,195 @@ def compute_vsm_trim_stability_derivatives(
         solver = _default_vsm_solver(reference_point)
 
     speed_tangential, roll0, pitch0, yaw0, course_rate0 = x_trim
-    va_trim = _as_3vector(trim_result["va_vel_world"])
+    va_world = trim_result.get("va_vel_world")
+    if va_world is None:
+        va_world = trim_result.get("va")
+    if va_world is None:
+        wind_world = trim_result.get("wind_vel_world")
+        kite_world = trim_result.get("kite_vel_world")
+        if wind_world is not None and kite_world is not None:
+            va_world = _as_3vector(wind_world) - _as_3vector(kite_world)
+    if va_world is None:
+        raise KeyError(
+            "trim_result is missing apparent-wind data; expected 'va_vel_world', "
+            "'va', or both 'wind_vel_world' and 'kite_vel_world'."
+        )
+    va_trim = _as_3vector(va_world)
     f_tether = np.array([0.0, 0.0, -float(trim_result["tether_force"])], dtype=float)
     r_arm = reference_point - center_of_gravity
     moment_tether_at_cg = np.cross(r_arm, f_tether)
+    distance_radial_trim = (
+        float(distance_radial)
+        if distance_radial is not None and float(distance_radial) > 0.0
+        else None
+    )
 
     working_body = copy.deepcopy(body_aero)
     baseline_sections, baseline_spanwise = _baseline_geometry(working_body)
     projected_area = float(body_aero.wings[0].compute_projected_area())
     max_chord = max(float(panel.chord) for panel in body_aero.panels)
 
+    def _make_williams_fixed_length_solver():
+        if system_model is None or "williams_tether_length" not in trim_result:
+            return None
+        try:
+            from awetrim.system.williams_tether import WilliamsTether
+            from awetrim.utils.reference_frames import transformation_Wind_from_C
+        except ImportError:
+            return None
+        tether = getattr(system_model, "tether", None)
+        # Match by class name too: ``isinstance`` can miss the WilliamsTether
+        # when ``awetrim`` is importable via two paths (giving two distinct
+        # class objects), which would silently drop the radial dependency.
+        if not (
+            isinstance(tether, WilliamsTether)
+            or type(tether).__name__ == "WilliamsTether"
+        ):
+            return None
+
+        _set_course_rate_body(system_model, float(course_rate0))
+        system_model.speed_tangential = float(speed_tangential)
+
+        angle_az = float(_numeric_value_for_symbol(system_model, "angle_azimuth"))
+        angle_elev = float(_numeric_value_for_symbol(system_model, "angle_elevation"))
+        angle_course = float(_numeric_value_for_symbol(system_model, "angle_course"))
+        direction_wind = float(
+            getattr(getattr(system_model, "wind", None), "direction_wind", 0.0)
+        )
+        T_wind_from_course = np.asarray(
+            ca.DM(
+                transformation_Wind_from_C(
+                    angle_az, angle_elev, angle_course, direction_wind
+                )
+            ).full(),
+            dtype=float,
+        )
+        if hasattr(system_model, "velocity_rotation_course_frame"):
+            omega_course = _as_numeric_3vector(
+                system_model, system_model.velocity_rotation_course_frame
+            )
+            omega_wind = T_wind_from_course @ omega_course
+        else:
+            omega_wind = np.zeros(3)
+
+        tension_sym = ca.MX.sym("tension_tether_kite_fixed_length")
+        elevation_sym = ca.MX.sym("elevation_last_element_fixed_length")
+        azimuth_sym = ca.MX.sym("azimuth_last_element_fixed_length")
+        r_kite_sym = ca.MX.sym("r_kite_fixed_length", 3)
+        tether_length = float(trim_result["williams_tether_length"])
+        shape = tether.tether_shape_symbolic(
+            env=system_model,
+            r_kite=r_kite_sym,
+            tension_kite=tension_sym,
+            omega=ca.DM(omega_wind),
+            tether_length=tether_length,
+            elevation_last=elevation_sym,
+            azimuth_last=azimuth_sym,
+        )
+        x_sym = ca.vertcat(tension_sym, elevation_sym, azimuth_sym)
+        residual_fun = ca.Function(
+            "williams_fixed_length_residual",
+            [x_sym, r_kite_sym],
+            [shape["ground_position"]],
+            ["x", "r_kite"],
+            ["residual"],
+        )
+        jac_fun = ca.Function(
+            "williams_fixed_length_residual_jac",
+            [x_sym, r_kite_sym],
+            [ca.jacobian(shape["ground_position"], x_sym)],
+            ["x", "r_kite"],
+            ["jac"],
+        )
+        force_fun = ca.Function(
+            "williams_fixed_length_force_kite",
+            [x_sym, r_kite_sym],
+            [shape["tether_force_kite"]],
+            ["x", "r_kite"],
+            ["force_kite"],
+        )
+
+        x0 = np.array(
+            [
+                float(trim_result["tether_force"]),
+                np.deg2rad(float(trim_result.get("williams_elevation_last_deg", 0.0))),
+                np.deg2rad(float(trim_result.get("williams_azimuth_last_deg", 0.0))),
+            ],
+            dtype=float,
+        )
+        r0_wind = (
+            _as_3vector(trim_result["r_kite"])
+            if "r_kite" in trim_result
+            else T_wind_from_course @ np.array([0.0, 0.0, distance_radial_trim or 0.0])
+        )
+
+        def solve_force(radial_offset: float) -> np.ndarray:
+            r_kite = r0_wind + T_wind_from_course @ (
+                float(radial_offset) * DEFAULT_AXES.radial
+            )
+
+            def residual(x: np.ndarray) -> np.ndarray:
+                return np.asarray(
+                    residual_fun(x=np.asarray(x, dtype=float), r_kite=r_kite)[
+                        "residual"
+                    ]
+                ).reshape(-1)
+
+            def jac(x: np.ndarray) -> np.ndarray:
+                return np.asarray(
+                    jac_fun(x=np.asarray(x, dtype=float), r_kite=r_kite)["jac"]
+                )
+
+            sol = least_squares(
+                residual,
+                x0,
+                jac=jac,
+                bounds=(
+                    [0.0, -np.pi / 2 + 1e-3, -2.0 * np.pi],
+                    [np.inf, np.pi / 2 - 1e-3, 2.0 * np.pi],
+                ),
+                max_nfev=200,
+            )
+            # ``least_squares`` reports ``success=False`` when it exhausts
+            # ``max_nfev`` even if it has already converged. The ground-position
+            # residual (metres) is the physically meaningful convergence check,
+            # so accept the solve whenever that residual is below tolerance.
+            if np.linalg.norm(sol.fun) > 1e-3:
+                raise RuntimeError(
+                    "Williams fixed-length radial perturbation solve failed: "
+                    f"{sol.message}; residual={sol.fun}"
+                )
+            force_wind = np.asarray(
+                force_fun(x=sol.x, r_kite=r_kite)["force_kite"]
+            ).reshape(3)
+            return T_wind_from_course.T @ force_wind
+
+        return solve_force
+
+    williams_fixed_length_force = _make_williams_fixed_length_solver()
+
+    warned_williams_force = False
+
+    def tether_force_for(radial_offset: float) -> np.ndarray:
+        nonlocal warned_williams_force
+        if williams_fixed_length_force is None:
+            return f_tether.copy()
+        try:
+            return williams_fixed_length_force(radial_offset)
+        except RuntimeError as exc:
+            if not warned_williams_force:
+                print(
+                    "Warning: Williams fixed-length radial perturbation failed; "
+                    "falling back to baseline tether force."
+                )
+                print(f"  reason: {exc}")
+                warned_williams_force = True
+            return f_tether.copy()
+
     def eval_force_moment(
         delta_v: np.ndarray,
         omega_perturb: np.ndarray,
+        radial_position_offset: float = 0.0,
         delta_roll_deg: float = 0.0,
         delta_pitch_deg: float = 0.0,
         delta_yaw_deg: float = 0.0,
@@ -613,83 +1441,134 @@ def compute_vsm_trim_stability_derivatives(
             * denom
         )
 
-        speed_tangential_eff = float(speed_tangential) + float(np.dot(delta_v, axes.course))
+        speed_tangential_eff = float(speed_tangential) + float(
+            np.dot(delta_v, axes.course)
+        )
+        distance_radial_eff = (
+            distance_radial_trim + radial_position_offset
+            if distance_radial_trim is not None
+            else None
+        )
+        f_tether_eff = tether_force_for(radial_position_offset)
+        moment_tether_eff = np.cross(r_arm, f_tether_eff)
         f_inertial = np.zeros(3, dtype=float)
         f_inertial[1] = mass * speed_tangential_eff * float(course_rate0)
-        if distance_radial is not None and float(distance_radial) > 0.0:
-            f_inertial[2] = mass * speed_tangential_eff**2 / float(distance_radial)
+        if distance_radial_eff is not None and distance_radial_eff > 0.0:
+            f_inertial[2] = mass * speed_tangential_eff**2 / distance_radial_eff
 
-        moment_at_cg = moment_aero_at_ref + np.cross(r_arm, f_aero) + moment_tether_at_cg
-        force_at_cg = f_aero + f_tether + f_inertial
+        moment_at_cg = moment_aero_at_ref + np.cross(r_arm, f_aero) + moment_tether_eff
+        force_at_cg = f_aero + f_tether_eff + f_inertial
         return force_at_cg, moment_at_cg
 
     zero3 = np.zeros(3, dtype=float)
     eps_angle_rad = np.deg2rad(eps_angle_deg)
 
+    # Rotation matrix from world frame to body frame (rows = body axes).
+    R_body = np.array([axes.course, axes.normal, axes.radial], dtype=float)
+
     def central_diff_col(
         delta_v: np.ndarray,
         omega_perturb: np.ndarray,
         step: float,
+        radial_position_offset: float = 0.0,
         droll: float = 0.0,
         dpitch: float = 0.0,
         dyaw: float = 0.0,
     ) -> np.ndarray:
-        force_plus, moment_plus = eval_force_moment(delta_v, omega_perturb, droll, dpitch, dyaw)
+        force_plus, moment_plus = eval_force_moment(
+            delta_v, omega_perturb, radial_position_offset, droll, dpitch, dyaw
+        )
         force_minus, moment_minus = eval_force_moment(
-            -delta_v, -omega_perturb, -droll, -dpitch, -dyaw
+            -delta_v, -omega_perturb, -radial_position_offset, -droll, -dpitch, -dyaw
         )
         d_force = (force_plus - force_minus) / (2.0 * step)
         d_moment = (moment_plus - moment_minus) / (2.0 * step)
+        # Project world-frame force and moment onto body axes so that outputs
+        # are consistent with the body-frame inputs (perturbations along axes.*).
+        d_force_body = R_body @ d_force
+        d_moment_body = R_body @ d_moment
         return np.array(
-            [d_force[0], d_force[1], d_force[2], d_moment[0], d_moment[1], d_moment[2]]
+            [
+                d_force_body[0],
+                d_force_body[1],
+                d_force_body[2],
+                d_moment_body[0],
+                d_moment_body[1],
+                d_moment_body[2],
+            ]
         )
 
-    col_u = central_diff_col(+eps_vel * axes.course, zero3, eps_vel)
-    col_theta = central_diff_col(zero3, zero3, eps_angle_rad, dpitch=eps_angle_deg)
-    col_q = central_diff_col(zero3, eps_rate * axes.normal, eps_rate)
-    j_long = np.array(
-        [
-            [col_u[0], col_theta[0], col_q[0]],
-            [col_u[2], col_theta[2], col_q[2]],
-            [col_u[4], col_theta[4], col_q[4]],
-        ]
-    )
+    radial_eps = float(eps_position)
+    if (
+        williams_fixed_length_force is not None
+        and "williams_tether_length" in trim_result
+    ):
+        r_norm = float(
+            np.linalg.norm(_as_3vector(trim_result.get("r_kite", [0.0, 0.0, 0.0])))
+        )
+        slack = float(trim_result["williams_tether_length"]) - r_norm
+        if slack > 1e-8:
+            radial_eps = min(radial_eps, 0.25 * slack)
+        else:
+            radial_eps = min(radial_eps, 1e-5)
+        radial_eps = max(radial_eps, 1e-7)
 
+    # Build the full 6×10 numerical Jacobian (rows = body force+moment outputs,
+    # cols = state perturbations in canonical ALL_STATE_NAMES order).
+    col_u = central_diff_col(+eps_vel * axes.course, zero3, eps_vel)
     col_v = central_diff_col(+eps_vel * axes.normal, zero3, eps_vel)
+    col_w = central_diff_col(+eps_vel * axes.radial, zero3, eps_vel)
+    col_z = central_diff_col(
+        zero3, zero3, radial_eps, radial_position_offset=radial_eps
+    )
     col_phi = central_diff_col(zero3, zero3, eps_angle_rad, droll=eps_angle_deg)
+    col_theta = central_diff_col(zero3, zero3, eps_angle_rad, dpitch=eps_angle_deg)
     col_psi = central_diff_col(zero3, zero3, eps_angle_rad, dyaw=eps_angle_deg)
     col_p = central_diff_col(zero3, eps_rate * axes.course, eps_rate)
+    col_q = central_diff_col(zero3, eps_rate * axes.normal, eps_rate)
     col_r = central_diff_col(zero3, eps_rate * axes.radial, eps_rate)
-    j_lat = np.array(
-        [
-            [col_v[1], col_phi[1], col_psi[1], col_p[1], col_r[1]],
-            [col_v[3], col_phi[3], col_psi[3], col_p[3], col_r[3]],
-            [col_v[5], col_phi[5], col_psi[5], col_p[5], col_r[5]],
-        ]
+
+    J_full = np.column_stack(
+        [col_u, col_v, col_w, col_z, col_phi, col_theta, col_psi, col_p, col_q, col_r]
     )
+
+    _, A_full = _build_state_space(
+        J_full,
+        ALL_STATE_NAMES,
+        mass=mass,
+        inertia_xx=inertia_xx,
+        inertia_yy=inertia_yy,
+        inertia_zz=inertia_zz,
+    )
+    eig_full, vec_full = _eig_block(A_full)
+
+    # ---- Backward-compatible default decoupled blocks -------------------
+    # J_long keeps the historical (3, 3) shape: rows = [F_x, F_z, M_y]
+    # (i.e. the longitudinal force/moment channels), cols = [u, theta, q].
+    long_default_state_idx = [0, 5, 8]  # u, theta, q
+    long_out_rows = [0, 2, 4]  # F_course, F_radial, M_normal
+    j_long = J_full[np.ix_(long_out_rows, long_default_state_idx)]
 
     a_long = np.zeros((3, 3))
     a_long[0, :] = j_long[0, :] / mass
     a_long[1, :] = [0.0, 0.0, 1.0]
     a_long[2, :] = j_long[2, :] / inertia_yy
 
-    a_lat = np.zeros((5, 5))
-    a_lat[0, :] = j_lat[0, :] / mass
-    a_lat[1, :] = [0.0, 0.0, 0.0, 1.0, 0.0]
-    a_lat[2, :] = [0.0, 0.0, 0.0, 0.0, 1.0]
-    a_lat[3, :] = j_lat[1, :] / inertia_xx
-    a_lat[4, :] = j_lat[2, :] / inertia_zz
+    lat_default_state_idx = [4, 6, 7, 9]  # phi, psi, p, r
+    lat_out_rows = [1, 3, 5]  # F_normal, M_course, M_radial
+    j_lat = J_full[np.ix_(lat_out_rows, lat_default_state_idx)]
 
-    eig_long, vec_long = np.linalg.eig(a_long)
-    eig_lat, vec_lat = np.linalg.eig(a_lat)
+    a_lat = np.zeros((4, 4))
+    a_lat[0, :] = [0.0, 0.0, 1.0, 0.0]
+    a_lat[1, :] = [0.0, 0.0, 0.0, 1.0]
+    a_lat[2, :] = j_lat[1, :] / inertia_xx
+    a_lat[3, :] = j_lat[2, :] / inertia_zz
 
-    def timescales(eigvals: np.ndarray) -> np.ndarray:
-        real_parts = np.real(eigvals)
-        abs_re = np.abs(real_parts)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(abs_re > 1e-12, 1.0 / abs_re, np.inf)
+    eig_long, vec_long = _eig_block(a_long)
+    eig_lat, vec_lat = _eig_block(a_lat)
 
-    return {
+    result: dict[str, Any] = {
+        # Default (back-compat) decoupled blocks
         "J_long": j_long,
         "J_lat": j_lat,
         "A_long": a_long,
@@ -698,13 +1577,127 @@ def compute_vsm_trim_stability_derivatives(
         "eig_lat": eig_lat,
         "vec_long": vec_long,
         "vec_lat": vec_lat,
-        "Tfast_long": timescales(eig_long),
-        "Tfast_lat": timescales(eig_lat),
+        "Tfast_long": _timescales_from_eigs(eig_long),
+        "Tfast_lat": _timescales_from_eigs(eig_lat),
         "stable_long": bool(np.all(np.real(eig_long) < 0.0)),
         "stable_lat": bool(np.all(np.real(eig_lat) < 0.0)),
+        # Full 9-state coupled system (always available for inspection)
+        "J_full": J_full,
+        "A_full": A_full,
+        "eig_full": eig_full,
+        "vec_full": vec_full,
+        "Tfast_full": _timescales_from_eigs(eig_full),
+        "stable_full": bool(np.all(np.real(eig_full) < 0.0)),
+        "state_names_full": list(ALL_STATE_NAMES),
+        "output_names": [
+            "F_course",
+            "F_normal",
+            "F_radial",
+            "M_course",
+            "M_normal",
+            "M_radial",
+        ],
+        # Tether transfer quantities
         "F_tether": f_tether,
         "M_tether_at_CG": moment_tether_at_cg,
+        "tether_radial_position_model": (
+            "williams_fixed_length"
+            if williams_fixed_length_force is not None
+            else "constant_trim_force"
+        ),
+        "radial_position_state": "z",
+        "eps_position": float(eps_position),
+        "eps_position_used": float(radial_eps),
     }
+
+    # ---- User-selected sub-block (custom state set / coupling) ----------
+    if states is not None or coupled:
+        sel_states = list(states) if states is not None else list(DEFAULT_STATES)
+        unknown = [s for s in sel_states if s not in ALL_STATE_NAMES]
+        if unknown:
+            raise ValueError(
+                f"Unknown stability state {unknown[0]!r}. "
+                f"Valid names: {list(ALL_STATE_NAMES)}"
+            )
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        sel_states = [s for s in sel_states if not (s in seen or seen.add(s))]
+
+        if coupled:
+            J_sel, A_sel = _build_state_space(
+                J_full,
+                sel_states,
+                mass=mass,
+                inertia_xx=inertia_xx,
+                inertia_yy=inertia_yy,
+                inertia_zz=inertia_zz,
+            )
+            eig_sel, vec_sel = _eig_block(A_sel)
+            result.update(
+                {
+                    "J_selected": J_sel,
+                    "A_selected": A_sel,
+                    "eig_selected": eig_sel,
+                    "vec_selected": vec_sel,
+                    "Tfast_selected": _timescales_from_eigs(eig_sel),
+                    "stable_selected": (
+                        bool(np.all(np.real(eig_sel) < 0.0)) if A_sel.size > 0 else True
+                    ),
+                    "states_selected": sel_states,
+                    "coupled_selected": True,
+                }
+            )
+        else:
+            sel_long = [s for s in sel_states if s in LONG_STATES]
+            sel_lat = [s for s in sel_states if s in LAT_STATES]
+            J_sel_long, A_sel_long = _build_state_space(
+                J_full,
+                sel_long,
+                mass=mass,
+                inertia_xx=inertia_xx,
+                inertia_yy=inertia_yy,
+                inertia_zz=inertia_zz,
+            )
+            J_sel_lat, A_sel_lat = _build_state_space(
+                J_full,
+                sel_lat,
+                mass=mass,
+                inertia_xx=inertia_xx,
+                inertia_yy=inertia_yy,
+                inertia_zz=inertia_zz,
+            )
+            eig_sel_long, vec_sel_long = _eig_block(A_sel_long)
+            eig_sel_lat, vec_sel_lat = _eig_block(A_sel_lat)
+            result.update(
+                {
+                    "J_selected_long": J_sel_long,
+                    "J_selected_lat": J_sel_lat,
+                    "A_selected_long": A_sel_long,
+                    "A_selected_lat": A_sel_lat,
+                    "eig_selected_long": eig_sel_long,
+                    "eig_selected_lat": eig_sel_lat,
+                    "vec_selected_long": vec_sel_long,
+                    "vec_selected_lat": vec_sel_lat,
+                    "Tfast_selected_long": _timescales_from_eigs(eig_sel_long),
+                    "Tfast_selected_lat": _timescales_from_eigs(eig_sel_lat),
+                    "stable_selected_long": (
+                        bool(np.all(np.real(eig_sel_long) < 0.0))
+                        if A_sel_long.size > 0
+                        else True
+                    ),
+                    "stable_selected_lat": (
+                        bool(np.all(np.real(eig_sel_lat) < 0.0))
+                        if A_sel_lat.size > 0
+                        else True
+                    ),
+                    "states_selected": sel_states,
+                    "states_selected_long": sel_long,
+                    "states_selected_lat": sel_lat,
+                    "coupled_selected": False,
+                }
+            )
+
+    return result
 
 
 def _as_sequence(value: Sequence[float] | float) -> list[float]:
@@ -725,7 +1718,9 @@ def run_vsm_quasi_steady_sweep(
     principal_axis: str,
     secondary_axis: str,
     sweep_values: Mapping[str, Sequence[float] | float],
-    update_system_model: Callable[[AWETrimSystemModel, dict[str, float]], None] | None = None,
+    update_system_model: (
+        Callable[[AWETrimSystemModel, dict[str, float]], None] | None
+    ) = None,
     solver_factory: Callable[[np.ndarray], VsmSolver] | None = None,
     bounds_lower: np.ndarray = DEFAULT_BOUNDS_LOWER,
     bounds_upper: np.ndarray = DEFAULT_BOUNDS_UPPER,

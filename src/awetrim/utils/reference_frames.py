@@ -76,3 +76,23 @@ def transformation_C_from_K(pitch, roll, yaw = 0):
 def transformation_C_from_W(azimuth, elevation, course):
     # Create the transformation matrix
     return transformation_C_from_AZR(course) @ transformation_AZR_from_W(azimuth, elevation)
+
+
+def transformation_Wind_from_W(direction_wind):
+    return ca.vertcat(
+        ca.horzcat(ca.cos(-direction_wind), -ca.sin(-direction_wind), 0),
+        ca.horzcat(ca.sin(-direction_wind), ca.cos(-direction_wind), 0),
+        ca.horzcat(0, 0, 1),
+    )
+
+
+def transformation_Wind_from_C(azimuth, elevation, course, direction_wind):
+    return transformation_Wind_from_W(direction_wind) @ ca.transpose(
+        transformation_C_from_W(azimuth, elevation, course)
+    )
+
+
+def transformation_C_from_Wind(azimuth, elevation, course, direction_wind):
+    return ca.transpose(
+        transformation_Wind_from_C(azimuth, elevation, course, direction_wind)
+    )

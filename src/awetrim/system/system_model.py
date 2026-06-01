@@ -68,11 +68,9 @@ class SystemModel(KiteKinematics):
         self.ode = None
         self.algebraic = None
         if self.is_tether_rigid:
-            self.default_unknown_vars = [
-                "speed_tangential",
-                "timeder_angle_course",
-                "tension_tether_ground",
-            ]
+            self.default_unknown_vars = list(
+                self.tether.default_kite_state_unknowns()
+            )
         else:
             self.default_unknown_vars = [
                 "speed_tangential",
@@ -284,7 +282,7 @@ class SystemModel(KiteKinematics):
         Compute the residual for the kite system dynamics.
         """
         # LHS and RHS
-        lhs = (self.kite.mass_wing) * self.acceleration
+        lhs = (self.kite.mass_wing + self.kite.mass_kcu) * self.acceleration
         # Residual
         # print(self.force_external)
         # print(lhs)
@@ -311,16 +309,22 @@ class SystemModel(KiteKinematics):
         self,
         unknown_vars=None,
         solver_options=None,
+        winch=None,
     ):
-        """
-        Solve the quasi-steady state equations for the kite system.
+        """Build the joint kite + tether (+ optional winch) quasi-steady NLP.
 
-        :param known_state: Dictionary of known state variables and their values.
-        :param unknown_vars: List of unknown state variables to solve for.
-        :return: Dictionary of unknown state variables and their values.
+        ``unknown_vars`` lists kite-state names. The tether contributes its
+        own decision symbols and equations via the base-class hooks. If
+        ``winch`` is given, ``speed_radial`` becomes an additional unknown
+        (auto-added) and ``winch.radial_equation(speed_radial,
+        tension_tether_ground)`` is appended to the residual.
         """
         if unknown_vars is None:
-            unknown_vars = self.default_unknown_vars
+            unknown_vars = list(self.default_unknown_vars)
+        else:
+            unknown_vars = list(unknown_vars)
+        if winch is not None and "speed_radial" not in unknown_vars:
+            unknown_vars.append("speed_radial")
         self.establish_residual()
 
         x = []
@@ -334,21 +338,38 @@ class SystemModel(KiteKinematics):
                     raise ValueError(
                         f"Unknown variable '{name}' is not a valid attribute."
                     )
-        # x = [getattr(self, name) for name in unknown_vars]
 
-        inputs = []
-        for var in ca.symvar(self.residual):
-            if var.name() not in unknown_vars:
-                inputs.append(var)
-        inputs_name = [name.name() for name in inputs]
+        # Tether-contributed decision symbols and extra residuals. Simple
+        # tethers (rigid/lumped) return empty lists; Williams contributes its
+        # four direction/length/tension symbols and a 3D ground-position
+        # residual that closes the iterated shape.
+        tether_decisions = list(self.tether.decision_symbols_for(self))
+        x.extend(tether_decisions)
+
+        g = self.residual
+        extra_residuals = self.tether.extra_residuals_for(self)
+        if extra_residuals.numel() > 0:
+            g = ca.vertcat(g, extra_residuals)
+        if winch is not None:
+            g = ca.vertcat(
+                g,
+                winch.radial_equation(
+                    speed_radial=self.speed_radial,
+                    tension_tether_ground=self.tension_tether_ground,
+                ),
+            )
+
+        decision_names = {sym.name() for sym in x}
+        inputs = [sym for sym in ca.symvar(g) if sym.name() not in decision_names]
+        inputs_name = [sym.name() for sym in inputs]
 
         # NLP problem definition
         nlp = {
             "x": ca.vertcat(*x),
             "f": 0,
-            "g": self.residual,
+            "g": g,
             "p": ca.vertcat(*inputs),
-        }  # 'f' is set to 0 for root-finding
+        }
 
         # Define the solver options
         if solver_options is None:
@@ -360,27 +381,53 @@ class SystemModel(KiteKinematics):
             inputs_name,
             unknown_vars,
         )
-        # return solver, inputs_name, unknown_vars
+        self._qs_tether_decisions = [sym.name() for sym in tether_decisions]
+        self._qs_ng = int(g.numel())
+        self._qs_winch = winch
 
-    def solve_quasi_steady(self, state_obj, unknown_vars=None):
+    def solve_quasi_steady(self, state_obj, unknown_vars=None, winch=None):
         from awetrim.system.protocols import FlightCondition
+
         if isinstance(state_obj, FlightCondition):
             state_obj = self._condition_to_state(state_obj)
 
         if unknown_vars is None:
-            unknown_vars = self.default_unknown_vars
+            unknown_vars = list(self.default_unknown_vars)
+        else:
+            unknown_vars = list(unknown_vars)
+        if winch is not None and "speed_radial" not in unknown_vars:
+            unknown_vars.append("speed_radial")
 
         state_dict = state_obj.to_dict()
 
-        if self._qs_solver is None or self._qs_vars != unknown_vars:
-            self.setup_qs_solver(unknown_vars)
+        cached_winch = getattr(self, "_qs_winch", None)
+        if (
+            self._qs_solver is None
+            or self._qs_vars != unknown_vars
+            or cached_winch is not winch
+        ):
+            self.setup_qs_solver(unknown_vars, winch=winch)
 
         p = [state_dict[name] for name in self._qs_inputs]
         print("Input names:", self._qs_inputs)
         lbx, ubx, lbg, ubg = self.get_boundaries(state_dict, unknown_vars)
+        # Append tether-contributed bounds, and pad constraint bounds to the
+        # full residual width (force balance + any tether extra residuals).
+        lbx_t, ubx_t = self._tether_decision_bounds(state_dict)
+        lbx = list(lbx) + lbx_t
+        ubx = list(ubx) + ubx_t
+        ng = getattr(self, "_qs_ng", len(unknown_vars))
+        if ng != len(lbg):
+            lbg = [0] * ng
+            ubg = [0] * ng
 
         x0 = [safe_value(state_dict.get(var, 1.0)) for var in unknown_vars]
-        # Solve the quasi-steady state equations
+        # Tether-contributed initial guesses (Williams: tension_kite,
+        # tether_length, azimuth_last, elevation_last). For tethers with no
+        # extra decisions this is a no-op.
+        tether_guess = self.tether.decision_initial_guess_for(self, state_dict)
+        for name in self._qs_tether_decisions:
+            x0.append(safe_value(tether_guess.get(name, 1.0)))
 
         print("Initial guess:", x0)
         print("Inputs (p):", p)
@@ -397,13 +444,32 @@ class SystemModel(KiteKinematics):
         for i, var in enumerate(unknown_vars):
             state_dict[var] = float(sol["x"][i])
 
+        # Cache the full decision + parameter vector so callers can evaluate
+        # any symbolic expression (e.g. tether positions for plotting) at the
+        # converged point without re-running the solve.
+        x_vec = np.asarray(sol["x"]).reshape(-1)
+        decision_names = list(unknown_vars) + list(self._qs_tether_decisions)
+        self._last_qs_values = {
+            **{name: float(x_vec[i]) for i, name in enumerate(decision_names)},
+            **{name: float(p[i]) for i, name in enumerate(self._qs_inputs)},
+        }
+
+        # Tether-owned decision symbols (e.g. Williams' ``tension_tether_kite``,
+        # ``tether_length``, ``azimuth_last_element``, ``elevation_last_element``)
+        # are not in the State schema but are needed when evaluating derived
+        # expressions like ``tension_tether_ground``. Make them available for
+        # the derived-function pass below.
+        eval_dict = dict(state_dict)
+        for name in self._qs_tether_decisions:
+            eval_dict[name] = self._last_qs_values[name]
+
         if self._derived_functions is None:
             self._derived_functions = {
                 name: self.extract_function(name)
                 for name in self.derived_function_names
             }
         for name, func in self._derived_functions.items():
-            args = [state_dict[n] for n in func.name_in()]
+            args = [eval_dict[n] for n in func.name_in()]
             state_dict[name] = float(func(*args))
 
         return State(**state_dict)
@@ -450,7 +516,14 @@ class SystemModel(KiteKinematics):
             "speed_radial",
         ],
     ):
+        """Bounds for the kite-state ``unknown_vars`` only.
 
+        Tether-contributed bounds (e.g. Williams' four extra decisions) are
+        assembled separately inside ``solve_quasi_steady``, where the numeric
+        ``state_dict`` is available — keeping this method side-effect free
+        for callers that build their own NLPs (see
+        ``scripts/.../solve_single_state.py``).
+        """
         lbx = []
         ubx = []
         for var in unknown_vars:
@@ -461,11 +534,27 @@ class SystemModel(KiteKinematics):
                 lbx.append(DEFAULT_BOUNDS[var][0])
                 ubx.append(DEFAULT_BOUNDS[var][1])
 
-        # Bounds for the constraints
         lbg = [0] * len(unknown_vars)
         ubg = [0] * len(unknown_vars)
 
         return lbx, ubx, lbg, ubg
+
+    def _tether_decision_bounds(self, state_dict):
+        """``(lbx_tether, ubx_tether)`` aligned with
+        ``tether.decision_symbols_for(self)``. Empty for tethers that don't
+        contribute extra decisions."""
+        tether_decisions = self.tether.decision_symbols_for(self)
+        overrides = self.tether.decision_bounds_for(self, state_dict)
+        lbx, ubx = [], []
+        for sym in tether_decisions:
+            name = sym.name()
+            if name in overrides:
+                lo, hi = overrides[name]
+            else:
+                lo, hi = DEFAULT_BOUNDS[name]
+            lbx.append(lo)
+            ubx.append(hi)
+        return lbx, ubx
 
     # def get_derived_functions(self):
 

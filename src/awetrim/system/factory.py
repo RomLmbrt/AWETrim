@@ -8,6 +8,40 @@ from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.system_model import SystemModel
 from awetrim.system.tether import RigidLumpedTether
+from awetrim.system.williams_tether import WilliamsTether
+
+
+def create_tether_from_config(
+    tether_cfg: dict | None,
+    *,
+    diameter: float,
+    density: float,
+):
+    """Instantiate a tether model from an ``as_config.yaml``-style block.
+
+    ``tether_cfg`` may be ``None`` (defaults to ``RigidLumpedTether``) or a
+    dict with at least a ``model`` key selecting the class. ``diameter`` and
+    ``density`` come from ``system.yaml`` (awesIO) and are passed to every
+    backend.
+    """
+    if not tether_cfg:
+        return RigidLumpedTether(diameter=diameter, density=density)
+
+    model = str(tether_cfg.get("model", "rigid_lumped")).lower()
+    if model in ("rigid_lumped", "rigid", "lumped"):
+        return RigidLumpedTether(diameter=diameter, density=density)
+    if model == "williams":
+        return WilliamsTether(
+            diameter=diameter,
+            density=density,
+            n_elements=int(tether_cfg.get("n_elements", 20)),
+            elastic=bool(tether_cfg.get("is_elastic", False)),
+            cf=float(tether_cfg.get("cf", 0.01)),
+        )
+    raise ValueError(
+        f"Unknown tether model '{tether_cfg.get('model')}'. "
+        "Expected one of: 'rigid_lumped', 'williams'."
+    )
 
 
 def create_wind_model_from_config(wind_cfg):
@@ -70,9 +104,12 @@ def _resolve_aero_config_path(
         return path if path.is_absolute() else (config_path.parent / path)
 
     if config_path is not None:
-        sibling = config_path.parent / "aero_coeffs_rom.yaml"
+        sibling = config_path.parent / "rom_config.yaml"
         if sibling.exists():
             return sibling
+        legacy = config_path.parent / "aero_coeffs_rom.yaml"
+        if legacy.exists():
+            return legacy
 
     return None
 
@@ -150,6 +187,7 @@ def create_system_model_from_yaml(
     yaml_path: Union[str, Path],
     steering_control: str = "asymmetric",
     aero_yaml_path: Union[str, Path, None] = None,
+    tether_config: dict | None = None,
 ):
     """Create a SystemModel from a YAML configuration.
 
@@ -160,7 +198,7 @@ def create_system_model_from_yaml(
         metadata / assembly / components.wing.structure.{projected_surface_area, mass} /
         components.control_system.structure.mass / components.tether.structure.{diameter,
         density}. ROM aerodynamics are loaded from ``aero_yaml_path`` or from a sibling
-        ``aero_coeffs_rom.yaml`` file.
+        ``rom_config.yaml`` file (legacy: ``aero_coeffs_rom.yaml``).
 
     Legacy format:
         wing.{mass, area, aerodynamics} / kcu.mass / tether.{diameter, density}
@@ -191,7 +229,13 @@ def create_system_model_from_yaml(
             cfg, config_path=config_path, aero_yaml_path=aero_yaml_path
         )
 
-    tether = RigidLumpedTether(diameter=tether_diameter, density=tether_density)
+    tether = create_tether_from_config(
+        tether_config, diameter=tether_diameter, density=tether_density
+    )
+    print(
+        f"  tether model: {type(tether).__name__} "
+        f"(diameter={tether_diameter}, density={tether_density})"
+    )
     kite = Kite(
         mass_wing=mass_wing,
         mass_kcu=mass_kcu,

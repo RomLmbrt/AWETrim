@@ -17,6 +17,11 @@ class State:
     tension_tether_ground: float = None
     timeder_speed_tangential: Optional[float] = None
     timeder_speed_radial: Optional[float] = None
+    # Williams tether decision variables (None for non-Williams tethers)
+    elevation_last_element: Optional[float] = None
+    azimuth_last_element: Optional[float] = None
+    tether_length: Optional[float] = None
+    tension_tether_kite: Optional[float] = None
     # Optional inputs
     angle_roll: Optional[float] = None
     angle_pitch: Optional[float] = None

@@ -17,6 +17,13 @@ DEFAULT_BOUNDS = {
     "speed_friction": [0, 5],
     "angle_of_attack": [np.radians(-2), np.radians(18)],
     "direction_wind": [-np.pi, np.pi],
+    "tension_tether_kite": [300, 1e9],
+    "tether_length": [0, 2000],
+    # ``azimuth_last_element`` is widened to ``[-2π, 2π]`` so IPOPT has slack
+    # to cross the spherical-azimuth ``±π`` wrap (active when the kite flies
+    # near the wind-frame zenith) without locking up at the bound.
+    "azimuth_last_element": [-2 * np.pi, 2 * np.pi],
+    "elevation_last_element": [-np.pi / 2, np.pi / 2],
 }
 
 PLOT_LABELS = {

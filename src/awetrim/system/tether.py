@@ -20,6 +20,47 @@ class Tether(ABC):
     def mass_tether_for(self, model):
         return self.density_tether * model.distance_radial * self.area_tether
 
+    # ------------------------------------------------------------------
+    # Hooks for tethers that contribute their own decision variables and
+    # equations to the system-level quasi-steady NLP. Defaults are empty
+    # so simple tethers (RigidLinkTether, RigidLumpedTether, ...) keep the
+    # existing behaviour, where their only decision (``tension_tether_ground``)
+    # is discovered by name in ``SystemModel.default_unknown_vars``.
+    # ------------------------------------------------------------------
+    def decision_symbols_for(self, model):
+        """Extra CasADi symbols the tether contributes to the joint NLP.
+
+        Returned symbols are appended to the decision vector after the
+        kite-state unknowns. Each symbol's ``.name()`` must match an entry
+        in ``DEFAULT_BOUNDS`` or be supplied by ``decision_bounds_for``.
+        """
+        return []
+
+    def extra_residuals_for(self, model):
+        """Extra scalar equations the tether contributes to the joint NLP."""
+        return ca.MX.zeros(0, 1)
+
+    def decision_bounds_for(self, model, state_dict):
+        """``{symbol_name: (lower, upper)}`` override for tether decisions
+        whose bounds depend on the current numeric state (e.g. tether length
+        scales with ``distance_radial``). Returning ``{}`` means fall back to
+        ``DEFAULT_BOUNDS`` by name."""
+        return {}
+
+    def decision_initial_guess_for(self, model, state_dict):
+        """``{symbol_name: x0}`` initial guesses for tether decisions, derived
+        from the current ``state_dict`` (so a Williams shape starts close to
+        the straight-line kite-to-ground configuration). Missing entries fall
+        back to 1.0 in ``SystemModel.solve_quasi_steady``."""
+        return {}
+
+    def default_kite_state_unknowns(self):
+        """Kite-state names ``SystemModel.default_unknown_vars`` should pick
+        for this tether. Tethers that own their own tension symbol (Williams)
+        omit ``tension_tether_ground``; tethers that expose it as a free
+        symbol on the model (rigid/lumped) include it."""
+        return ["speed_tangential", "timeder_angle_course", "tension_tether_ground"]
+
 
 class RigidLinkTether(Tether):
     def __init__(self, E=132e9, diameter=0.01, density=970):
@@ -94,9 +135,7 @@ class RigidLumpedTether(Tether):
         force_tension = ca.vertcat(0, 0, -model.tension_tether_ground)
         force_drag = self.drag_tether_at_kite_for(model)
         force_gravity = self.force_gravity_tether_at_kite_for(model)
-        kite = getattr(model, "kite", model)
-        force_kcu = -kite.mass_kcu * model.acceleration + model.force_gravity_kcu
-        return force_tension + force_drag + force_gravity + force_kcu
+        return force_tension + force_drag + force_gravity
 
     @property
     def tension_kite(self):
@@ -299,5 +338,3 @@ class FlexibleLumpedTether(Tether):
             model.angle_azimuth, model.angle_elevation, model.angle_course
         ) @ ca.vertcat(0, 0, -self.mass_tether_for(model) * model.g)
         return ca.vertcat(weight[0] / 2, weight[1] / 2, weight[2])
-
-

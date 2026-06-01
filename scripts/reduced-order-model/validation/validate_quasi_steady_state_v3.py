@@ -9,6 +9,7 @@ from awetrim.system.tether import (
     RigidLinkTether,
 )
 from awetrim.system.factory import load_aero_input_from_system_config
+from awetrim.system.williams_tether import WilliamsTether
 from awetrim.environment.Wind import Wind
 import casadi as ca
 import time
@@ -18,9 +19,94 @@ import yaml
 
 from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
 
+RUN_WILLIAMS = False
+RUN_RIGID = True
+SHOW_PLOTS = True
+
+if not SHOW_PLOTS:
+    plt.switch_backend("Agg")
+
+
+def build_williams_validation_solver(kite_model):
+    tether = kite_model.tether
+    if not isinstance(tether, WilliamsTether):
+        raise TypeError(f"Expected WilliamsTether, got {type(tether).__name__}")
+
+    # Williams formulation: solve force balance (including tether force) and
+    # ground closure simultaneously with free tether-end angles and tension.
+    # The tether reads wind/rho/g/omega off ``kite_model`` via the
+    # ``_for(model)`` API; nothing is stored on the tether instance.
+    x = ca.vertcat(
+        kite_model.speed_tangential,
+        kite_model.input_steering,
+        tether.tension_tether_kite,
+        tether.tether_length,
+        tether.azimuth_last_element,
+        tether.elevation_last_element,
+    )
+    p = ca.vertcat(
+        kite_model.distance_radial,
+        kite_model.angle_course,
+        kite_model.speed_radial,
+        kite_model.angle_azimuth,
+        kite_model.angle_elevation,
+        kite_model.wind.speed_friction,
+        kite_model.timeder_angle_course,
+        kite_model.input_depower,
+    )
+
+    tether_shape = tether.tether_shape_symbolic_for(kite_model)
+    tether_force_ground = tether_shape["tether_force_ground"]
+    tension_ground = ca.norm_2(tether_force_ground)
+    ground_residual = tether_shape["ground_position"]
+    force_balance = kite_model.force_residual
+    residual = ca.vertcat(force_balance, ground_residual)
+
+    outputs = ca.vertcat(
+        force_balance,
+        tension_ground,
+        ground_residual,
+        tether.tension_tether_kite,
+        tether.elevation_last_element,
+        tether.azimuth_last_element,
+        kite_model.kite.lift_coefficient_for(kite_model),
+        kite_model.kite.drag_coefficient_for(kite_model),
+        kite_model.kite.angle_of_attack_for(kite_model),
+        kite_model.speed_apparent_wind,
+        kite_model.kite.pitch_bridle_for(kite_model),
+        kite_model.angle_pitch_aerodynamic,
+        kite_model.kite.angle_roll_aerodynamic_for(kite_model),
+        kite_model.input_steering,
+        kite_model.kite.roll_bridle_for(kite_model),
+    )
+    output_fun = ca.Function(
+        "williams_validation_outputs",
+        [x, p],
+        [outputs],
+        ["x", "p"],
+        ["outputs"],
+    )
+    nlp = {"x": x, "p": p, "f": 0, "g": residual}
+    solver = ca.nlpsol(
+        "williams_validation_solver",
+        "ipopt",
+        nlp,
+        {
+            "ipopt": {
+                "print_level": 0,
+                "sb": "yes",
+                "max_iter": 400,
+                "tol": 1e-8,
+                "constr_viol_tol": 1e-8,
+            },
+            "print_time": False,
+        },
+    )
+    return solver, output_fun
+
 
 def read_results(year, month, day, kite_model, addition="", path_to_main=""):
-    path = "/flight_logs/"
+    path = ""
     date = str(year) + "-" + str(month) + "-" + str(day)
     file_name = str(kite_model) + "_" + date
     hdf5_path = path_to_main + path + file_name + addition + ".h5"
@@ -79,18 +165,26 @@ def read_dict_from_group(group):
 
 
 results, flight_data, config_data = read_results(
-    "2019", "10", "08", "v3", addition="", path_to_main="./data/LEI-V3-KITE/"
+    "2019",
+    "10",
+    "08",
+    "LEI-V3-Kite",
+    addition="",
+    path_to_main="./results/LEI-V3-KITE/ekf/",
 )
 print(max(flight_data.cycle))
 # mask = (flight_data.cycle>10)&(flight_data.cycle<70)
 mask = flight_data.cycle.isin(range(10, 120))
 # mask = flight_data.cycle.isin(range(64, 68))
-mask = flight_data.cycle == 65
+mask = flight_data.cycle == 60
 # mask = mask & (flight_data.kite_elevation < 0.75)
 flight_data = flight_data[mask]
 results = results[mask]
 results = results.reset_index(drop=True)
 flight_data = flight_data.reset_index(drop=True)
+
+# results = results.iloc[0:800].reset_index(drop=True)
+# flight_data = flight_data.iloc[0:800].reset_index(drop=True)
 
 # csv_file = "./processed_data/VSM_results_alpha_sweep.csv"
 # v3_polar_data = pd.read_csv(csv_file)
@@ -123,14 +217,23 @@ flight_data["up"] = (flight_data["up"] - flight_data["up"].min()) / (
 course_rate = np.gradient(np.unwrap(flight_data.kite_course), flight_data.time)
 course_rate = gaussian_filter1d(course_rate, sigma=1)
 plt.plot(flight_data.time, course_rate)
-plt.show()
+if SHOW_PLOTS:
+    plt.show()
+else:
+    plt.close()
 flight_data["course_rate"] = course_rate
 # Run simulation for aerodynamic model defined in system.yml (awesIO format)
 with open(LEI_V3_SYSTEM_CONFIG, "r") as file:
     kite_cfg = yaml.safe_load(file)
 
-aero_labels = ["Variable"]
-aero_cfgs = [kite_cfg]
+aero_labels = []
+aero_cfgs = []
+if RUN_RIGID:
+    aero_labels.append("Variable")
+    aero_cfgs.append(kite_cfg)
+if RUN_WILLIAMS:
+    aero_labels.append("Williams")
+    aero_cfgs.append(kite_cfg)
 all_solutions = {}
 
 for cfg, label in zip(aero_cfgs, aero_labels):
@@ -148,7 +251,15 @@ for cfg, label in zip(aero_cfgs, aero_labels):
     mass_kcu = cs_struct.get("mass", 0.0)
     tether_diameter = tether_struct.get("diameter", 0.01)
 
-    tether = RigidLumpedTether(diameter=tether_diameter)
+    if label == "Williams":
+        tether = WilliamsTether(
+            diameter=tether_diameter,
+            n_elements=10,
+            elastic=False,
+            cf=0.01,
+        )
+    else:
+        tether = RigidLumpedTether(diameter=tether_diameter)
     wind_model = Wind(wind_model="logarithmic", z0=0.1, direction_wind=0)
     kite = Kite(
         mass_wing=mass_wing,
@@ -170,11 +281,23 @@ for cfg, label in zip(aero_cfgs, aero_labels):
     wdir_window = []
     failed_indices = set()
 
-    unknown_vars = [
-        "tension_tether_ground",
-        "input_steering",
-        "speed_tangential",
-    ]
+    if label == "Williams":
+        # Williams formulation: solve force balance + ground closure with
+        # free tether-end tension and angles.
+        unknown_vars = [
+            "speed_tangential",
+            "input_steering",
+            "tension_tether_kite",
+            "tether_length",
+            "azimuth_last_element",
+            "elevation_last_element",
+        ]
+    else:
+        unknown_vars = [
+            "tension_tether_ground",
+            "input_steering",
+            "speed_tangential",
+        ]
 
     solver_options = {
         "ipopt": {
@@ -188,18 +311,39 @@ for cfg, label in zip(aero_cfgs, aero_labels):
     window_size = 50
     qs_guess = [1e5, 0, 60]
 
-    cl_func = kite_model.extract_function("lift_coefficient")
-    cd_func = kite_model.extract_function("drag_coefficient")
-    aoa_func = kite_model.extract_function("angle_of_attack")
-    tension_func = kite_model.extract_function("tension_tether_ground")
-    speed_apparent_wind_func = kite_model.extract_function("speed_apparent_wind")
-    pitch_bridle_func = kite_model.extract_function("pitch_bridle")
-    pitch_aero_func = kite_model.extract_function("angle_pitch_aerodynamic")
-    roll_aero_func = kite_model.extract_function("angle_roll_aerodynamic")
-    input_steering_func = kite_model.extract_function("input_steering")
-    roll_bridle_func = kite_model.extract_function("roll_bridle")
-
-    kite_model.setup_qs_solver(unknown_vars, solver_options=solver_options)
+    if label == "Williams":
+        qs_solver, williams_output_fun = build_williams_validation_solver(kite_model)
+        kite_model._qs_inputs = [
+            "distance_radial",
+            "angle_course",
+            "speed_radial",
+            "angle_azimuth",
+            "angle_elevation",
+            "speed_friction",
+            "timeder_angle_course",
+            "input_depower",
+        ]
+        qs_guess = [
+            30.0,
+            0.0,
+            1.0e5,
+            float(np.mean(distance_radial)) if len(distance_radial) else 230.0,
+            float(np.mean(azimuth)) if len(azimuth) else 0.0,
+            float(np.mean(flight_data.kite_elevation)) if len(flight_data) else 0.3,
+        ]
+    else:
+        cl_func = kite_model.extract_function("lift_coefficient")
+        cd_func = kite_model.extract_function("drag_coefficient")
+        aoa_func = kite_model.extract_function("angle_of_attack")
+        tension_func = kite_model.extract_function("tension_tether_ground")
+        speed_apparent_wind_func = kite_model.extract_function("speed_apparent_wind")
+        pitch_bridle_func = kite_model.extract_function("pitch_bridle")
+        pitch_aero_func = kite_model.extract_function("angle_pitch_aerodynamic")
+        roll_aero_func = kite_model.extract_function("angle_roll_aerodynamic")
+        input_steering_func = kite_model.extract_function("input_steering")
+        roll_bridle_func = kite_model.extract_function("roll_bridle")
+        kite_model.setup_qs_solver(unknown_vars, solver_options=solver_options)
+        qs_solver = kite_model._qs_solver
 
     uf = (
         results.wind_speed_horizontal
@@ -236,62 +380,118 @@ for cfg, label in zip(aero_cfgs, aero_labels):
             "input_depower": row.up,
         }
 
-        p = [current_state[name] for name in kite_model._qs_inputs]
-        lbx, ubx, lbg, ubg = kite_model.get_boundaries(current_state, unknown_vars)
-
-        sol = kite_model._qs_solver(
-            x0=qs_guess, p=p, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg
+        p = np.asarray(
+            [current_state[name] for name in kite_model._qs_inputs],
+            dtype=float,
         )
-        qs_guess = sol["x"]
+        if label == "Williams":
+            r_i = float(current_state["distance_radial"])
+            # [speed_tangential, input_steering, tension_kite, tether_length, az, elev]
+            lbx = [0.0, -3.0, 300.0, 0.5 * r_i, -np.pi, -0.5 * np.pi]
+            ubx = [200.0, 3.0, 1.0e9, 3.0 * r_i, np.pi, 0.5 * np.pi]
+            # 3 force-balance residuals + 3 ground-position residuals.
+            lbg = np.zeros(6, dtype=float)
+            ubg = np.zeros(6, dtype=float)
+            qs_guess = np.clip(
+                np.asarray(qs_guess, dtype=float),
+                np.asarray(lbx, dtype=float),
+                np.asarray(ubx, dtype=float),
+            )
+        else:
+            lbx, ubx, lbg, ubg = kite_model.get_boundaries(current_state, unknown_vars)
+            qs_guess = np.asarray(qs_guess, dtype=float)
+
+        sol = qs_solver(
+            x0=np.asarray(qs_guess, dtype=float),
+            p=p,
+            lbx=np.asarray(lbx, dtype=float),
+            ubx=np.asarray(ubx, dtype=float),
+            lbg=np.asarray(lbg, dtype=float),
+            ubg=np.asarray(ubg, dtype=float),
+        )
+        qs_guess = np.asarray(sol["x"], dtype=float).reshape(-1)
         qs_state = {name: float(sol["x"][i]) for i, name in enumerate(unknown_vars)}
         state_combined = {**qs_state, **current_state}
         if np.linalg.norm(sol["g"]) < 1:
-
-            state_combined["lift_coefficient"] = float(
-                cl_func(*[state_combined[name] for name in cl_func.name_in()])
-            )
-            state_combined["drag_coefficient"] = float(
-                cd_func(*[state_combined[name] for name in cd_func.name_in()])
-            )
-            state_combined["angle_of_attack"] = float(
-                aoa_func(*[state_combined[name] for name in aoa_func.name_in()])
-            )
-            state_combined["tension_tether_ground"] = float(
-                tension_func(*[state_combined[name] for name in tension_func.name_in()])
-            )
-            state_combined["pitch_bridle"] = float(
-                pitch_bridle_func(
-                    *[state_combined[name] for name in pitch_bridle_func.name_in()]
+            if label == "Williams":
+                out = np.asarray(
+                    williams_output_fun(x=sol["x"], p=p)["outputs"]
+                ).reshape(-1)
+                # Output layout (see build_williams_validation_solver):
+                # [force_balance(3), tension_ground, ground_residual(3),
+                #  tension_kite, elev_last, az_last, lift_coef, drag_coef,
+                #  aoa, v_apparent, pitch_bridle, pitch_aero, roll_aero,
+                #  input_steering, roll_bridle]
+                state_combined["force_residual_x"] = float(out[0])
+                state_combined["force_residual_y"] = float(out[1])
+                state_combined["force_residual_z"] = float(out[2])
+                state_combined["tension_tether_ground"] = float(out[3])
+                state_combined["ground_residual_x"] = float(out[4])
+                state_combined["ground_residual_y"] = float(out[5])
+                state_combined["ground_residual_z"] = float(out[6])
+                state_combined["tension_tether_kite"] = float(out[7])
+                state_combined["elevation_last_element"] = float(out[8])
+                state_combined["azimuth_last_element"] = float(out[9])
+                state_combined["lift_coefficient"] = float(out[10])
+                state_combined["drag_coefficient"] = float(out[11])
+                state_combined["angle_of_attack"] = float(out[12])
+                state_combined["speed_apparent_wind"] = float(out[13])
+                state_combined["pitch_bridle"] = float(out[14])
+                state_combined["angle_pitch_aerodynamic"] = float(out[15])
+                state_combined["angle_roll_aerodynamic"] = float(out[16])
+                state_combined["input_steering"] = float(out[17])
+                state_combined["roll_bridle"] = float(out[18])
+            else:
+                state_combined["lift_coefficient"] = float(
+                    cl_func(*[state_combined[name] for name in cl_func.name_in()])
                 )
-            )
-            state_combined["angle_pitch_aerodynamic"] = float(
-                pitch_aero_func(
-                    *[state_combined[name] for name in pitch_aero_func.name_in()]
+                state_combined["drag_coefficient"] = float(
+                    cd_func(*[state_combined[name] for name in cd_func.name_in()])
                 )
-            )
-            state_combined["angle_roll_aerodynamic"] = float(
-                roll_aero_func(
-                    *[state_combined[name] for name in roll_aero_func.name_in()]
+                state_combined["angle_of_attack"] = float(
+                    aoa_func(*[state_combined[name] for name in aoa_func.name_in()])
                 )
-            )
-            state_combined["speed_apparent_wind"] = float(
-                speed_apparent_wind_func(
-                    *[
-                        state_combined[name]
-                        for name in speed_apparent_wind_func.name_in()
-                    ]
+                state_combined["tension_tether_ground"] = float(
+                    tension_func(
+                        *[state_combined[name] for name in tension_func.name_in()]
+                    )
                 )
-            )
-            state_combined["input_steering"] = float(
-                input_steering_func(
-                    *[state_combined[name] for name in input_steering_func.name_in()]
+                state_combined["pitch_bridle"] = float(
+                    pitch_bridle_func(
+                        *[state_combined[name] for name in pitch_bridle_func.name_in()]
+                    )
                 )
-            )
-            state_combined["roll_bridle"] = float(
-                roll_bridle_func(
-                    *[state_combined[name] for name in roll_bridle_func.name_in()]
+                state_combined["angle_pitch_aerodynamic"] = float(
+                    pitch_aero_func(
+                        *[state_combined[name] for name in pitch_aero_func.name_in()]
+                    )
                 )
-            )
+                state_combined["angle_roll_aerodynamic"] = float(
+                    roll_aero_func(
+                        *[state_combined[name] for name in roll_aero_func.name_in()]
+                    )
+                )
+                state_combined["speed_apparent_wind"] = float(
+                    speed_apparent_wind_func(
+                        *[
+                            state_combined[name]
+                            for name in speed_apparent_wind_func.name_in()
+                        ]
+                    )
+                )
+                state_combined["input_steering"] = float(
+                    input_steering_func(
+                        *[
+                            state_combined[name]
+                            for name in input_steering_func.name_in()
+                        ]
+                    )
+                )
+                state_combined["roll_bridle"] = float(
+                    roll_bridle_func(
+                        *[state_combined[name] for name in roll_bridle_func.name_in()]
+                    )
+                )
             state_combined["time"] = row.time
             state_combined["original_index"] = i  # Track original index
             solutions.append(state_combined)
@@ -304,8 +504,18 @@ for cfg, label in zip(aero_cfgs, aero_labels):
             for dict_entry in state_combined:
                 state_combined[dict_entry] = np.nan
             solutions.append(state_combined)
-            qs_guess[0] = 1e10
-            qs_guess[2] = 100
+            if label == "Williams":
+                qs_guess = [
+                    60.0,
+                    0.0,
+                    1.0e5,
+                    float(current_state["distance_radial"]),
+                    float(current_state["angle_azimuth"]),
+                    float(current_state["angle_elevation"]),
+                ]
+            else:
+                qs_guess[0] = 1e10
+                qs_guess[2] = 100
             print("Quasi steady solution not found, index:", i)
             failed_indices.add(i)
 
@@ -578,9 +788,12 @@ for label, solutions_df in all_solutions.items():
         )
         plt.tight_layout()
         save_path = f"./results/figures/validation_errors_{label.lower()}.pdf"
-        plt.savefig(save_path, bbox_inches="tight", dpi=300)
+        # plt.savefig(save_path, bbox_inches="tight", dpi=300)
         print(f"\nError boxplot saved to: {save_path}")
-        plt.show()
+        if SHOW_PLOTS:
+            plt.show()
+        else:
+            plt.close(fig)
         return fig
 
     plot_error_boxplots(cycle_phase_df, label)
@@ -700,7 +913,7 @@ def plot_main_results_comparison(
     phase_colors = ["#4CAF50", "#FF9800", "#2196F3"]
 
     plt.figure()
-    label = "Variable"
+    label = next(iter(all_solutions))
     plt.plot(
         all_solutions[label]["speed_apparent_wind"]
         * all_solutions[label]["input_steering"],
@@ -717,7 +930,10 @@ def plot_main_results_comparison(
         flight_data["course_rate"],
         ".",
     )
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close()
     # Figure 1: Dynamics (left panels)
     fig1 = plt.figure(figsize=(5, 6))
     gs1 = fig1.add_gridspec(3, 1, height_ratios=[1, 1, 1])
@@ -856,9 +1072,11 @@ def plot_main_results_comparison(
         ax.set_xlim(flight_data["time"].min(), flight_data["time"].max())
 
     plt.tight_layout()
-    plt.savefig(save_folder + "validation_v3_dynamics.pdf", bbox_inches="tight")
+    # plt.savefig(save_folder + "validation_v3_dynamics.pdf", bbox_inches="tight")
     if show:
         plt.show()
+    else:
+        plt.close(fig1)
 
     # Figure 2: Aerodynamics (right panels)
     fig2 = plt.figure(figsize=(8, 6))
@@ -924,9 +1142,11 @@ def plot_main_results_comparison(
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(save_folder + "validation_v3_aerodynamics.pdf", bbox_inches="tight")
+    # plt.savefig(save_folder + "validation_v3_aerodynamics.pdf", bbox_inches="tight")
     if show:
         plt.show()
+    else:
+        plt.close(fig2)
 
 
 # --- Plotting section ---
@@ -936,5 +1156,5 @@ plot_main_results_comparison(
     speed_tangential,
     PLOT_LABELS,
     save_folder="./results/figures/translational_paper/",
-    show=True,
+    show=SHOW_PLOTS,
 )
