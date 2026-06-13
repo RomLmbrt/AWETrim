@@ -409,7 +409,6 @@ class SystemModel(KiteKinematics):
             self.setup_qs_solver(unknown_vars, winch=winch)
 
         p = [state_dict[name] for name in self._qs_inputs]
-        print("Input names:", self._qs_inputs)
         lbx, ubx, lbg, ubg = self.get_boundaries(state_dict, unknown_vars)
         # Append tether-contributed bounds, and pad constraint bounds to the
         # full residual width (force balance + any tether extra residuals).
@@ -429,8 +428,6 @@ class SystemModel(KiteKinematics):
         for name in self._qs_tether_decisions:
             x0.append(safe_value(tether_guess.get(name, 1.0)))
 
-        print("Initial guess:", x0)
-        print("Inputs (p):", p)
         sol = self._qs_solver(x0=x0, p=p, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
 
         if np.linalg.norm(sol["g"]) > 1:
@@ -644,7 +641,7 @@ class SystemModel(KiteKinematics):
                 )
             alg = self.algebraic
 
-            dae = {"x": x, "p": p, "z": z, "p": p, "ode": ode, "alg": alg}
+            dae = {"x": x, "p": p, "z": z, "ode": ode, "alg": alg}
             # Create the integrator
             opts = {
                 "abstol": 1e-6,
