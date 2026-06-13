@@ -40,7 +40,6 @@ class ParametrizedPatterns(ABC):
         r_vec = ca.vertcat(x, y, z)  # 3x1
 
         # --- First and second derivatives wrt s ---
-        print(r_vec)
         r_s = ca.jacobian(r_vec, s)  # 3x1
         r_ss = ca.jacobian(r_s, s)  # 3x1
 
@@ -132,9 +131,18 @@ def create_pattern_from_dict(
     parameters,
 ) -> ParametrizedPatterns:
 
+    # The class map is the single source of truth for what can actually be
+    # instantiated. Required-parameter lists only exist for types we can build.
+    pattern_classes = {
+        "helix": Helix,
+        "lissajous_angles": LissajousAngles,
+        "reel_in_simple": Reelin_Simple,
+        "transition_simple": Transition_Simple,
+        "spline_periodic": PeriodicBSpline,
+        "spline_open": OpenBSpline,
+    }
+
     required_params = {
-        "helix": ["omega", "r0", "d0", "vr", "beta0", "kappa"],
-        "lissajous": ["omega", "r0", "a0", "h0", "vr", "beta0", "kappa"],
         "lissajous_angles": [
             "omega",
             "r0",
@@ -143,36 +151,6 @@ def create_pattern_from_dict(
             "vr",
             "beta0",
             "kappa",
-        ],
-        "figure_eight": ["omega", "r0", "ry", "rz", "vr", "beta0", "ky", "kz", "kappa"],
-        "figure_eight_angles": [
-            "omega",
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "vr",
-            "beta0",
-            "ky",
-            "kz",
-            "kappa",
-        ],
-        "cst_lissajous": [
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "beta0",
-            "beta_coeffs",
-            "az_coeffs",
-        ],
-        "spline": ["r0", "r1", "C_az", "C_el", "s_norm_az", "s_norm_el"],
-        "cst_helix": [
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "beta0",
-            "phi0",
-            "beta_coeffs",
-            "az_coeffs",
         ],
         "reel_in_simple": ["elevation_start_ri", "elevation_start_riro"],
         "transition_simple": [
@@ -185,26 +163,21 @@ def create_pattern_from_dict(
         "spline_open": ["M", "C_phi", "C_beta", "s_init", "s_final", "r0"],
     }
 
-    if pattern_type not in required_params:
-        raise ValueError(f"Unknown pattern type: {pattern_type}")
+    if pattern_type not in pattern_classes:
+        raise ValueError(
+            f"Unknown or unsupported pattern type: {pattern_type!r}. "
+            f"Supported types: {sorted(pattern_classes)}"
+        )
 
     missing_params = [
-        param for param in required_params[pattern_type] if param not in parameters
+        param
+        for param in required_params.get(pattern_type, [])
+        if param not in parameters
     ]
     if missing_params:
         raise ValueError(
             f"Missing required parameters in 'parameters' for '{pattern_type}': {', '.join(missing_params)}"
         )
-
-    # Instantiate the appropriate pattern class
-    pattern_classes = {
-        "helix": Helix,
-        "lissajous_angles": LissajousAngles,
-        "reel_in_simple": Reelin_Simple,
-        "transition_simple": Transition_Simple,
-        "spline_periodic": PeriodicBSpline,
-        "spline_open": OpenBSpline,
-    }
 
     return pattern_classes[pattern_type](**parameters)
 
