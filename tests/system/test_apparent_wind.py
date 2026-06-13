@@ -70,3 +70,40 @@ def test_apparent_wind(
     va = np.array(system.velocity_apparent_wind.full()).flatten()
 
     np.testing.assert_allclose(va, expected, atol=1e-10)
+
+
+def test_wind_velocity_at_height_is_direction_aware():
+    """velocity_wind_at_height_W must carry direction_wind, consistent with
+    velocity_wind_W (regression: it previously put all speed on +x)."""
+    import casadi as ca
+
+    direction = 0.7
+    speed = 10.0
+    wind = Wind(wind_model="uniform", speed_wind_ref=speed, direction_wind=direction)
+
+    v_at_height = np.array(ca.DM(wind.velocity_wind_at_height_W(100.0))).ravel()
+    expected = speed * np.array([np.cos(direction), np.sin(direction), 0.0])
+    np.testing.assert_allclose(v_at_height, expected, atol=1e-10)
+
+    # Must match the kite-height world-frame wind helper.
+    v_ref = np.array(ca.DM(wind.velocity_wind_W(100.0))).ravel()
+    np.testing.assert_allclose(v_at_height, v_ref, atol=1e-10)
+
+
+def test_wind_velocity_helpers_are_coherent():
+    """velocity_wind_at_height(model, model.z) == velocity_wind(model) for a
+    non-zero wind direction, so both course-frame wind paths agree."""
+    wind = Wind(wind_model="uniform", speed_wind_ref=8.0, direction_wind=-0.4)
+    kite = Kite(mass_wing=1.0, area_wing=10.0, aero_input=_AERO_INPUT)
+    system = SystemModel(kite=kite, dof=3, quasi_steady=True, wind_model=wind)
+
+    system.angle_azimuth = 0.3
+    system.angle_elevation = 0.5
+    system.distance_radial = 120.0
+    system.angle_course = 1.1
+    system.speed_tangential = 0.0
+    system.speed_radial = 0.0
+
+    v1 = np.array(system.wind.velocity_wind(system).full()).ravel()
+    v2 = np.array(system.wind.velocity_wind_at_height(system, system.z).full()).ravel()
+    np.testing.assert_allclose(v1, v2, atol=1e-10)

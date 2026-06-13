@@ -122,7 +122,10 @@ class Wind:
             return self.wind_interp(height)
 
     def velocity_wind_at_height_W(self, height):
-        return ca.vertcat(self.speed_wind_at_height(height), 0, 0)
+        # World-frame wind at an explicit height. Direction-aware and routed
+        # through velocity_wind_W so it stays consistent with velocity_wind
+        # (previously this dropped direction_wind and put all speed on +x).
+        return self.velocity_wind_W(height)
 
     def velocity_wind_at_height(self, model, height):
         """
