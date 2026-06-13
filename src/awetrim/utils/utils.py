@@ -95,10 +95,9 @@ def load_cycle_config_from_yaml(yaml_path):
 
     Returns
     -------
-    tuple[dict, dict, dict]
-        A tuple of (REELOUT_CONFIG, WIND_CONFIG, REELIN_CONFIG) dictionaries.
+    tuple[dict, dict]
+        A tuple of (REELOUT_CONFIG, REELIN_CONFIG) dictionaries.
         - REELOUT_CONFIG contains pattern_type, path_parameters, radial_parameters, sim_parameters
-        - WIND_CONFIG contains speed_wind_at_200, z0, model_type
         - REELIN_CONFIG contains reel-in phase parameters (if available)
 
     Examples

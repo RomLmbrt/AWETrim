@@ -792,7 +792,7 @@ def main(
         try:
             va_vec = np.asarray(body_aero.va, dtype=float)
             va = float(np.linalg.norm(va_vec))
-        except:
+        except Exception:
             va = np.nan
 
     # Extract Cl and Cd from VSM solution
@@ -841,7 +841,7 @@ def main(
         tether_force = float(
             f_aero_total[2] + gravity_force_total[2] + inertial_force_total[2]
         )
-    except:
+    except Exception:
         tether_force = np.nan
 
     meta = {

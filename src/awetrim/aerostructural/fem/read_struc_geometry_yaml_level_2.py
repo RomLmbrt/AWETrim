@@ -697,7 +697,7 @@ def initialize_bridle_line_system(
 
             if conn_name == "Steering Tape":
                 steering_tape_indices.append(conn_idx_counter)
-        except:
+        except Exception:
             power_tape_index = 0
             steering_tape_indices.append(0)
 

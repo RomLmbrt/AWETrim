@@ -174,7 +174,7 @@ def process_data(config_data: dict, log_directory: Path) -> pd.DataFrame:
             flight_data["kite_position_y"],
             flight_data["kite_position_z"],
         ) = (east, north, up)
-    except:
+    except Exception:
         flight_data["kite_position_x"] = log["kite_pos_east"]
         flight_data["kite_position_y"] = log["kite_pos_north"]
         flight_data["kite_position_z"] = log["kite_height"]
@@ -191,7 +191,7 @@ def process_data(config_data: dict, log_directory: Path) -> pd.DataFrame:
             log["gps_log_vel_n_m_s"],
             -log["gps_log_vel_d_m_s"],
         )
-    except:
+    except Exception:
         fused_kite_data = fuse_sensor_data(log, kite_sensors, "kite", dt, window_size)
         flight_data = flight_data.assign(**fused_kite_data)
 
@@ -248,7 +248,7 @@ def process_data(config_data: dict, log_directory: Path) -> pd.DataFrame:
         flight_data["tether_elevation_ground"] = log[
             "ground_tether_elevation_angle_rad"
         ]
-    except:
+    except Exception:
         flight_data["tether_azimuth_ground"] = log["kite_azimuth"]
         flight_data["tether_elevation_ground"] = log["kite_elevation"]
 
