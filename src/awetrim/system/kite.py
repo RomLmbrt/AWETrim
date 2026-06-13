@@ -67,10 +67,13 @@ class Wing:
             e = aero_input["params"]["oswald_efficiency"]
             AR = aero_input["params"]["aspect_ratio"]
             CD0 = aero_input["params"]["CD0"]
-            C_L = 2 * ca.pi * variables["alpha"] / (1 + 2 / (AR * e))
-            C_D = C_L**2 / (ca.pi * e * AR) + CD0
-            C_L = C_L * ca.cos(model.input_steering * self.k_steering)
-            C_S = C_L * ca.sin(model.input_steering * self.k_steering)
+            C_L0 = 2 * ca.pi * variables["alpha"] / (1 + 2 / (AR * e))
+            C_D = C_L0**2 / (ca.pi * e * AR) + CD0
+            # Decompose the wing lift into lift/side components when rolled;
+            # both must come from the unrotated C_L0, not the rotated C_L.
+            roll = model.input_steering * self.k_steering
+            C_L = C_L0 * ca.cos(roll)
+            C_S = C_L0 * ca.sin(roll)
             return C_L, C_D, C_S
 
         # Coeff-based model
