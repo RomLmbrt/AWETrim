@@ -1,8 +1,6 @@
 import casadi as ca
-from abc import ABC, abstractmethod
+from abc import ABC
 import numpy as np
-from math import comb
-import matplotlib.pyplot as plt
 
 
 class ParametrizedPatterns(ABC):
@@ -22,109 +20,6 @@ class ParametrizedPatterns(ABC):
     def z(self, r, s):
         return r * ca.sin(self.elevation(r, s))
 
-    def curvature(self, r_array, s_array):
-
-        # --- Get scalar fields as expressions of s (t is fixed here) ---
-        # If your methods are r(s,t), phi(s), beta(s), call accordingly.
-        # The user code showed self.r(t) and gradient(..., s), so we mimic that.
-
-        s = ca.MX.sym("s")
-        r = ca.MX.sym("r")  # expression that depends on s
-        phi = self.azimuth(r, s)  # expression that depends on s
-        beta = self.elevation(r, s)  # expression that depends on s
-
-        # --- Cartesian curve r_vec(s) ---
-        x = r * ca.cos(beta) * ca.cos(phi)
-        y = r * ca.cos(beta) * ca.sin(phi)
-        z = r * ca.sin(beta)
-        r_vec = ca.vertcat(x, y, z)  # 3x1
-
-        # --- First and second derivatives wrt s ---
-        r_s = ca.jacobian(r_vec, s)  # 3x1
-        r_ss = ca.jacobian(r_s, s)  # 3x1
-
-        # --- Curvature and radius ---
-        # (use a tiny epsilon to avoid division by zero in degenerate cases)
-        eps = 1e-12
-        cross_rs_rss = ca.cross(r_s, r_ss)  # 3x1
-        num = ca.norm_2(cross_rs_rss)  # ||r_s x r_ss||
-        den = ca.power(ca.norm_2(r_s), 3) + eps  # ||r_s||^3
-        kappa = num / den
-        rho = 1.0 / (kappa + eps)
-
-        kappa_fun = ca.Function("kappa_fun", [r, s], [kappa], {"allow_free": True})
-        kappa = kappa_fun(r_array, s_array)
-
-        return kappa
-
-    def radius_curvature(self, r, s):
-        return 1.0 / (self.curvature(r, s) + 1e-12)
-
-
-class Helix(ParametrizedPatterns):
-    def __init__(self, omega, r0, amp0, vr, beta0, kappa=1, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            amp0=amp0,
-            vr=vr,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def az_amp(self, t):
-        return self.az_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def beta_amp(self, t):
-        return self.beta_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def azimuth(self, t, s):
-        return self.az_amp(t) * ca.cos(self.omega * s)
-
-    def elevation(self, t, s):
-        return self.beta_amp(t) * ca.sin(self.omega * s)
-
-
-class LissajousAngles(ParametrizedPatterns):
-    def __init__(self, omega, r0, az_amp0, beta_amp0, vr, beta0, kappa=0, kbeta=0):
-        super().__init__(
-            omega=omega,
-            r0=r0,
-            az_amp0=az_amp0,
-            beta_amp0=beta_amp0,
-            vr=vr,
-            beta0=beta0,
-            kappa=kappa,
-            kbeta=kbeta,
-        )
-
-    def beta(self, t):
-        return self.beta0 * (1 + self.kbeta * (self.r0 / self.r(t) - 1))
-
-    def r(self, t):
-        return self.r0 + self.vr * t
-
-    def az_amp(self, t):
-        return self.az_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def beta_amp(self, t):
-        return self.beta_amp0 * (1 + self.kappa * (self.r(t) / self.r0 - 1))
-
-    def azimuth(self, t, s):
-        return self.az_amp(t) * ca.cos(self.omega * s)
-
-    def elevation(self, t, s):
-        return self.beta_amp(t) * ca.sin(self.omega * s) * ca.cos(
-            self.omega * s
-        ) + self.beta(t)
-
 
 def create_pattern_from_dict(
     pattern_type,
@@ -134,8 +29,6 @@ def create_pattern_from_dict(
     # The class map is the single source of truth for what can actually be
     # instantiated. Required-parameter lists only exist for types we can build.
     pattern_classes = {
-        "helix": Helix,
-        "lissajous_angles": LissajousAngles,
         "reel_in_simple": Reelin_Simple,
         "transition_simple": Transition_Simple,
         "spline_periodic": PeriodicBSpline,
@@ -143,15 +36,6 @@ def create_pattern_from_dict(
     }
 
     required_params = {
-        "lissajous_angles": [
-            "omega",
-            "r0",
-            "az_amp0",
-            "beta_amp0",
-            "vr",
-            "beta0",
-            "kappa",
-        ],
         "reel_in_simple": ["elevation_start_ri", "elevation_start_riro"],
         "transition_simple": [
             "elevation_start_riro",
