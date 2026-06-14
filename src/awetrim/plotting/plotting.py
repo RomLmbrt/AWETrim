@@ -7,10 +7,10 @@ from cycler import cycler
 PALETTE = {
     "Black": "#000000",
     "Orange": "#E69F00",
-    "Sky Blue": "#56B4E9",
+    "Sky Blue": "#3A9DC5",
     "Bluish Green": "#009E73",
     "Yellow": "#F0E442",
-    "Blue": "#0072B2",
+    "Blue": "#2C497F",
     "Vermillion": "#D55E00",
     "Reddish Purple": "#CC79A7",
 }
