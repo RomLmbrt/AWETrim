@@ -1,10 +1,24 @@
 import numpy as np
+import pytest
 
 from awetrim.kinematics.parametrized_patterns import (
     create_pattern_from_dict,
     make_bspline_path_parameters_from_named_curve,
     named_curve_angles,
 )
+
+
+def test_create_pattern_from_dict_rejects_unsupported_type():
+    """A type with no constructor (e.g. cst_helix, the cycle-config default)
+    must raise a clear ValueError listing supported types, not a KeyError."""
+    with pytest.raises(ValueError, match="Unknown or unsupported pattern type"):
+        create_pattern_from_dict("cst_helix", {})
+
+
+def test_create_pattern_from_dict_reports_missing_params():
+    """A supported type with missing params reports them explicitly."""
+    with pytest.raises(ValueError, match="Missing required parameters"):
+        create_pattern_from_dict("spline_open", {"M": 6})
 
 
 def test_named_curve_angles_support_lissajous_and_helix():

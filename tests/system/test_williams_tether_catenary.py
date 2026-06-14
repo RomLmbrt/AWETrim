@@ -49,6 +49,24 @@ class _StandaloneEnv:
 # ---------------------------------------------------------------------------
 
 
+def test_williams_elastic_defines_axial_stiffness():
+    """WilliamsTether(elastic=True) must define EA = E·area and build the
+    elastic shape without error (regression for the undefined self.EA)."""
+    tether = WilliamsTether(
+        E=100e9, diameter=0.01, density=950.0, n_elements=5, elastic=True
+    )
+    assert tether.EA == pytest.approx(tether.E * tether.area_tether)
+
+    env = _StandaloneEnv(rho=0.0, g=9.81, wind=None)
+    shape = tether.tether_shape_symbolic(
+        env=env,
+        r_kite=np.array([10.0, 0.0, 100.0]),
+        force_kite_resultant=np.array([0.0, 0.0, 1000.0]),
+    )
+    # Elastic stretch path executed: stretched length is a real expression.
+    assert shape["tether_length_stretched"] is not None
+
+
 @pytest.fixture(scope="module")
 def catenary():
     """Closed-form hanging-tether catenary with low point at the ground."""
