@@ -13,6 +13,10 @@ from awetrim.system.system_model import SystemModel
 
 DEFAULT_KITE_NAME = "LEI-V3-KITE"
 
+# Default structural geometry for the PSM/PSS aerostructural simulations
+# (run_simulation_PSM.py and the sweeps). See data/<kite>/README_struc_files.md.
+DEFAULT_STRUC_GEOMETRY_FILENAME = "struc_geometry_PSM_reduced_photogrammetry_adjusted.yaml"
+
 # Single source of truth for config defaults used across all aerostructural scripts.
 CONFIG_DEFAULTS: dict = {
     "angle_elevation_deg": 0.0,
@@ -40,7 +44,8 @@ def resolve_kite_paths(
 
     Returns:
         (config_path, aero_geometry_path, struc_geometry_path)
-        where struc_geometry_path is None if no structural geometry file exists.
+        where struc_geometry_path is the default PSM structural geometry
+        (DEFAULT_STRUC_GEOMETRY_FILENAME).
     """
     project_dir = Path(project_dir).resolve()
 
@@ -49,7 +54,7 @@ def resolve_kite_paths(
     geometry_dir = project_dir / "data" / kite_name
 
     aero_geometry_path = geometry_dir / "aero_geometry.yaml"
-    struc_geometry_path = geometry_dir / "struc_geometry.yaml"
+    struc_geometry_path = geometry_dir / DEFAULT_STRUC_GEOMETRY_FILENAME
 
     return config_path, aero_geometry_path, struc_geometry_path
 

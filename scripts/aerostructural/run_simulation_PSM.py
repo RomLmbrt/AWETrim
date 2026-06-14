@@ -657,6 +657,7 @@ def main():
         build_deformed_struc_geometry(struc_geometry, final_nodes),
         build_deformed_aero_geometry(aero_geometry, final_nodes, struc_node_le_indices, struc_node_te_indices),
         results_dir,
+        system_yaml_path=system_config_path,
     )
 
     summary_csv_name = config.get("qsm_summary_csv_name", "qsm_summary.csv")

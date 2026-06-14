@@ -50,9 +50,10 @@ src/awetrim/aerostructural/
 
 scripts/aerostructural/
   common.py                        CONFIG_DEFAULTS, build_system_model, shared helpers
-  run_simulation_level_qsm.py      Single-case PSS/QSM solve with optional steering sweep
-  run_sweep_wind_steering.py       2-D sweep: wind × steering
-  run_sweep_course_steering_depower.py  3-D sweep: course × steering × depower
+  run_simulation_PSM.py            Single-case PSS/QSM (PSM) solve with optional steering sweep
+  run_simulation_FEM.py            Single-case FEM (kite_fem) solve
+  run_sweep_wind_steering_PSM.py   2-D sweep: wind × steering (PSM)
+  run_sweep_course_steering_depower_PSM.py  3-D sweep: course × steering × depower (PSM)
 ```
 
 ## Core Data Flow

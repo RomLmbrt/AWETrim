@@ -1,11 +1,11 @@
 """Run a single FEM/QSM aerostructural simulation (kite_fem structural solver).
 
-Geometry is read from struc_geometry_level_2_manual.yaml (FEM level-2 format with
+Geometry is read from struc_geometry_FEM_full.yaml (FEM full format with
 strut tubes and leading-edge tubes). Config is shared with the PSS script
 (as_config.yaml); the structural_solver key is forced to 'kite_fem'.
 
 Usage (from project root):
-    python scripts/aerostructural/run_simulation_level_2.py
+    python scripts/aerostructural/run_simulation_FEM.py
 """
 
 import copy
@@ -44,7 +44,7 @@ from common import (
 from awesio.validator import validate as awesio_validate
 
 # FEM uses a separate structural geometry file with strut tubes and LE tubes.
-STRUC_GEOMETRY_FILENAME = "struc_geometry_level_2_manual.yaml"
+STRUC_GEOMETRY_FILENAME = "struc_geometry_FEM_full.yaml"
 
 
 def main():
