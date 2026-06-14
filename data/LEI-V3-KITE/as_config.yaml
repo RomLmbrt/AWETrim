@@ -3,7 +3,7 @@
 # starting_from_sim_subdir: depower_p0000mm_steer_p0000mm
 is_with_gravity: !!bool false
 is_with_aero_bridle: !!bool true
-is_with_aero_tether: !!bool true
+is_with_aero_tether: !!bool false
 is_run_only_1_time_step: !!bool false
 is_with_initial_point_velocity: !!bool false
 is_with_forcing_symmetry: !!bool false
@@ -21,7 +21,7 @@ timeder_speed_radial: !!float 0.0
 
 ## actuation settings
 power_tape_extension_step: !!float 0.05 
-power_tape_final_extension: !!float 0 #0.3 #0.05
+power_tape_final_extension: !!float 0.48 #0.3 #0.05
 steering_tape_extension_step: !!float 0.05
 steering_tape_final_extension: !!float 0.0
 

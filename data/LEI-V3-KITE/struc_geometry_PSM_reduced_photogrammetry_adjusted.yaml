@@ -5,13 +5,13 @@ bridle_point_node: [0, 0, 0] #[x,y,z] --> location of kcu
 
 ## Mass
 pulley_mass: !!float 0.09 #[kg] # 0.54 kg measured pulley mass / 6 modeled pulleys
-kcu_mass: !!float 8.4 #[kg]
+kcu_mass: !!float 22.75 #[kg]
 
 ## Material properties
 dyneema:
   # (M.B. Ruppert) [Pa]
   density: 1717 #[kg/m^3] equivalent reduced-bridle density -> m = density * A * l0
-  youngs_modulus: 5000000000 #550000000 #[Pa] -> k = E A / l0
+  youngs_modulus: 10000000000 #8000000000 #550000000 #[Pa] -> k = E A / l0
   damping_per_stiffness: 0.0 # [/s] -> c = damping_per_stiffness * k
 
 fixed_point_indices: !!seq [0] # node indices that are fixed in space (0-based)
@@ -24,26 +24,26 @@ wing_particles:
   # id, x [m], y [m], z [m]
   headers: [id, x, y, z]
   data:
-    - [1, -0.183243, 4.085799, 8.56663747] #TODO: x shifted +0.009110 from -0.16686417 to align PSM x_min to FEM; y changed from 4.07190711 to 4.152601 to match FEM tip
-    - [2, 0.78924041, 4.14097577, 8.34216909] #TODO: x shifted +0.009110 from 1.03606618; y changed from 4.23504033 to 4.152601 to match FEM tip; x changed from 0.8950856 to 1.03606618 to match FEM
-    - [3, -0.69202671, 3.96785328, 9.20344443] #TODO: x shifted +0.009110 from -0.66385373
-    - [4, 0.83974271, 3.9567532, 9.20005977] #TODO: x shifted +0.009110 from 1.04472348
-    - [5, -0.90689676, 3.13415919, 10.20839442] #TODO: x shifted +0.009110 from -1.00179344
-    - [6, 1.08688134, 3.1185112, 10.18836496] #TODO: x shifted +0.009110 from 1.23676674
-    - [7, -1.05040929, 1.95959758, 10.81040272] #TODO: x shifted +0.009110 from -1.11933902
-    - [8, 1.16914236, 1.9479012, 10.77731696] #TODO: x shifted +0.009110 from 1.37326009
-    - [9, -1.12202594, 0.66421669, 11.0705101] #TODO: x shifted +0.009110 from -1.16537227
-    - [10, 1.20543178, 0.6610741, 11.03042717] #TODO: x shifted +0.009110 from 1.44917908
-    - [11, -1.12202594, -0.66421669, 11.0705101] #TODO: x shifted +0.009110 from -1.16537227
-    - [12, 1.20543178, -0.6610741, 11.03042717] #TODO: x shifted +0.009110 from 1.44917908
-    - [13, -1.05040929, -1.95959758, 10.81040272] #TODO: x shifted +0.009110 from -1.11933902
-    - [14, 1.16914236, -1.9479012, 10.77731696] #TODO: x shifted +0.009110 from 1.37326009
-    - [15, -0.90689676, -3.13415919, 10.20839442] #TODO: x shifted +0.009110 from -1.00179344
-    - [16, 1.08688134, -3.1185112, 10.18836496] #TODO: x shifted +0.009110 from 1.23676674
-    - [17, -0.69202671, -3.96785328, 9.20344443] #TODO: x shifted +0.009110 from -0.66385373
-    - [18, 0.83974271, -3.9567532, 9.20005977] #TODO: x shifted +0.009110 from 1.04472348
-    - [19, -0.183243, -4.085799, 8.56663747] #TODO: x shifted +0.009110 from -0.16686417; y changed from -4.07190711 to -4.152601 to match FEM tip
-    - [20, 0.78924041, -4.14097577, 8.34216909] #TODO: x shifted +0.009110 from 1.03606618; y changed from -4.23504033 to -4.152601 to match FEM tip; x changed from 0.8950856 to 1.03606618 to match FEM
+    - [1, -0.183243, 4.085799, 8.5561801] #TODO: x shifted +0.009110 from -0.16686417 to align PSM x_min to FEM; y changed from 4.07190711 to 4.152601 to match FEM tip
+    - [2, 0.78924041, 4.14097577, 8.33171172] #TODO: x shifted +0.009110 from 1.03606618; y changed from 4.23504033 to 4.152601 to match FEM tip; x changed from 0.8950856 to 1.03606618 to match FEM
+    - [3, -0.69202671, 3.96785328, 9.19298706] #TODO: x shifted +0.009110 from -0.66385373
+    - [4, 0.83974271, 3.9567532, 9.1896024] #TODO: x shifted +0.009110 from 1.04472348
+    - [5, -0.90689676, 3.13415919, 10.19793705] #TODO: x shifted +0.009110 from -1.00179344
+    - [6, 1.08688134, 3.1185112, 10.17790759] #TODO: x shifted +0.009110 from 1.23676674
+    - [7, -1.05040929, 1.95959758, 10.79994535] #TODO: x shifted +0.009110 from -1.11933902
+    - [8, 1.16914236, 1.9479012, 10.76685959] #TODO: x shifted +0.009110 from 1.37326009
+    - [9, -1.12202594, 0.66421669, 11.06005273] #TODO: x shifted +0.009110 from -1.16537227
+    - [10, 1.20543178, 0.6610741, 11.0199698] #TODO: x shifted +0.009110 from 1.44917908
+    - [11, -1.12202594, -0.66421669, 11.06005273] #TODO: x shifted +0.009110 from -1.16537227
+    - [12, 1.20543178, -0.6610741, 11.0199698] #TODO: x shifted +0.009110 from 1.44917908
+    - [13, -1.05040929, -1.95959758, 10.79994535] #TODO: x shifted +0.009110 from -1.11933902
+    - [14, 1.16914236, -1.9479012, 10.76685959] #TODO: x shifted +0.009110 from 1.37326009
+    - [15, -0.90689676, -3.13415919, 10.19793705] #TODO: x shifted +0.009110 from -1.00179344
+    - [16, 1.08688134, -3.1185112, 10.17790759] #TODO: x shifted +0.009110 from 1.23676674
+    - [17, -0.69202671, -3.96785328, 9.19298706] #TODO: x shifted +0.009110 from -0.66385373
+    - [18, 0.83974271, -3.9567532, 9.1896024] #TODO: x shifted +0.009110 from 1.04472348
+    - [19, -0.183243, -4.085799, 8.5561801] #TODO: x shifted +0.009110 from -0.16686417; y changed from -4.07190711 to -4.152601 to match FEM tip
+    - [20, 0.78924041, -4.14097577, 8.33171172] #TODO: x shifted +0.009110 from 1.03606618; y changed from -4.23504033 to -4.152601 to match FEM tip; x changed from 0.8950856 to 1.03606618 to match FEM
 
 wing_connections:
   # name, ci, cj
@@ -133,23 +133,23 @@ wing_elements:
 
     # trailing-edge wire (TE[i] -- TE[i+1])
     #TODO: all lengths made 5% shorter to match photogrammetry
-    - [te_1, 0.834955, 1e4, 0, 0.090673, 'noncompressive'] #TODO: changed from 0.878900 to 0.878900 * 0.95 to match photogrammetry
-    - [te_2, 1.253307, 1e4, 0, 0.144882, 'noncompressive'] #TODO: changed from 1.319270 to 1.319270 * 0.95 to match photogrammetry
-    - [te_3, 1.247346, 1e4, 0, 0.191448, 'noncompressive'] #TODO: changed from 1.312996 to 1.312996 * 0.95 to match photogrammetry
-    - [te_4, 1.246386, 1e4, 0, 0.184103, 'noncompressive'] #TODO: changed from 1.311985 to 1.311985 * 0.95 to match photogrammetry
-    - [te_5, 1.255996, 1e4, 0, 0.31896, 'noncompressive'] #TODO: changed from 1.322148 to 1.322148 * 0.95 to match photogrammetry
+    - [te_1, 0.834955, 5e4, 0, 0.090673, 'default'] #TODO: changed from 0.878900 to 0.878900 * 0.95 to match photogrammetry
+    - [te_2, 1.253307, 5e4, 0, 0.144882, 'noncompressive'] #TODO: changed from 1.319270 to 1.319270 * 0.95 to match photogrammetry
+    - [te_3, 1.247346, 5e4, 0, 0.191448, 'noncompressive'] #TODO: changed from 1.312996 to 1.312996 * 0.95 to match photogrammetry
+    - [te_4, 1.246386, 5e4, 0, 0.184103, 'noncompressive'] #TODO: changed from 1.311985 to 1.311985 * 0.95 to match photogrammetry
+    - [te_5, 1.255996, 5e4, 0, 0.31896, 'noncompressive'] #TODO: changed from 1.322148 to 1.322148 * 0.95 to match photogrammetry
 
     # diagonal springs (both directions per panel)
-    - [dia_1a, 1.210114, 1e4, 0, 0.14446, 'noncompressive']
-    - [dia_1b, 1.722184, 1e4, 0, 0.14446, 'noncompressive']
-    - [dia_2a, 2.203625, 1e4, 0, 0.21417, 'noncompressive']
-    - [dia_2b, 2.178107, 1e4, 0, 0.21417, 'noncompressive']
-    - [dia_3a, 2.457808, 1e4, 0, 0.271776, 'noncompressive']
-    - [dia_3b, 2.509586, 1e4, 0, 0.271776, 'noncompressive']
-    - [dia_4a, 2.612162, 1e4, 0, 0.257716, 'noncompressive']
-    - [dia_4b, 2.642586, 1e4, 0, 0.257716, 'noncompressive']
-    - [dia_5a, 2.678631, 1e4, 0, 0.444536, 'noncompressive']
-    - [dia_5b, 2.678631, 1e4, 0, 0.444536, 'noncompressive']
+    - [dia_1a, 1.210114, 5e4, 0, 0.14446, 'default']
+    - [dia_1b, 1.722184, 5e4, 0, 0.14446, 'default']
+    - [dia_2a, 2.203625, 5e4, 0, 0.21417, 'noncompressive']
+    - [dia_2b, 2.178107, 5e4, 0, 0.21417, 'noncompressive']
+    - [dia_3a, 2.457808, 5e4, 0, 0.271776, 'noncompressive']
+    - [dia_3b, 2.509586, 5e4, 0, 0.271776, 'noncompressive']
+    - [dia_4a, 2.612162, 5e4, 0, 0.257716, 'noncompressive']
+    - [dia_4b, 2.642586, 5e4, 0, 0.257716, 'noncompressive']
+    - [dia_5a, 2.678631, 5e4, 0, 0.444536, 'noncompressive']
+    - [dia_5b, 2.678631, 5e4, 0, 0.444536, 'noncompressive']
 
 #############################
 ## Bridle ###################
@@ -158,25 +158,25 @@ wing_elements:
 bridle_particles:
   headers: [id, x, y, z]
   data:
-    - [21, -0.59830564, 2.19422499, 6.89630489] # leading-edge
-    - [22, -0.72140036, 1.08260839, 7.40572194] # trailing-edge
-    - [23, -0.72140036, -1.08260839, 7.40572194] # leading-edge
-    - [24, -0.59830564, -2.19422499, 6.89630489] # trailinge-edge
-    - [25, -0.33644282, 1.02176307, 3.75523194]
-    - [26, -0.33644282, -1.02176307, 3.75523194]
-    - [27, 0.7431463, 1.95721129, 6.4108247]
-    - [28, 0.8285517, 1.14214113, 6.84056584]
-    - [29, 0.8285517, -1.14214113, 6.84056584]
-    - [30, 0.7431463, -1.95721129, 6.4108247]
-    - [31, 0.47074141, 1.06029088, 4.59421388]
-    - [32, 0.47074141, -1.06029088, 4.59421388]
-    - [33, 0.38975281, 0.80102957, 4.0480231]
-    - [34, 0.15876266, 0, 1.81116496]
-    - [35, 0.38975281, -0.80102957, 4.0480231]
-    - [36, 0.12802127, 0.22729748, 1.52266537]
-    - [37, 0.12802127, -0.22729748, 1.52266537]
-    - [38, 0.37873732, 0.77654684, 3.98597066] #TODO: new node for Br_main_e, offset from node 33 by FEM Br_main_e vector
-    - [39, 0.37873732, -0.77654684, 3.98597066] #TODO: new node for Br_main_e, offset from node 35 by FEM Br_main_e vector
+    - [21, -0.60062052, 2.18496266, 6.89483788] # leading-edge
+    - [22, -0.72154537, 1.07981375, 7.39713271] # trailing-edge
+    - [23, -0.72154537, -1.07981375, 7.39713271] # leading-edge
+    - [24, -0.60062052, -2.18496266, 6.89483788] # trailinge-edge
+    - [25, -0.3356779, 1.03788792, 3.74765468]
+    - [26, -0.3356779, -1.03788792, 3.74765468]
+    - [27, 0.72708166, 1.90555282, 6.29461528]
+    - [28, 0.8285517, 1.14214113, 6.83010847]
+    - [29, 0.8285517, -1.14214113, 6.83010847]
+    - [30, 0.72708166, -1.90555282, 6.29461528]
+    - [31, 0.46293996, 1.04045408, 4.52841416]
+    - [32, 0.46293996, -1.04045408, 4.52841416]
+    - [33, 0.38380379, 0.79087682, 3.98468699]
+    - [34, 0.14710305, 0, 1.6432777]
+    - [35, 0.38380379, -0.79087682, 3.98468699]
+    - [36, 0.13249947, 0.23893764, 1.54942508]
+    - [37, 0.13249947, -0.23893764, 1.54942508]
+    - [38, 0.37483472, 0.7641082, 3.92187208] #TODO: new node for Br_main_e, offset from node 33 by FEM Br_main_e vector
+    - [39, 0.37483472, -0.7641082, 3.92187208] #TODO: new node for Br_main_e, offset from node 35 by FEM Br_main_e vector
 
 bridle_connections:
   # name, ci, cj, ck (this is the third node, only exist when a pulley)
@@ -255,4 +255,5 @@ bridle_lines:
     - [Br_main_e, 0.07, 0.004, dyneema, 'noncompressive'] #TODO: new line from FEM
     - [M, 4.856, 0.004, dyneema, 'pulley'] #TODO: changed from 2.196 to 4.856m to match FEM
     - [steering_tape, 1.6, 0.004787307, dyneema, 'noncompressive'] #TODO: changed from 1.506 to 1.6m to match FEM
-    - [depower_tape, 1.9, 0.004787307, dyneema, 'noncompressive'] #TODO: changed from 3.129 to 1.9m to match FEM
+    - [depower_tape, 1.5, 0.004787307, dyneema, 'noncompressive'] #TODO: changed from 3.129 to 1.9m to match FEM -> u_dp = 0.235 --> ld= 1.5~ udp=0.22 (non-linear equation: -1.724*udp^2 +6.624*udp +0.192)
+
