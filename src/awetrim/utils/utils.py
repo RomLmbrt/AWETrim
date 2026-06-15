@@ -194,6 +194,13 @@ def load_cycle_config_from_yaml(yaml_path):
     reelin_sim_params = reelin_section.get("sim_parameters", {})
     reelin_sim_parameters = {
         "start_time": reelin_sim_params.get("start_time", 0),
+        "n_points": reelin_sim_params.get("n_points", 100),
+        "n_points_ri": reelin_sim_params.get(
+            "n_points_ri", reelin_sim_params.get("n_points", 100)
+        ),
+        "n_points_riro": reelin_sim_params.get(
+            "n_points_riro", reelin_sim_params.get("n_points", 100)
+        ),
     }
 
     # Assemble REELIN_CONFIG

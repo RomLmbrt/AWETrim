@@ -1,7 +1,8 @@
-"""Single-phase reel-out optimization and simulation.
+"""Single reel-out pattern optimization and simulation.
 
-This module provides the ReeloutSimple class for optimizing and simulating
-reel-out maneuvers for airborne wind energy systems.
+This module provides the ``Phase`` class for optimizing and simulating a
+single reel-out pattern (downloop, uploop, helix, ...) for airborne wind
+energy systems.
 """
 
 from tracemalloc import start
@@ -16,8 +17,7 @@ import yaml
 import matplotlib.pyplot as plt
 
 from awetrim.timeseries.phase_parametrized import PhaseParameterized
-from awetrim.utils.defaults import DEFAULT_RADIAL_PARAMETERS
-
+from awetrim.utils.defaults import DEFAULT_RADIAL_PARAMETERS, DEFAULT_OPTI_LIMITS
 
 START_STATE = {
     "t": 0,
@@ -54,6 +54,7 @@ class SimulationResult:
         >>> result.save_config_to_yaml("data/LEI-V3-KITE/v3_optimized_config.yaml")
         """
         output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Convert config to YAML-friendly format (numpy arrays -> lists)
         yaml_config = self._prepare_config_for_yaml(self.optimized_config)
@@ -98,10 +99,11 @@ class SimulationResult:
 
 
 class Phase:
-    """Handles single-phase reel-out optimization and simulation.
+    """Handles single reel-out pattern optimization and simulation.
 
-    This class manages the optimization and simulation of a reel-out maneuver
-    with configurable pattern type, path parameters, and radial parameters.
+    This class manages the optimization and simulation of a single reel-out
+    pattern with configurable pattern type, path parameters, and radial
+    parameters.
 
     Example:
         >>> config = {
@@ -114,12 +116,12 @@ class Phase:
         ...         "vr": 0.5  # Example parameter
         ...     }
         ... }
-        >>> reelout = ReeloutSimple(
+        >>> phase = Phase(
         ...     system_model=my_model,
         ...     pattern_config=config,
         ...     depower=1.0
         ... )
-        >>> result = reelout.run_simulation_opti()
+        >>> result = phase.run_simulation_opti()
     """
 
     def __init__(
@@ -287,24 +289,48 @@ class Phase:
         optimization_params: List[str] = None,
         target: str = "power",
         start_state: Optional[Dict[str, Any]] = None,
+        warm_start_init_point: Optional[bool] = None,
+        energy_offset: float = 0.0,
+        time_offset: float = 0.0,
+        warm_start: bool = False,
+        trust_region_weight: float = 0.0,
+        max_iter: Optional[int] = None,
     ) -> Optional[SimulationResult]:
         """Run optimization and return results.
 
         Args:
             optimization_params: List of parameters to optimize
+            warm_start_init_point: Enable/disable IPOPT warm start initialization
+            energy_offset, time_offset: constants added to this phase's energy and
+                time in the ``power`` objective. Used by the alternating cycle
+                optimizer to maximize the *full cycle* power (energy + time of the
+                other phase) while only this phase's variables are free.
+            warm_start: when True, configure IPOPT for a warm (tight-barrier)
+                solve from a near-optimal guess (small ``mu_init`` / bound pushes)
+                so it does not take the cold-start excursion away from and back to
+                the optimum. Use on alternating iterations after the first.
+            trust_region_weight: weight of a quadratic penalty anchoring the
+                optimized parameters to their current (previous-iterate) config
+                values, normalized by each parameter's bound width. Keeps a
+                block-coordinate step from leaving the productive region.
 
         Returns:
             SimulationResult object or None if optimization failed
         """
+        if warm_start_init_point is not None:
+            self.pattern_config.setdefault("sim_parameters", {})[
+                "warm_start_init_point"
+            ] = warm_start_init_point
+
         opti, opti_vars, objective_dict, self._opti_params = self.get_opti_components(
             optimization_params=optimization_params
         )
 
-        # Maximize average power
+        # Maximize average power (optionally the full cycle power via offsets)
         if target == "power":
             total_objective = -(
-                objective_dict["energy"]
-                / objective_dict["total_time"]
+                (objective_dict["energy"] + energy_offset)
+                / (objective_dict["total_time"] + time_offset)
                 / objective_dict["power_scale"]
             )
         elif target == "energy":
@@ -312,9 +338,24 @@ class Phase:
         elif target == "zero":
             total_objective = 0.0
 
-        solution = self.run_opti(opti, total_objective)
+        if trust_region_weight:
+            total_objective = total_objective + self._trust_region_penalty(
+                self._opti_params, trust_region_weight
+            )
+
+        solution = self.run_opti(
+            opti, total_objective, warm_start=warm_start, max_iter=max_iter
+        )
         if solution is None:
             return None
+
+        # Carry the optimized node-0 state into start_state so a follow-on
+        # run_simulation() re-simulates from the NLP's own initial conditions.
+        # The NLP leaves the initial tension / s_dot / speed_radial / steering
+        # free (only the radius is fixed); marching from the stale start_state
+        # guess can converge the per-node root solver to a different root (or
+        # NaN) once the winch/depower have moved a lot.
+        self._update_start_state_from_solution(solution, opti_vars)
 
         return SimulationResult(
             solution=solution,
@@ -325,40 +366,134 @@ class Phase:
             total_time=objective_dict.get("total_time", 0.0),
         )
 
-    def run_opti(self, opti: Any, objective: Any) -> Optional[Any]:
+    def _param_reference(self, name: str) -> Any:
+        """Current (previous-iterate) config value for an optimized parameter."""
+        for entry in ("path_parameters", "radial_parameters", "sim_parameters"):
+            section = self.pattern_config.get(entry, {})
+            if name in section:
+                return section[name]
+        return None
+
+    @staticmethod
+    def _param_scale(name: str, ref: Any) -> float:
+        """Normalization scale for a parameter: bound width, else |ref|."""
+        bounds = DEFAULT_OPTI_LIMITS.get(name)
+        if bounds and len(bounds) == 2 and (bounds[1] - bounds[0]):
+            return float(bounds[1] - bounds[0])
+        arr = np.ravel(np.asarray(ref, dtype=float))
+        return max(float(np.max(np.abs(arr))), 1e-6)
+
+    def _trust_region_penalty(self, opti_params: Dict[str, Any], weight: float) -> Any:
+        """Quadratic penalty anchoring params to their current config values.
+
+        Each deviation is normalized by the parameter's bound width so the
+        penalty is dimensionless and comparable across parameters. Added to the
+        objective to damp block-coordinate steps and keep the iterate in the
+        productive region.
+        """
+        penalty = 0
+        for name, var in opti_params.items():
+            ref = self._param_reference(name)
+            if ref is None:
+                continue
+            scale = self._param_scale(name, ref)
+            penalty = penalty + ca.sumsqr((var - ca.DM(ref)) / scale)
+        return weight * penalty
+
+    def _update_start_state_from_solution(
+        self, solution: Any, opti_vars: Dict[str, Any]
+    ) -> None:
+        """Update ``self.start_state`` with the optimized node-0 state.
+
+        Pulls the first-node values of the free state variables from the NLP
+        solution so the next ``run_simulation()`` warm-starts the per-node
+        root solver at the optimum, keeping the re-simulation consistent with
+        the optimized trajectory.
+        """
+        new_state = copy.deepcopy(self.start_state)
+        for key in (
+            # "s",
+            # "s_dot",
+            "speed_radial",
+            "distance_radial",
+            "input_steering",
+            # "tension_tether_ground",
+        ):
+            var = opti_vars.get(key)
+            if var is None:
+                continue
+            try:
+                new_state[key] = float(solution.value(var[0]))
+            except Exception:
+                continue
+        self.start_state = new_state
+
+    def run_opti(
+        self,
+        opti: Any,
+        objective: Any,
+        warm_start: bool = False,
+        max_iter: Optional[int] = None,
+    ) -> Optional[Any]:
         """Run the optimization problem.
 
         Args:
             opti: CasADi Opti instance
             objective: Objective function to minimize
+            warm_start: when True, start IPOPT with a tight barrier and small
+                bound pushes so a near-optimal guess does not trigger the
+                cold-start excursion to the analytic center and back.
 
         Returns:
             Solution object or None if optimization failed
         """
         opti.minimize(objective)
+        sim_parameters = self.pattern_config.get("sim_parameters", {})
+
+        warm_start_init_point = sim_parameters.get("warm_start_init_point")
+        if isinstance(warm_start_init_point, bool):
+            warm_start_init_point = "yes" if warm_start_init_point else "no"
+
+        ipopt_options = {
+            # "bound_relax_factor": 1e-8,
+            "tol": 1e-5,
+            "acceptable_iter": 10,
+            "acceptable_tol": 2e-4,
+            # "constr_viol_tol": 1e-6,
+            "dual_inf_tol": 1e-4,
+            "hessian_approximation": "limited-memory",
+            "mu_strategy": "adaptive",
+            "nlp_scaling_method": "gradient-based",
+            "linear_solver": "mumps",
+            # "limited_memory_max_history": 60,  # try 20–50
+            # "limited_memory_update_type": "bfgs",  # (if supported)
+            "mu_min": 1e-8,
+            # "warm_start_bound_push": 1e-6,
+            # "warm_start_mult_bound_push": 1e-6,
+            # "warm_start_slack_bound_push": 1e-6,
+            "max_iter": max_iter if max_iter is not None else 200,
+        }
+        if warm_start:
+            # Tight-barrier warm solve: start near the (near-optimal) guess
+            # instead of the analytic center, suppressing the explore-out-and-
+            # return excursion. Pairs with a primal warm start.
+            ipopt_options.update(
+                {
+                    "mu_init": 1e-4,
+                    "warm_start_init_point": "yes",
+                    "warm_start_bound_push": 1e-6,
+                    "warm_start_mult_bound_push": 1e-6,
+                    "warm_start_slack_bound_push": 1e-6,
+                    "bound_push": 1e-6,
+                    "bound_frac": 1e-6,
+                }
+            )
+        elif warm_start_init_point is not None:
+            ipopt_options["warm_start_init_point"] = warm_start_init_point
+
         opti.solver(
             "ipopt",
-            {
-                "ipopt": {
-                    # "bound_relax_factor": 1e-8,
-                    "tol": 1e-6,
-                    "acceptable_iter": 10,
-                    "acceptable_tol": 2e-4,
-                    # "constr_viol_tol": 1e-6,
-                    "dual_inf_tol": 1e-4,
-                    "hessian_approximation": "limited-memory",
-                    "mu_strategy": "adaptive",
-                    "nlp_scaling_method": "gradient-based",
-                    "linear_solver": "mumps",
-                    "limited_memory_max_history": 60,  # try 20–50
-                    # "limited_memory_update_type": "bfgs",  # (if supported)
-                    "mu_min": 1e-8,
-                    # "warm_start_init_point": "yes",
-                    # "warm_start_bound_push": 1e-6,
-                    # "warm_start_mult_bound_push": 1e-6,
-                    # "warm_start_slack_bound_push": 1e-6,
-                }
-            },
+            {"ipopt": ipopt_options},
         )
 
         try:

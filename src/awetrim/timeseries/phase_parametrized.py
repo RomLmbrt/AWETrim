@@ -644,6 +644,214 @@ class PhaseParameterized(TimeSeries):
 
         # --- main loop
         debug_solver = bool(sim_params.get("debug_solver", False))
+
+        def _is_finite_dm(value):
+            try:
+                return bool(np.all(np.isfinite(np.asarray(value, dtype=float))))
+            except (TypeError, ValueError):
+                return False
+
+        def _clip_guess_to_bounds(z_guess):
+            z_arr = np.asarray(ca.DM(z_guess), dtype=float).reshape(-1)
+            lo = np.asarray(lbx, dtype=float).reshape(-1)
+            hi = np.asarray(ubx, dtype=float).reshape(-1)
+            if z_arr.size != lo.size:
+                return z_guess
+            eps = 1e-8
+            midpoint = 0.5 * (lo + hi)
+            z_arr = np.where(np.isfinite(z_arr), z_arr, midpoint)
+            z_arr = np.minimum(np.maximum(z_arr, lo + eps), hi - eps)
+            return ca.DM(z_arr)
+
+        def _path_angle_guess(expr, s_value, default):
+            if not np.isfinite(default):
+                default = 0.0
+            return _eval_path_kinematic(expr, s_value, state_obj, default=default)
+
+        def _finite_or(value, default):
+            return float(value) if np.isfinite(value) else float(default)
+
+        def _fallback_z_guesses(z_guess, p_solver, node_index):
+            """Conservative alternate seeds for a failed per-node residual solve."""
+            guesses = [z_guess]
+            z_arr = np.asarray(ca.DM(z_guess), dtype=float).reshape(-1)
+            if z_arr.size == 0:
+                return guesses
+
+            r_idx = 1 if self.quasi_steady else 2
+            r_current = float(p_solver[r_idx])
+            s_current = float(p_solver[0])
+            if not use_williams:
+                if z_arr.size < 4:
+                    return guesses
+                steering_idx = 1
+                speed_idx = 2
+                radial_idx = 3
+                steering = (
+                    input_steering_guess_profile[node_index]
+                    if input_steering_guess_profile is not None
+                    else np.clip(
+                        _finite_or(z_arr[steering_idx], 0.0),
+                        DEFAULT_BOUNDS["input_steering"][0],
+                        DEFAULT_BOUNDS["input_steering"][1],
+                    )
+                )
+                if self.quasi_steady:
+                    path_rate_or_accel = (
+                        s_dot_guess_profile[node_index]
+                        if s_dot_guess_profile is not None
+                        else max(abs(_finite_or(z_arr[speed_idx], 0.2)), 0.2)
+                    )
+                else:
+                    path_rate_or_accel = np.clip(
+                        _finite_or(z_arr[speed_idx], 0.0),
+                        DEFAULT_BOUNDS["s_ddot"][0],
+                        DEFAULT_BOUNDS["s_ddot"][1],
+                    )
+                speed_radial = (
+                    speed_radial_profile[node_index]
+                    if speed_radial_profile is not None
+                    else _finite_or(z_arr[radial_idx], 0.0)
+                )
+                first_var_candidates = sim_params.get(
+                    "solver_retry_tension_ground",
+                    [300.0, 2.0e3, 8.4e3, 2.0e4, 8.0e4],
+                )
+                if not km_copy.is_tether_rigid:
+                    first_var_candidates = sim_params.get(
+                        "solver_retry_length_tether",
+                        [r_current, 1.02 * r_current, r_current + 5.0],
+                    )
+                for first_var in first_var_candidates:
+                    guesses.append(
+                        ca.vertcat(
+                            float(first_var),
+                            steering,
+                            path_rate_or_accel,
+                            speed_radial,
+                        )
+                    )
+                return [_clip_guess_to_bounds(guess) for guess in guesses]
+
+            if z_arr.size < 7:
+                return guesses
+
+            elev = _path_angle_guess(km_copy.angle_elevation, s_current, z_arr[4])
+            azim = _path_angle_guess(km_copy.angle_azimuth, s_current, z_arr[5])
+            length = min(max(1.02 * r_current, lbx[-1]), ubx[-1])
+            steering = (
+                input_steering_guess_profile[node_index]
+                if input_steering_guess_profile is not None
+                else np.clip(
+                    _finite_or(z_arr[0], 0.0),
+                    DEFAULT_BOUNDS["input_steering"][0],
+                    DEFAULT_BOUNDS["input_steering"][1],
+                )
+            )
+            if self.quasi_steady:
+                speed_along_path = (
+                    s_dot_guess_profile[node_index]
+                    if s_dot_guess_profile is not None
+                    else max(abs(_finite_or(z_arr[1], 0.2)), 0.2)
+                )
+                speed_radial = (
+                    speed_radial_profile[node_index]
+                    if speed_radial_profile is not None
+                    else _finite_or(z_arr[2], 0.0)
+                )
+                tension_candidates = sim_params.get(
+                    "solver_retry_tension_kite", [300.0, 5.0e3, 2.0e4, 8.0e4]
+                )
+                for tension in tension_candidates:
+                    guesses.append(
+                        ca.vertcat(
+                            steering,
+                            speed_along_path,
+                            speed_radial,
+                            float(tension) / self.WILLIAMS_TENSION_SCALE,
+                            elev,
+                            azim,
+                            length,
+                        )
+                    )
+            else:
+                acceleration_guess = np.clip(
+                    _finite_or(z_arr[1], 0.0),
+                    DEFAULT_BOUNDS["s_ddot"][0],
+                    DEFAULT_BOUNDS["s_ddot"][1],
+                )
+                speed_radial = (
+                    speed_radial_profile[node_index]
+                    if speed_radial_profile is not None
+                    else _finite_or(z_arr[2], 0.0)
+                )
+                tension_candidates = sim_params.get(
+                    "solver_retry_tension_kite", [300.0, 5.0e3, 2.0e4, 8.0e4]
+                )
+                for tension in tension_candidates:
+                    guesses.append(
+                        ca.vertcat(
+                            steering,
+                            acceleration_guess,
+                            speed_radial,
+                            float(tension) / self.WILLIAMS_TENSION_SCALE,
+                            elev,
+                            azim,
+                            length,
+                        )
+                    )
+            return [_clip_guess_to_bounds(guess) for guess in guesses]
+
+        def _solve_node(z_guess, p_solver, node_index):
+            last_error = None
+            accept_residual_norm = float(
+                sim_params.get("solver_accept_residual_norm", 1e-5)
+            )
+            candidates = _fallback_z_guesses(z_guess, p_solver, node_index)
+            for attempt, candidate in enumerate(candidates):
+                try:
+                    sol_candidate = qs_solver(
+                        x0=candidate, p=p_solver, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    continue
+
+                stats = qs_solver.stats()
+                finite = _is_finite_dm(sol_candidate["x"]) and _is_finite_dm(
+                    sol_candidate["g"]
+                )
+                residual_norm = (
+                    float(np.linalg.norm(np.asarray(sol_candidate["g"]).reshape(-1)))
+                    if finite
+                    else np.inf
+                )
+                accepted = stats.get("success", False) or (
+                    finite and residual_norm <= accept_residual_norm
+                )
+                if accepted and finite:
+                    if attempt:
+                        logger.info(
+                            "Phase solver recovered at node %d with retry %d",
+                            node_index,
+                            attempt,
+                        )
+                    return sol_candidate
+
+                last_error = RuntimeError(
+                    f"status={stats.get('return_status')}, finite={finite}, "
+                    f"||g||={residual_norm:.3e}"
+                )
+
+            message = (
+                f"Phase residual solve failed at node {node_index} after "
+                f"{len(candidates)} attempts"
+            )
+            if not allow_failure:
+                raise RuntimeError(message) from last_error
+            logger.warning("%s: %s", message, last_error)
+            return None
+
         for i in range(N):
             # 1) solve residuals at current s-grid node
             # Update wind speed for this grid point
@@ -699,7 +907,14 @@ class PhaseParameterized(TimeSeries):
                     ubx,
                     quasi_steady=self.quasi_steady,
                 )
-            sol = qs_solver(x0=z, p=p_solver, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx)
+            sol = _solve_node(z, p_solver, i)
+            if sol is None:
+                if i == 0:
+                    raise RuntimeError(
+                        "Phase residual solve failed at the first node; "
+                        "no valid trajectory states were generated"
+                    )
+                break
             if debug_solver:
                 stats = qs_solver.stats()
                 residual_norm = float(np.linalg.norm(np.asarray(sol["g"]).reshape(-1)))
@@ -981,95 +1196,6 @@ class PhaseParameterized(TimeSeries):
             speed_radial=float(sol_init["x"][3]),
         )
 
-    def run_simulation_euler(
-        self, start_state, allow_failure=True, return_states=False
-    ):
-
-        # print("Starting state:", start_state)
-        self.substitute_parametrized_kinematics()
-        self.states = []
-        self.kite_model.reset_solver()
-
-        if self.quasi_steady:
-            unknown_vars = ["length_tether", "input_steering", "s_dot", "speed_radial"]
-        else:
-            unknown_vars = ["length_tether", "input_steering", "s_ddot", "speed_radial"]
-
-        if self.kite_model.is_tether_rigid:
-            unknown_vars[0] = "tension_tether_ground"
-        # Initialize state
-        if isinstance(start_state, dict):
-            state_obj = State(**start_state)
-        else:
-            state_obj = start_state
-
-        N = self.pattern_config["n_points"]
-        time_step = self.pattern_config["end_time"] / self.pattern_config["n_points"]
-        qs_solver = self.residual_solver()
-
-        if self.quasi_steady:
-            z0 = ca.vertcat(
-                state_obj.tension_tether_ground,
-                state_obj.input_steering,
-                state_obj.s_dot,
-                state_obj.speed_radial,
-            )
-            x0 = ca.vertcat(state_obj.s, state_obj.distance_radial)
-        else:
-            z0 = ca.vertcat(
-                state_obj.tension_tether_ground,
-                state_obj.input_steering,
-                0,
-                state_obj.speed_radial,
-            )
-            x0 = ca.vertcat(
-                state_obj.s,
-                state_obj.s_dot,
-                state_obj.distance_radial,
-            )
-        lbx, ubx, lbg, ubg = self.get_boundaries(state_obj, unknown_vars)
-
-        t = self.pattern_config["start_time"]
-        for i in range(N):
-            # print(f"Time: {t}, State: {x0}, Inputs: {z0}")
-
-            if self.quasi_steady:
-                sol = qs_solver(x0=z0, p=x0, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx)
-                z0 = sol["x"]
-                new_s = x0[0] + z0[2] * time_step
-                new_r = x0[1] + z0[3] * time_step
-                x0 = ca.vertcat(new_s, new_r)
-            else:
-                sol = qs_solver(x0=z0, p=x0, lbg=lbg, ubg=ubg, lbx=lbx, ubx=ubx)
-                z0 = sol["x"]
-                new_s = x0[0] + x0[1] * time_step
-                new_s_dot = x0[1] + z0[2] * time_step
-                new_r = x0[2] + z0[3] * time_step
-                x0 = ca.vertcat(new_s, new_s_dot, new_r)
-            if self.quasi_steady:
-                new_state = State(
-                    t=t,
-                    s=x0[0],
-                    input_steering=float(z0[1]),
-                    tension_tether_ground=float(z0[0]),
-                    s_dot=float(z0[2]),
-                    distance_radial=float(x0[1]),
-                    speed_radial=float(z0[3]),
-                )
-            else:
-                new_state = State(
-                    t=t,
-                    s=x0[0],
-                    s_dot=float(x0[1]),
-                    input_steering=float(z0[1]),
-                    tension_tether_ground=float(z0[0]),
-                    s_ddot=float(z0[2]),
-                    distance_radial=float(x0[2]),
-                    speed_radial=float(z0[3]),
-                )
-            t += time_step
-            self.states.append(new_state.to_dict())
-
     def opti_phase(
         self,
         start_state,
@@ -1298,6 +1424,11 @@ class PhaseParameterized(TimeSeries):
             opti.subject_to(opti_vars["speed_radial"] <= ub)
         if "distance_radial" in DEFAULT_OPTI_LIMITS:
             lb, ub = DEFAULT_OPTI_LIMITS["distance_radial"]
+            # Optional upper-bound relaxation: lets a phase reel a bit past the
+            # global max radius. Used by the reel-in, whose first node starts at
+            # the reel-out end -- which sits right at this bound when reel-out
+            # maximizes production, leaving no feasible room otherwise.
+            ub = ub + float(sim_params.get("distance_radial_ub_relax", 0.0))
             opti.subject_to(opti_vars["distance_radial"] >= lb)
             opti.subject_to(opti_vars["distance_radial"] <= ub)
 

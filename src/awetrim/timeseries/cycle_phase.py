@@ -26,7 +26,7 @@ import casadi as ca
 import matplotlib.pyplot as plt
 
 from awetrim.timeseries.reelin_phase import ReelinSimple
-from awetrim.timeseries.reelout_phase import Reelout
+from awetrim.timeseries.phase import Phase
 import numpy as np
 
 
@@ -39,9 +39,23 @@ class CycleSimple:
         solution = cycle.run_cycle_opti()
     """
 
-    def __init__(self, reelin: ReelinSimple, reelout: Reelout) -> None:
+    def __init__(self, reelin: ReelinSimple, reelout: Phase) -> None:
         self.reelin = reelin
         self.reelout = reelout
+
+    def _param_dimension(self, var: str) -> int:
+        """Number of scalar components of an optimization variable, inferred
+        from the phase configs. Vector parameters such as the spline coefficients
+        ``C_phi`` / ``C_beta`` return their length; scalars return 1.
+        """
+        for phase in (self.reelout, self.reelin):
+            for section in ("path_parameters", "radial_parameters", "sim_parameters"):
+                val = phase.pattern_config.get(section, {}).get(var)
+                if isinstance(val, ca.DM):
+                    return int(val.numel())
+                if isinstance(val, (list, tuple, np.ndarray)):
+                    return len(val)
+        return 1
 
     def get_opti_components(
         self,
@@ -56,52 +70,51 @@ class CycleSimple:
             combined_params: merged parameter dict (mapping names to opti variables)
         """
         opti = ca.Opti()
-        optimization_dict = {}
-        if optimization_params:
-            for var in optimization_params:
-                optimization_dict[var] = opti.variable()
-                if "coeffs" in var:
-                    num_coeffs = len(
-                        self.reelout.pattern_config["path_parameters"].get(var, [])
-                    )
-                    optimization_dict[var] = opti.variable(num_coeffs)
-        opti, vars_ro, obj_ro, params_ro = self.reelout.get_opti_components(
-            optimization_dict=optimization_dict, opti=opti
+        # Build each opti variable once, then route it to the phase(s) that own it.
+        # The per-phase depower aliases ``input_depower_ro`` / ``input_depower_ri``
+        # map to that phase's literal ``input_depower``, giving the two phases
+        # independent depower decisions — a single shared ``input_depower`` would
+        # force reel-out and reel-in depower to be equal.
+        reelout_dict, reelin_dict, merged_params = {}, {}, {}
+        for var in optimization_params or []:
+            n = self._param_dimension(var)
+            mxvar = opti.variable(n) if n > 1 else opti.variable()
+            merged_params[var] = mxvar
+            if var == "input_depower_ro":
+                reelout_dict["input_depower"] = mxvar
+            elif var == "input_depower_ri":
+                reelin_dict["input_depower"] = mxvar
+            else:
+                # Offer non-depower params to both phases; each substitutes only
+                # the keys present in its own configuration.
+                reelout_dict[var] = mxvar
+                reelin_dict[var] = mxvar
+        opti, vars_ro, obj_ro, _ = self.reelout.get_opti_components(
+            optimization_dict=reelout_dict, opti=opti
         )
         start_state_ri = self.reelin.start_state_ri.copy()
         start_state_ri["distance_radial"] = vars_ro["distance_radial"][-1]
-        # TODO: ADD ELEVATION SYNC
-        # pattern_config_ri = self.reelin.pattern_config_ri.copy()
-        # pattern_config_ri["path_parameters"]["elevation_start_ri"] = obj_ro[
-        #     "angle_elevation_end"
-        # ]
-        # pattern_config_ri["path_parameters"]["elevation_start_ro"] = obj_ro[
-        #     "angle_elevation_start"
-        # ]
-        opti, vars_ri, obj_ri, params_ri = self.reelin.get_opti_components(
-            optimization_dict=optimization_dict,
+        # Elevation continuity across the handoffs: reel-in starts where reel-out
+        # ends, and the transition ends where reel-out starts. Tying these to the
+        # reel-out's symbolic endpoint elevations keeps the cycle closed in
+        # elevation as the reel-out spline (C_beta) is optimized.
+        opti, vars_ri, obj_ri, _ = self.reelin.get_opti_components(
+            optimization_dict=reelin_dict,
             opti=opti,
             start_state_opti=start_state_ri,
+            elevation_start_ri_expr=obj_ro["angle_elevation_end"],
+            elevation_start_ro_expr=obj_ro["angle_elevation_start"],
         )
-        # print(params_ri)
-        # print(params_ro)
-        # raise RuntimeError("rasi")
         opti.subject_to(
             vars_ri["distance_radial"][1][-1]
             == self.reelout.pattern_config["path_parameters"]["r0"]
         )
         # Merge dictionaries using reelin's helper (robust merging rules)
-
         merged_vars = ReelinSimple._merge_phase_dicts(vars_ri, vars_ro)
         merged_obj = ReelinSimple._merge_phase_dicts(obj_ri, obj_ro)
 
-        # Merge parameter dicts (names -> opti variables). If keys collide, keep both
-        merged_params = {}
-        merged_params.update(params_ri or {})
-        for k, v in (params_ro or {}).items():
-            if k in merged_params:
-                merged_params[k] = v
-
+        # merged_params is keyed by the original (alias) parameter names so the
+        # write-back can route per-phase depower correctly.
         return opti, merged_vars, merged_obj, merged_params
 
     @staticmethod
@@ -120,14 +133,76 @@ class CycleSimple:
             return total
         return val
 
+    def _store_optimized_value(self, var_name: str, val) -> bool:
+        """Write an optimized value back to the owning phase configuration.
+
+        The per-phase depower aliases route to each phase's ``sim_parameters``
+        ``input_depower``; every other parameter is matched by exact name across
+        both phases' path / radial / sim parameter sections.
+        """
+        if var_name == "input_depower_ro":
+            self.reelout.pattern_config.setdefault("sim_parameters", {})[
+                "input_depower"
+            ] = val
+            return True
+        if var_name == "input_depower_ri":
+            self.reelin.pattern_config.setdefault("sim_parameters", {})[
+                "input_depower"
+            ] = val
+            return True
+        for phase in (self.reelout, self.reelin):
+            for section in ("path_parameters", "radial_parameters", "sim_parameters"):
+                if var_name in phase.pattern_config.get(section, {}):
+                    phase.pattern_config[section][var_name] = val
+                    return True
+        return False
+
     def run_cycle_opti(
-        self, optimization_params: Optional[List[str]] = None
+        self,
+        optimization_params: Optional[List[str]] = None,
+        reelout_warmstart_params: Optional[List[str]] = None,
     ) -> Optional[Any]:
         """Run the combined cycle optimization and return the solution (or None).
 
         The combined objective is formed by summing energies and times across
         phases and using the same structure: -(energy_total / total_time_total / power_scale).
+
+        Staged warm-start (each stage seeds the next):
+          1. Optimize the reel-out shape (and depower) with the winch fixed.
+          2. Optimize the reel-in alone, with boundaries taken from the reel-out.
+          3. Solve the combined reel-out + reel-in NLP.
+
+        ``reelout_warmstart_params`` overrides which reel-out parameters are tuned
+        in stage 1; by default it takes the reel-out path parameters present in
+        ``optimization_params`` (e.g. the spline ``C_phi`` / ``C_beta``) plus
+        ``input_depower`` — winch (radial) parameters are deliberately excluded so
+        the warm start is a clean shape optimization.
         """
+
+        # Stage 1: reel-out shape + depower with the winch fixed.
+        if reelout_warmstart_params is None:
+            reelout_path = self.reelout.pattern_config.get("path_parameters", {})
+            reelout_warmstart_params = [
+                p for p in (optimization_params or []) if p in reelout_path
+            ]
+            if "input_depower" not in reelout_warmstart_params:
+                reelout_warmstart_params.append("input_depower")
+        if reelout_warmstart_params:
+            print(
+                "Staged warm-start: optimizing reel-out "
+                f"{reelout_warmstart_params} (winch fixed)..."
+            )
+            self.reelout.run_simulation_opti(
+                optimization_params=reelout_warmstart_params, target="power"
+            )
+            # Drop the now-dead opti symbol left on the shared model so the later
+            # phases re-symbolize depower cleanly.
+            self.reelout.system_model.input_depower = ca.MX.sym("input_depower")
+
+        # Stage 2: run the reel-out, set the reel-in boundary conditions from it,
+        # and optimize the reel-in alone — a feasible, reel-out-consistent reel-in.
+        print("Staged warm-start: simulating reel-out and optimizing reel-in...")
+        self.run_cycle_simulation(optimize_reelin=True, plotting=False)
 
         opti, merged_vars, merged_obj, merged_params = self.get_opti_components(
             optimization_params=optimization_params
@@ -152,7 +227,7 @@ class CycleSimple:
             {
                 "ipopt": {
                     "bound_relax_factor": 1e-8,
-                    "tol": 1e-5,
+                    "tol": 1e-6,
                     # "acceptable_iter": 3,
                     "acceptable_tol": 1e-5,
                     "constr_viol_tol": 1e-5,
@@ -169,67 +244,14 @@ class CycleSimple:
             print("\nOptimized cycle parameters:")
             # Update parameter values in the appropriate phase configuration
             for var_name, opt_var in merged_params.items():
-                print("Processing variable:", var_name)
                 try:
                     val = solution.value(opt_var)
                 except Exception:
                     # If value extraction fails, skip
                     continue
-
-                # Remove _ro suffix if present for checking configs
-                base_name = var_name[:-3] if var_name.endswith("_ro") else var_name
-
-                # Try to update the parameter in the correct phase configuration
-                updated = False
-                candidate_keys = (base_name, var_name)
-
-                # Check reelin with both base and original keys
-                for key in candidate_keys:
-                    if not updated and key in self.reelin.pattern_config.get(
-                        "path_parameters", {}
-                    ):
-                        self.reelin.pattern_config["path_parameters"][key] = val
-                        print(f"  {var_name} -> reelin.path_parameters[{key}]: {val}")
-                        updated = True
-                        break
-                if not updated:
-                    for key in candidate_keys:
-                        if key in self.reelin.pattern_config.get(
-                            "radial_parameters", {}
-                        ):
-                            self.reelin.pattern_config["radial_parameters"][key] = val
-                            print(
-                                f"  {var_name} -> reelin.radial_parameters[{key}]: {val}"
-                            )
-                            updated = True
-                            break
-
-                # If still not updated, check reelout with both keys
-                if not updated:
-                    for key in candidate_keys:
-                        if key in self.reelout.pattern_config.get(
-                            "path_parameters", {}
-                        ):
-                            self.reelout.pattern_config["path_parameters"][key] = val
-                            print(
-                                f"  {var_name} -> reelout.path_parameters[{key}]: {val}"
-                            )
-                            updated = True
-                            break
-                # Optional: keep the debug print to show available radial parameters
-                if not updated:
-                    for key in candidate_keys:
-                        if key in self.reelout.pattern_config.get(
-                            "radial_parameters", {}
-                        ):
-                            self.reelout.pattern_config["radial_parameters"][key] = val
-                            print(
-                                f"  {var_name} -> reelout.radial_parameters[{key}]: {val}"
-                            )
-                            updated = True
-                            break
-
-                if not updated:
+                if self._store_optimized_value(var_name, val):
+                    print(f"  {var_name}: {val}")
+                else:
                     print(
                         f"  Warning: {var_name} = {val} (not stored in any configuration)"
                     )
@@ -238,6 +260,157 @@ class CycleSimple:
         except Exception as exc:
             print("Cycle optimization failed:", exc)
             return None
+
+    def _sync_reelin_to_reelout(self):
+        """Simulate the reel-out and copy its endpoints into the reel-in config.
+
+        The reel-in is set to start where the reel-out ends (radius, elevation,
+        time) and to close back to the reel-out start radius. Returns the reel-out
+        ``PhaseParameterized`` (with ``.energy`` / ``.total_time``).
+        """
+        phase_ro, _ = self.reelout.run_simulation()
+        pp = self.reelin.pattern_config["path_parameters"]
+        pp["distance_radial_start"] = phase_ro.return_variable("distance_radial")[-1]
+        pp["distance_radial_end"] = phase_ro.return_variable("distance_radial")[0]
+        pp["elevation_start_ri"] = phase_ro.return_variable("angle_elevation")[-1]
+        pp["elevation_start_ro"] = phase_ro.return_variable("angle_elevation")[0]
+        self.reelin.pattern_config.setdefault("sim_parameters", {})["start_time"] = (
+            phase_ro.return_variable("t")[-1]
+        )
+        return phase_ro
+
+    def run_cycle_alternating(
+        self,
+        reelout_params: Optional[List[str]] = None,
+        reelin_params: Optional[List[str]] = None,
+        max_iter: int = 4,
+        tol: float = 1e-3,
+        trust_region_weight: float = 0.01,
+    ) -> Optional[Dict[str, Any]]:
+        """Alternating (block-coordinate) cycle optimization.
+
+        Each block maximizes the *true cycle power* by carrying the other phase's
+        energy and time as fixed offsets, alternating reel-out then reel-in until
+        the cycle power converges. Smoother and more robust than the monolithic
+        ``run_cycle_opti`` for weakly-coupled cycles, at the cost of converging to
+        a coordinate (rather than joint) optimum.
+
+        Args:
+            reelout_params: reel-out parameters to tune (default: shape + winch +
+                depower). Uses the reel-out's own literal parameter names.
+            reelin_params: reel-in parameters to tune (default: transition
+                elevation + winch + depower).
+            max_iter: maximum number of outer alternating iterations.
+            tol: relative cycle-power change at which to stop.
+            trust_region_weight: damping toward the previous iterate, applied
+                from the second iteration onward (the first iteration solves
+                freely to reach the productive region). Larger values keep each
+                block-coordinate step closer to the last design.
+        """
+        if reelout_params is None:
+            reelout_params = ["C_phi", "C_beta", "slope_winch_ro", "input_depower"]
+        if reelin_params is None:
+            reelin_params = [
+                "elevation_start_riro",
+                "offset_winch_ri",
+                "slope_winch_ri",
+                # "input_depower",
+            ]
+
+        prev_power = None
+        last_feasible_result = None
+        for it in range(max_iter):
+            # Evaluate the current cycle at consistent boundaries.
+            try:
+                phase_ro = self._sync_reelin_to_reelout()
+                phase_ri, phase_riro = self.reelin.run_simulation()
+            except Exception as exc:
+                print(
+                    "Alternating optimization aborted: re-simulation failed "
+                    f"({exc}); keeping the last feasible design."
+                )
+                break
+            E_ro, T_ro = phase_ro.energy, phase_ro.total_time
+            E_ri = phase_ri.energy + phase_riro.energy
+            T_ri = phase_ri.total_time + phase_riro.total_time
+            cycle_power = (E_ro + E_ri) / (T_ro + T_ri + 1e-12)
+            print(
+                f"[alternating {it}] cycle power = {cycle_power / 1000:.3f} kW "
+                f"(E_ro={E_ro / 1000:.1f} kJ, E_ri={E_ri / 1000:.1f} kJ)"
+            )
+            if not np.isfinite(cycle_power):
+                print(
+                    "Alternating optimization aborted: re-simulation produced a "
+                    "non-finite cycle power; keeping the last feasible design."
+                )
+                break
+            last_feasible_result = {
+                "reelout_phase": phase_ro,
+                "reelin_phase": phase_ri,
+                "transition_phase": phase_riro,
+                "cycle_power": cycle_power,
+            }
+            if prev_power is not None and abs(cycle_power - prev_power) <= tol * abs(
+                prev_power + 1e-12
+            ):
+                print(f"Alternating optimization converged after {it} iterations.")
+                break
+            prev_power = cycle_power
+
+            # First iteration solves freely to reach the productive region;
+            # later iterations warm-start (tight barrier) and damp toward the
+            # previous iterate to stay in the hot zone.
+            warm = it > 0
+            tr_weight = trust_region_weight if it > 0 else 0.0
+
+            # Block 1: reel-out for cycle power (reel-in held fixed as offsets).
+            # Reel-out defines the cycle boundaries, so it is optimized first.
+            reelout_result = self.reelout.run_simulation_opti(
+                optimization_params=reelout_params,
+                target="power",
+                energy_offset=E_ri,
+                time_offset=T_ri,
+                warm_start=warm,
+                trust_region_weight=tr_weight,
+                max_iter=400,
+            )
+            if reelout_result is None:
+                print(
+                    "Alternating optimization aborted: reel-out optimization "
+                    "failed; keeping the last feasible design."
+                )
+                break
+
+            # Block 2: re-sync the reel-in boundaries to the new reel-out, then
+            # reel-in for cycle power (reel-out held fixed as offsets).
+            try:
+                phase_ro = self._sync_reelin_to_reelout()
+            except Exception as exc:
+                print(
+                    "Alternating optimization aborted: reel-out re-simulation "
+                    f"failed after optimization ({exc}); keeping the last "
+                    "feasible design."
+                )
+                break
+            E_ro, T_ro = phase_ro.energy, phase_ro.total_time
+            reelin_result = self.reelin.run_simulation_opti(
+                optimization_params=reelin_params,
+                target="power",
+                energy_offset=E_ro,
+                time_offset=T_ro,
+                warm_start=warm,
+                trust_region_weight=tr_weight,
+            )
+            if reelin_result is None:
+                print(
+                    "Alternating optimization aborted: reel-in optimization "
+                    "failed; keeping the last feasible design."
+                )
+                break
+
+        # Final consistent simulation + summary.
+        final_result = self.run_cycle_simulation(optimize_reelin=False, plotting=False)
+        return final_result if final_result is not None else last_feasible_result
 
     def run_cycle_simulation(
         self, optimize_reelin: bool = True, plotting: bool = False
@@ -255,6 +428,7 @@ class CycleSimple:
         containing the PhaseParameterized objects or None on failure.
         """
         # 1) Run reel-out simulation (numeric)
+        axes = None  # only populated when plotting; reel-in reuses these axes
         try:
             phase_ro, _ = self.reelout.run_simulation()
             if plotting:
@@ -272,8 +446,6 @@ class CycleSimple:
             distance_radial_start_ro = phase_ro.return_variable("distance_radial")[0]
             elevation_end_ro = phase_ro.return_variable("angle_elevation")[-1]
             elevation_start_ro = phase_ro.return_variable("angle_elevation")[0]
-            azimuth_end_ro = phase_ro.return_variable("angle_azimuth")[-1]
-            azimuth_start_ro = phase_ro.return_variable("angle_azimuth")[0]
             t_end_ro = phase_ro.return_variable("t")[-1]
         except Exception as exc:
             print("Failed to read final radial distance from reel-out phase:", exc)
@@ -293,14 +465,8 @@ class CycleSimple:
         self.reelin.pattern_config["path_parameters"][
             "elevation_start_ro"
         ] = elevation_start_ro
-        self.reelin.pattern_config["path_parameters"]["azimuth_start_riro"] = 0
-        self.reelin.pattern_config["path_parameters"][
-            "azimuth_start_ro"
-        ] = azimuth_start_ro
         self.reelin.pattern_config["sim_parameters"]["start_time"] = t_end_ro
         # 3) Optimize (only) the reel-in if requested
-        reelin_phase = None
-        reelin_phase_ro = None
         optimization_result = None
         if optimize_reelin:
             # use only elevation_start_riro as optimization parameter
@@ -325,6 +491,7 @@ class CycleSimple:
             )
         except Exception as exc:
             print("Reel-in simulation failed:", exc)
+            return None
 
         energy_ro = phase_ro.energy
         total_time_ro = phase_ro.total_time
@@ -362,7 +529,7 @@ class CycleSimple:
 
         return {
             "reelout_phase": phase_ro,
-            "reelin_phase": reelin_phase,
-            "reelin_phase_ro": reelin_phase_ro,
+            "reelin_phase": phase_ri,
+            "transition_phase": phase_riro,
             "optimization_result": optimization_result,
         }

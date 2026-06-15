@@ -33,7 +33,7 @@ from awetrim.utils.color_palette import get_color_list, set_plot_style_no_latex
 # Defaults: edit these for quick config-generation experiments
 # ---------------------------------------------------------------------------
 TEMPLATE_PATH = LEI_V3_DOWNLOOP_SPLINE_CONFIG
-OUTPUT_PATH = LEI_V3_GENERATED_SPLINE_CONFIG
+OUTPUT_PATH = LEI_V3_DOWNLOOP_SPLINE_CONFIG
 
 CURVE_TYPE = "lissajous"  # "lissajous" or "helix"
 SPLINE_TYPE = "periodic"  # "periodic" or "open"
@@ -45,7 +45,7 @@ S_INIT = 0.0
 S_FINAL = 2.0 * np.pi
 N_FIT = 400
 
-AZ_AMP0 = 0.32
+AZ_AMP0 = 0.35
 BETA0 = 0.3
 BETA_AMP0 = 0.15
 

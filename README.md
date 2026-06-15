@@ -105,7 +105,7 @@ src/awetrim/
     pss/           PSS/QSM fixed-point coupling: PssQsmCoupler, structural_pss, aerodynamic_vsm, actuation
     fem/           FEM-based coupling (placeholder, not yet implemented)
   kinematics/      Course-frame kinematics and parametrised path patterns (B-spline, helix, …)
-  timeseries/      Cycle simulation helpers: PhaseParameterized, Reelout, Reelin, Cycle
+  timeseries/      Cycle simulation helpers: PhaseParameterized, Phase, Reelin, Cycle
   environment/     Wind models: uniform, logarithmic, tabulated
   experimental/    EKF flight-data pipeline wrapping EKF-AWE with AWETrim's data layout
   utils/           Reference-frame transforms, plotting palettes, default bounds and limits

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from awetrim.timeseries.phase_parametrized import PhaseParameterized
-from awetrim.utils.defaults import DEFAULT_RADIAL_PARAMETERS
+from awetrim.utils.defaults import DEFAULT_RADIAL_PARAMETERS, DEFAULT_OPTI_LIMITS
 
 
 from typing import Dict, Any, List, Optional, Union, Tuple
@@ -60,9 +60,16 @@ class ReelinSimple:
         pattern_config: Optional[Dict[str, Any]] = None,
         depower_ri: float = 1.0,
         depower_riro: float = 1.0,
+        radial_ub_relax: float = 10.0,
     ) -> None:
 
         self.pattern_config = pattern_config or {}
+        # Headroom (m) the reel-in may reel past the global max-radius bound.
+        # The reel-in starts at the reel-out end, which sits at that bound when
+        # reel-out maximizes production; without slack the first node has no
+        # feasible room. The effective relaxation also covers any amount the
+        # start radius already exceeds the bound (solver tolerance).
+        self.radial_ub_relax = radial_ub_relax
         # Required configuration parameters and their default values (None means required with no default)
         self._required_config = {
             "path_parameters": {
@@ -86,12 +93,30 @@ class ReelinSimple:
             "distance_radial",
         ]
 
+        # Optimized node-0 guesses carried into the marching re-simulation so
+        # its per-node root solver warm-starts at the optimum (otherwise it can
+        # diverge / NaN once winch / depower move far from the defaults).
+        self._warm_start_ri: Dict[str, float] = {}
+        self._warm_start_riro: Dict[str, float] = {}
+
         # Components and state placeholders
         self.system_model = system_model
         self.create_ri_dicts()
         self.create_riro_dicts()
         self._opti_params = {}
         self._opti = ca.Opti()
+
+    def _radial_ub_relax(self, distance_radial_start):
+        """Upper-bound relaxation (m) for the reel-in ``distance_radial``.
+
+        Equals the configured headroom plus any amount the start radius already
+        exceeds the global max-radius bound (the start equals the reel-out end,
+        which sits at that bound when reel-out maximizes production).
+        """
+        ub_radial = DEFAULT_OPTI_LIMITS["distance_radial"][1]
+        return max(0.0, float(distance_radial_start) - ub_radial) + getattr(
+            self, "radial_ub_relax", 10.0
+        )
 
     def create_ri_dicts(self):
         self.radial_parameters_ri = self.pattern_config.get(
@@ -106,7 +131,9 @@ class ReelinSimple:
         distance_radial_start = self.pattern_config["path_parameters"].get(
             "distance_radial_start", 360
         )
-        start_time = self.pattern_config.get("sim_parameters", {}).get("start_time", 0)
+        sim_parameters = self.pattern_config.get("sim_parameters", {})
+        start_time = sim_parameters.get("start_time", 0)
+        n_points = sim_parameters.get("n_points_ri", sim_parameters.get("n_points", 100))
         self.start_state_ri = {
             "t": start_time,
             "s": 0,
@@ -126,9 +153,16 @@ class ReelinSimple:
             "sim_parameters": {
                 "start_angle": 0,
                 "end_angle": 1.0,
-                "n_points": 100,
+                "n_points": n_points,
+                "input_depower": self.depower_ri,
+                "distance_radial_ub_relax": self._radial_ub_relax(
+                    distance_radial_start
+                ),
             },
         }
+        # Override the hardcoded solver guesses with the last optimized node-0
+        # state (tension / s_dot / speed_radial / steering) when available.
+        self.start_state_ri.update(getattr(self, "_warm_start_ri", {}) or {})
 
     def create_riro_dicts(self):
         self.radial_parameters_riro = self.pattern_config.get(
@@ -143,11 +177,9 @@ class ReelinSimple:
         distance_radial_start = self.pattern_config["path_parameters"].get(
             "distance_radial_start", 360
         )
-        azimuth_start_ro = self.pattern_config["path_parameters"].get(
-            "azimuth_start_ro", 0
-        )
-        azimuth_start_riro = self.pattern_config["path_parameters"].get(
-            "azimuth_start_riro", 0
+        sim_parameters = self.pattern_config.get("sim_parameters", {})
+        n_points = sim_parameters.get(
+            "n_points_riro", sim_parameters.get("n_points", 100)
         )
         self.start_state_riro = {
             "t": 0,
@@ -163,16 +195,23 @@ class ReelinSimple:
             "path_parameters": {
                 "elevation_start_ro": elevation_start_ro,
                 "elevation_start_riro": elevation_start_riro,
-                "azimuth_start_ro": azimuth_start_ro,
-                "azimuth_start_riro": azimuth_start_riro,
             },
             "radial_parameters": self.radial_parameters_riro,
             "sim_parameters": {
                 "start_angle": 0,
                 "end_angle": 1.0,
-                "n_points": 100,
+                "n_points": n_points,
+                "input_depower": self.depower_riro,
+                "distance_radial_ub_relax": self._radial_ub_relax(
+                    distance_radial_start
+                ),
             },
         }
+        # Override the hardcoded solver guesses with the last optimized node-0
+        # state (tension / s_dot / speed_radial / steering) when available. The
+        # radius and time are intentionally left to the chaining in
+        # run_simulation (riro starts where reel-in ends).
+        self.start_state_riro.update(getattr(self, "_warm_start_riro", {}) or {})
 
     def initialize_ri_phase(
         self,
@@ -182,7 +221,13 @@ class ReelinSimple:
         """Prepare the initial reel-in optimization phase."""
 
         self.create_ri_dicts()
-        self.system_model.input_depower = self.depower_ri
+        # Keep depower symbolic. If it is being optimized, reuse that opti
+        # variable so the residual and the decision stay the same symbol;
+        # otherwise use a fresh symbol (the numeric value flows via
+        # sim_parameters). A float here would break the residual-NLP build.
+        self.system_model.input_depower = self._opti_params.get(
+            "input_depower", ca.MX.sym("input_depower")
+        )
         if pattern_config_opti is None:
             pattern_config_opti = copy.deepcopy(self.pattern_config_ri)
         if start_state_opti is None:
@@ -214,7 +259,13 @@ class ReelinSimple:
         """Extend the optimization problem with the transition phase setup."""
 
         self.create_riro_dicts()
-        self.system_model.input_depower = self.depower_riro
+        # Keep depower symbolic. If it is being optimized, reuse that opti
+        # variable so the residual and the decision stay the same symbol;
+        # otherwise use a fresh symbol (the numeric value flows via
+        # sim_parameters). A float here would break the residual-NLP build.
+        self.system_model.input_depower = self._opti_params.get(
+            "input_depower", ca.MX.sym("input_depower")
+        )
         if pattern_config_opti is None:
             pattern_config_opti = copy.deepcopy(self.pattern_config_riro)
         if start_state_opti is None:
@@ -252,8 +303,17 @@ class ReelinSimple:
         opti=None,
         optimization_dict=None,
         start_state_opti: Optional[Dict[str, float]] = None,
+        elevation_start_ri_expr=None,
+        elevation_start_ro_expr=None,
     ):
-        """Solve the optimization problem for the transition phase."""
+        """Solve the optimization problem for the transition phase.
+
+        ``elevation_start_ri_expr`` / ``elevation_start_ro_expr`` optionally tie
+        the reel-in start elevation and the transition end elevation to symbolic
+        expressions (e.g. the reel-out end/start elevation), enforcing elevation
+        continuity across the cycle handoffs without introducing extra variables.
+        The numeric warm-start simulation still uses the config defaults.
+        """
 
         if opti is None:
             opti = ca.Opti()
@@ -267,9 +327,21 @@ class ReelinSimple:
         elif optimization_dict:
             self._opti_params = optimization_dict
 
-        self.initialize_ri_phase(start_state_opti=start_state_opti)
+        ri_opti = None
+        if elevation_start_ri_expr is not None:
+            self.create_ri_dicts()
+            ri_opti = copy.deepcopy(self.pattern_config_ri)
+            ri_opti["path_parameters"]["elevation_start_ri"] = elevation_start_ri_expr
+        self.initialize_ri_phase(
+            start_state_opti=start_state_opti, pattern_config_opti=ri_opti
+        )
 
-        self.initialize_riro_phase()
+        riro_opti = None
+        if elevation_start_ro_expr is not None:
+            self.create_riro_dicts()
+            riro_opti = copy.deepcopy(self.pattern_config_riro)
+            riro_opti["path_parameters"]["elevation_start_ro"] = elevation_start_ro_expr
+        self.initialize_riro_phase(pattern_config_opti=riro_opti)
 
         # Combined optimization variables: expand/concatenate list/array-like entries
         combined_opti_vars = self._merge_opti_vars(
@@ -285,6 +357,10 @@ class ReelinSimple:
         self,
         optimization_params: List[str] = ["elevation_start_riro"],
         target: str = "energy",
+        energy_offset: float = 0.0,
+        time_offset: float = 0.0,
+        warm_start: bool = False,
+        trust_region_weight: float = 0.0,
     ) -> Optional[SimulationResult]:
         """Set up and solve the optimization problem for the reel-in and transition.
 
@@ -323,17 +399,33 @@ class ReelinSimple:
         if target == "energy":
             total_objective = -(objective_dict["energy"])
         elif target == "power":
+            # Offsets let the alternating cycle optimizer maximize the full cycle
+            # power (this phase + the other phase's fixed energy and time).
             total_objective = -(
-                objective_dict["energy"]
-                / objective_dict["total_time"]
+                (objective_dict["energy"] + energy_offset)
+                / (objective_dict["total_time"] + time_offset)
                 / objective_dict["power_scale"]
             )
         else:
             total_objective = 0.0
 
-        solution = self.run_opti(opti, total_objective)
+        if trust_region_weight:
+            total_objective = total_objective + self._trust_region_penalty(
+                self._opti_params, trust_region_weight
+            )
+
+        solution = self.run_opti(opti, total_objective, warm_start=warm_start)
         if solution is None:
             return None
+
+        # Carry optimized node-0 states forward so the marching re-simulation
+        # warm-starts its per-node root solver at the optimum. run_opti already
+        # rebuilt the start-state dicts; refresh them again so the new warm
+        # starts are applied.
+        self._warm_start_ri = self._node0_warm_start(self._opti_vars_ri, solution)
+        self._warm_start_riro = self._node0_warm_start(self._opti_vars_riro, solution)
+        self.create_ri_dicts()
+        self.create_riro_dicts()
 
         # Package results in a cleaner format
         return SimulationResult(
@@ -344,24 +436,97 @@ class ReelinSimple:
             total_time=objective_dict.get("total_time", 0.0),
         )
 
-    def run_opti(self, opti, objective):
-        """Solve the supplied opti problem and return the solution."""
+    def _param_reference(self, name):
+        """Current (previous-iterate) value for an optimized parameter."""
+        if name == "input_depower":
+            return self.depower_ri
+        for entry in ("path_parameters", "radial_parameters", "sim_parameters"):
+            section = self.pattern_config.get(entry, {})
+            if name in section:
+                return section[name]
+        return None
+
+    @staticmethod
+    def _param_scale(name, ref):
+        """Normalization scale for a parameter: bound width, else |ref|."""
+        bounds = DEFAULT_OPTI_LIMITS.get(name)
+        if bounds and len(bounds) == 2 and (bounds[1] - bounds[0]):
+            return float(bounds[1] - bounds[0])
+        arr = np.ravel(np.asarray(ref, dtype=float))
+        return max(float(np.max(np.abs(arr))), 1e-6)
+
+    def _trust_region_penalty(self, opti_params, weight):
+        """Quadratic penalty anchoring params to their current values.
+
+        Each deviation is normalized by the parameter's bound width so the
+        penalty is dimensionless across parameters; damps block-coordinate steps
+        and keeps the reel-in iterate in the productive region.
+        """
+        penalty = 0
+        for name, var in opti_params.items():
+            ref = self._param_reference(name)
+            if ref is None:
+                continue
+            scale = self._param_scale(name, ref)
+            penalty = penalty + ca.sumsqr((var - ca.DM(ref)) / scale)
+        return weight * penalty
+
+    @staticmethod
+    def _node0_warm_start(opti_vars, solution):
+        """Extract optimized node-0 solver guesses from a per-phase opti_vars.
+
+        Returns the first-node values of the free state variables (tension,
+        s_dot, speed_radial, steering). Radius and time are excluded: the radius
+        is constrained and the riro start is chained from the reel-in end.
+        """
+        keys = ("s_dot", "speed_radial", "input_steering", "tension_tether_ground")
+        out: Dict[str, float] = {}
+        if not opti_vars:
+            return out
+        for key in keys:
+            var = opti_vars.get(key)
+            if var is None:
+                continue
+            try:
+                out[key] = float(solution.value(var[0]))
+            except Exception:
+                continue
+        return out
+
+    def run_opti(self, opti, objective, warm_start=False):
+        """Solve the supplied opti problem and return the solution.
+
+        ``warm_start`` starts IPOPT with a tight barrier and small bound pushes
+        so a near-optimal guess does not trigger the cold-start excursion away
+        from and back to the optimum.
+        """
 
         opti.minimize(objective)
+        ipopt_options = {
+            "bound_relax_factor": 1e-8,
+            "tol": 1e-4,
+            "acceptable_iter": 3,
+            "acceptable_tol": 1e-4,
+            "constr_viol_tol": 1e-4,
+            "dual_inf_tol": 1e-4,
+            "hessian_approximation": "limited-memory",
+            "mu_strategy": "adaptive",
+        }
+        if warm_start:
+            ipopt_options.update(
+                {
+                    "mu_init": 1e-4,
+                    "warm_start_init_point": "yes",
+                    "warm_start_bound_push": 1e-6,
+                    "warm_start_mult_bound_push": 1e-6,
+                    "warm_start_slack_bound_push": 1e-6,
+                    "bound_push": 1e-6,
+                    "bound_frac": 1e-6,
+                }
+            )
         opti.solver(
             "ipopt",
-            {
-                "ipopt": {
-                    "bound_relax_factor": 1e-8,
-                    "tol": 1e-4,
-                    "acceptable_iter": 3,
-                    "acceptable_tol": 1e-4,
-                    "constr_viol_tol": 1e-4,
-                    "dual_inf_tol": 1e-4,
-                    "hessian_approximation": "limited-memory",
-                    "mu_strategy": "adaptive",
-                }
-            },
+            {"ipopt": ipopt_options},
         )
 
         try:
@@ -473,7 +638,11 @@ class ReelinSimple:
         sim_type = "quasi steady"
         print(f"Running simulation for {sim_type} with label: {label_prefix}")
 
-        self.system_model.input_depower = depower
+        # Keep depower symbolic on the shared model: the numeric value is applied
+        # per node via pattern_config["sim_parameters"]["input_depower"]. Forcing a
+        # float here collapses the residual-NLP parameter vector and breaks solver
+        # construction ("p is not symbolic"), especially after an optimize pass.
+        self.system_model.input_depower = ca.MX.sym("input_depower")
         phase = PhaseParameterized(
             self.system_model,
             quasi_steady=True,

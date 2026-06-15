@@ -40,8 +40,6 @@ def create_pattern_from_dict(
         "transition_simple": [
             "elevation_start_riro",
             "elevation_start_ro",
-            "azimuth_start_riro",
-            "azimuth_start_ro",
         ],
         "spline_periodic": ["M", "C_phi", "C_beta", "s_init", "s_final"],
         "spline_open": ["M", "C_phi", "C_beta", "s_init", "s_final", "r0"],
@@ -91,14 +89,10 @@ class Transition_Simple(ParametrizedPatterns):
         self,
         elevation_start_riro,
         elevation_start_ro,
-        azimuth_start_riro=0,
-        azimuth_start_ro=0,
     ):  # <- only flags
         super().__init__(
             elevation_start_riro=elevation_start_riro,
             elevation_start_ro=elevation_start_ro,
-            azimuth_start_riro=azimuth_start_riro,
-            azimuth_start_ro=azimuth_start_ro,
         )
 
     def elevation(self, r, s):
@@ -107,9 +101,9 @@ class Transition_Simple(ParametrizedPatterns):
         )
 
     def azimuth(self, r, s):
-        return self.azimuth_start_riro + s * (
-            self.azimuth_start_ro - self.azimuth_start_riro
-        )
+        # Simplified: the transition is flown straight downwind (azimuth = 0),
+        # matching Reelin_Simple. Kept fixed everywhere for now.
+        return 0
 
 
 def _tp3(x):
@@ -300,7 +294,13 @@ class PeriodicBSpline(ParametrizedPatterns):
         self.C_beta = C_beta
 
     def _u(self, s):
-        return self.omega * (s - self.s_init) / (self.s_final - self.s_init)
+        u = self.omega * (s - self.s_init) / (self.s_final - self.s_init)
+        # Wrap into a single period [0, 1) so s spanning multiple periods repeats
+        # the (periodic) figure — this is what lets the reel-out fly more than one
+        # figure. Identity for u in [0, 1), so single-figure runs are unchanged.
+        if isinstance(u, np.ndarray):
+            return u - np.floor(u)
+        return u - ca.floor(u)
 
     def _eval_spline_vec(self, C, u):
         if np.isscalar(u) or (hasattr(u, "is_scalar") and u.is_scalar()):

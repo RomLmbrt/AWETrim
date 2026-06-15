@@ -7,7 +7,7 @@ from awetrim import SystemModel
 from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
-from awetrim.timeseries.reelout_phase import Reelout
+from awetrim.timeseries.phase import Phase
 from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.utils.config_paths import (
     LEI_V3_DOWNLOOP_SPLINE_CONFIG,
@@ -46,8 +46,8 @@ RESULTS_DIR = (
 # Load configurations from YAML
 REELOUT_CONFIG, REELIN_CONFIG = load_cycle_config_from_yaml(CYCLE_CONFIG_PATH)
 
-# REELOUT_CONFIG["sim_parameters"]["n_points"] = 40
-# REELOUT_CONFIG["sim_parameters"]["input_depower"] = -0.5
+REELOUT_CONFIG["sim_parameters"]["n_points"] = 100
+REELOUT_CONFIG["sim_parameters"]["input_depower"] = -0.3
 WIND_CONFIG = {
     "speed_wind_at_100": 10,
     "z0": 0.03,
@@ -91,7 +91,7 @@ def main(run_plots=False):
         model_type=WIND_CONFIG["model_type"],
     )
     system_model.wind = wind_model
-    reelout = Reelout(
+    reelout = Phase(
         system_model=system_model,
         pattern_config=REELOUT_CONFIG,
         start_state=START_STATE,

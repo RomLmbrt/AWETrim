@@ -7,7 +7,7 @@ from awetrim import SystemModel
 from awetrim.environment.Wind import Wind
 from awetrim.system.kite import Kite
 from awetrim.system.tether import RigidLumpedTether
-from awetrim.timeseries.reelout_phase import Reelout
+from awetrim.timeseries.phase import Phase
 from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.utils.config_paths import (
     LEI_V3_HELIX_SPLINE_CONFIG,
@@ -95,7 +95,7 @@ def main(run_plots=False):
         direction_wind=0,
     )
     system_model.wind = wind_model
-    reelout = Reelout(
+    reelout = Phase(
         system_model=system_model,
         pattern_config=REELOUT_CONFIG,
         start_state=START_STATE,
