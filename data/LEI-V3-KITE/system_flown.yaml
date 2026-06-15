@@ -1,3 +1,6 @@
+# As-flown configuration: KCU mass 22.75 kg (total ~36.33 kg), matching the
+# hardware of the specific flight reproduced in the validation scripts.
+# For optimization studies use system.yaml (KCU 8.4 kg) instead.
 metadata:
   name: LEI-V3-KITE
   description: LEI V3 soft kite pumping ground gen system (TU Delft / Kitepower 
@@ -78,24 +81,24 @@ components:
       structure:
         length: 1.0      # m
         diameter: 0.48   # m
-        mass: 8.4        # kg
+        mass: 22.75        # kg
         center_of_mass: [0.0, 0.0, 0.0]  # m, same as bridle_point_node
 
-    mass: 21.9801
+    mass: 36.3301
     center_of_mass:
-    - -0.0241
-    - 0.0006
-    - 5.7936
+    - -0.0146
+    - 0.0003
+    - 3.5052
     inertia_tensor:
-    - - 627.3191
-      - -0.002
-      - 3.1011
-    - - -0.002
-      - 549.7232
-      - 0.0531
-    - - 3.1011
-      - 0.0531
-      - 101.8133
+    - - 918.7359
+      - -0.0018
+      - 4.3151
+    - - -0.0018
+      - 841.145
+      - 0.0245
+    - - 4.3151
+      - 0.0245
+      - 101.8183
   tether:
     name: LEI-V3 Tether
     type: non_conductive_tether
