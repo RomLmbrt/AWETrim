@@ -189,11 +189,15 @@ class Wing:
         """
         vec_va = model.velocity_apparent_wind
         va_sq = ca.mtimes(vec_va.T, vec_va)
-        va = ca.sqrt(va_sq)
+        # Guard the sqrt arguments: the value is finite at zero but the
+        # derivative (1 / 2*sqrt(arg)) is NaN, which poisons jac_g and stalls
+        # IPOPT if an iterate steps through zero apparent wind. Mirrors the
+        # +1e-10 guards on the divisions below and in the C_D coefficient.
+        va = ca.sqrt(va_sq + 1e-10)
 
         CL, CD = self.aerodynamic_force_coefficients_for(model)[:2]
 
-        va_tau = ca.sqrt(vec_va[0] ** 2 + vec_va[1] ** 2)
+        va_tau = ca.sqrt(vec_va[0] ** 2 + vec_va[1] ** 2 + 1e-10)
         roll_total = self.angle_roll_aerodynamic_for(model) + self.roll_bridle_for(
             model
         )

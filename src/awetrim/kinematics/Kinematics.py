@@ -272,7 +272,11 @@ class ParametrizedKinematics:
 
     @property
     def vtau(self):
-        return ca.sqrt(self.vk**2 - self.vr**2)
+        # Clamp the radicand: an IPOPT step can drive vk below vr (e.g. small
+        # s_dot on a flat-tangent part of the path), making vk**2 - vr**2
+        # negative so sqrt returns NaN and poisons jac_g. The floor keeps vtau
+        # real and its derivative finite without changing the physical solution.
+        return ca.sqrt(ca.fmax(self.vk**2 - self.vr**2, 1e-10))
 
     # TODO: This is not correct, important for the dynamic case with vr_dot not equal to zero
     @property
