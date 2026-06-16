@@ -45,7 +45,11 @@
 
             <div class="model-row">
               <button class="node" data-id="aero-structural">Aero-Structural Kite<br>Model</button>
-              <div class="bridge-text">model reduction<br><span>aero identification</span></div>
+              <button class="bridge-arrow" data-id="model-reduction"
+                aria-label="Model reduction and aero identification: the reduced-order model is derived from the aero-structural model">
+                <span class="bridge-arrow-label">model reduction<br><span class="bridge-sub">aero identification</span></span>
+                <span class="bridge-arrow-line" aria-hidden="true"></span>
+              </button>
               <button class="node" data-id="rom">Reduced-Order Kite<br>Model</button>
             </div>
 
@@ -87,7 +91,7 @@
   <section class="references">
     <div class="references-grid">
       <div class="ref-col">
-        <h2>Publications</h2>
+        <h2>Scientific Publications</h2>
         <p class="ref-intro">The methods behind the framework are described in:</p>
         <ul class="ref-list">
           <li>
@@ -149,16 +153,38 @@
     </div>
   </section>
 
+  <section class="funding" aria-label="Funding acknowledgment">
+    <div class="funding-logos">
+      <a class="funding-logo funding-meridional" href="https://meridional.eu/" target="_blank" rel="noopener"
+         aria-label="MERIDIONAL project">
+        <img src="img/Meridional_logo.png" alt="MERIDIONAL project logo" />
+      </a>
+      <span class="funding-logo funding-eu">
+        <img src="img/eu-funded.svg" alt="Funded by the European Union" />
+      </span>
+    </div>
+    <p class="funding-text">
+      AWETrim is developed within the
+      <a href="https://meridional.eu/" target="_blank" rel="noopener">MERIDIONAL</a>
+      project, which has received funding from the European Union's Horizon Europe research and
+      innovation programme under Grant Agreement No.&nbsp;101084216. Views and opinions expressed
+      are those of the author(s) only and do not necessarily reflect those of the European Union.
+      Neither the European Union nor the granting authority can be held responsible for them.
+    </p>
+  </section>
+
   <footer class="site-footer">
     <a class="license-badge" href="https://eupl.eu/" target="_blank" rel="noopener"
        aria-label="Licensed under the European Union Public Licence v1.2">
       <img src="img/eupl-logo.png" alt="European Union Public Licence v1.2 logo" />
     </a>
     <div class="license-text">
+      <p class="footer-author">Developed by <strong>Oriol Cayon</strong> · Delft University of Technology</p>
+      <p class="footer-ack"><strong>Acknowledgements:</strong> developed under the supervision of Roland Schmehl, with scientific contributions from V.&nbsp;van&nbsp;Deursen, S.&nbsp;Watson and M.&nbsp;Gaunaa.</p>
       <p>AWETrim is released under the
         <a href="https://github.com/awegroup/AWETrim/blob/main/LICENSE" target="_blank" rel="noopener">European Union Public Licence v1.2 (EUPL-1.2)</a>
         — a copyleft licence approved by the European Commission.</p>
-      <p class="footer-copy">© 2023–2026 Oriol Cayon · Delft University of Technology</p>
+      <p class="footer-copy">© 2023–2026 Oriol Cayon</p>
     </div>
   </footer>
 

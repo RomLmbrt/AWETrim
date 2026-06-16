@@ -103,6 +103,18 @@ const CONTENT = {
     caption: "Add a loaded wing shape or pressure / load distribution plot.",
     links: [PAPER_AERO, REPO_VSM, REPO_PSS, REPO_FEM]
   },
+  "model-reduction": {
+    title: "Model Reduction & Aero Identification",
+    text: "The reduced-order model is not assumed — it is identified from the high-fidelity aero-structural model. AWETrim sweeps the coupled VSM–structural model across flight conditions and control inputs, then fits compact quasi-steady aerodynamic coefficient relations to those sweep results. This model-reduction / system-identification step is what turns the expensive aero-structural model (left) into the fast ROM (right) used for trajectory simulation and optimisation.",
+    bullets: [
+      "Aerostructural sweeps over angle of attack, sideslip and control inputs",
+      "Fits quasi-steady CL / CD / CS coefficient relations (rom_config.yaml)",
+      "Bridges the high-fidelity model and the fast CasADi ROM"
+    ],
+    image: "img/placeholder.svg",
+    caption: "Add a coefficient-fit or aerostructural-vs-ROM comparison plot.",
+    links: [PAPER_ROM, REPO_AWETRIM]
+  },
   "rom": {
     title: "Reduced-Order Kite Model",
     text: "The reduced-order model is fitted from aerostructural sweep results. It gives quasi-steady aerodynamic coefficients as functions of flight variables and control inputs (rom_config.yaml), enabling efficient trajectory simulation and optimisation inside the CasADi system model.",

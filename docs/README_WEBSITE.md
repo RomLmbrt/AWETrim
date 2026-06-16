@@ -44,6 +44,21 @@ Example:
 
 Recommended image formats: `.png`, `.jpg`, `.webp`, or `.svg`.
 
+## Funding band and logos
+
+The dark-text funding band above the footer carries the MERIDIONAL logo, the
+"Funded by the European Union" emblem and the Horizon Europe acknowledgment
+(Grant Agreement No. 101084216).
+
+- MERIDIONAL logo: `img/Meridional_logo.png` (colour version, for the light band).
+  Swap the file or change the `src` of the `.funding-meridional` image to replace it.
+- EU emblem: `img/eu-funded.svg` — a self-contained SVG (no external hotlink). The
+  star ring and text colour are generated; edit the SVG directly to recolour.
+
+The "model reduction / aero identification" arrow in the framework box is a
+clickable block (`data-id="model-reduction"`) whose panel text lives in
+`content.js`; it explains that the ROM is identified from the aero-structural model.
+
 ## Edit the layout
 
 Most layout changes are in `style.css`.
