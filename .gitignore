@@ -177,4 +177,4 @@ cython_debug/
 # Winch data from PathEditor
 
 src/awetrim/kinematics/pp_ws6-9_GS3_KCU4.A_KiteV9.60.A.json
-src/awetrim/kinematics/winch_force_curve.py
+src/awetrim/kinematics/winch_force_curve.pyscripts/personal/
