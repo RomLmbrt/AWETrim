@@ -1,0 +1,67 @@
+# AWETrim interactive framework website
+
+This is a static clickable website for the AWETrim computational workflow.
+
+This version does not use the uploaded PDF or a diagram image. The framework is drawn directly with HTML and CSS. It uses a grouped layout:
+
+- Inputs
+- Experimental reconstruction
+- AWETrim core framework
+- Outputs and applications
+
+Each block is clickable. Clicking a block updates the information panel on the right.
+
+## Open locally
+
+Open `index.html` directly in your browser, or run a local server from this folder:
+
+```bash
+python -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+## Add your own images
+
+1. Put your image files in the `img/` folder.
+2. Open `content.js`.
+3. Find the block you want to edit.
+4. Change the `image` path and `caption`.
+
+Example:
+
+```js
+"ekf-awe": {
+  title: "EKF-AWE Experimental Reconstruction",
+  image: "img/ekf_reconstruction.png",
+  caption: "Example reconstructed wind speed and kite states."
+}
+```
+
+Recommended image formats: `.png`, `.jpg`, `.webp`, or `.svg`.
+
+## Edit the layout
+
+Most layout changes are in `style.css`.
+
+Useful sections:
+
+- `.node-grid-inputs` controls the input block layout.
+- `.framework-shell` controls the AWETrim main box.
+- `.model-row` controls the Aero-Structural Model and Reduced-Order Model row.
+- `.support-row` controls Tether, Winch and Wind Models.
+- `.node-grid-apps` controls the outputs/applications block.
+
+## Publish on GitHub Pages
+
+A simple setup is:
+
+1. Copy these files into a `docs/` folder in your repository.
+2. Commit and push.
+3. Go to repository Settings > Pages.
+4. Select the `docs/` folder as the source.
+5. Save and wait for GitHub to publish the site.

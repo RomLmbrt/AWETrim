@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="title desc">
+  <title id="title">Image placeholder</title>
+  <desc id="desc">A simple placeholder for future AWETrim plots or photos.</desc>
+  <rect width="800" height="500" fill="#ffffff"/>
+  <rect x="40" y="40" width="720" height="420" rx="28" fill="#edf7fb" stroke="#8fb1c2" stroke-width="4"/>
+  <path d="M120 340 C220 170, 350 430, 480 210 S650 180, 700 300" fill="none" stroke="#1677a3" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="120" cy="340" r="16" fill="#1677a3"/>
+  <circle cx="480" cy="210" r="16" fill="#1677a3"/>
+  <circle cx="700" cy="300" r="16" fill="#1677a3"/>
+  <text x="400" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#123043" font-weight="700">Add your image here</text>
+  <text x="400" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#5c7180">Replace image path in content.js</text>
+</svg>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AWETrim Interactive Framework</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">Interactive framework</p>
+      <h1>AWETrim computational workflow</h1>
+      <p class="lead">Click any block to open a short explanation, links and a visual placeholder that you can replace with your own plots, photos or animations.</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="diagram-card" aria-label="Clickable AWETrim diagram">
+      <div class="diagram-wrap" id="diagramWrap">
+
+        <section class="group-card inputs-group">
+          <button class="group-title" data-id="experimental-flight-data">Inputs</button>
+          <div class="node-grid node-grid-inputs">
+            <button class="node" data-id="experimental-flight-data">Experimental<br>Flight Data</button>
+            <button class="node" data-id="system-kite">System / Kite<br>Characteristics</button>
+            <button class="node" data-id="environmental-conditions">Environmental<br>Conditions</button>
+            <button class="node" data-id="operational-constraints">Operational<br>Constraints</button>
+          </div>
+        </section>
+
+        <section class="reconstruction-card">
+          <button class="section-title" data-id="ekf-awe">Experimental reconstruction</button>
+          <div class="node-grid node-grid-reconstruction">
+            <button class="node node-emphasis" data-id="ekf-awe">EKF-AWE<br><span>Experimental Reconstruction</span></button>
+            <button class="node" data-id="wind-state-estimation">Wind and State<br>Estimation</button>
+          </div>
+        </section>
+
+        <section class="framework-shell">
+          <button class="shell-title" data-id="awetrim"><strong>AWETrim</strong><span>Quasi-Steady Multi-Fidelity Framework for Soft Kites</span></button>
+
+          <div class="framework-grid">
+            <button class="node wide" data-id="shared-kinematics">Shared Kinematics</button>
+
+            <div class="model-row">
+              <button class="node" data-id="aero-structural">Aero-Structural Kite<br>Model</button>
+              <div class="bridge-text">model reduction<br><span>aero identification</span></div>
+              <button class="node" data-id="rom">Reduced-Order Kite<br>Model</button>
+            </div>
+
+            <div class="support-row">
+              <button class="node" data-id="tether-models">Tether Models</button>
+              <button class="node" data-id="winch-models">Winch Models</button>
+              <button class="node" data-id="wind-models">Wind Models</button>
+            </div>
+
+            <button class="node wide" data-id="trajectory-parametrization">Trajectory Parametrization</button>
+          </div>
+        </section>
+
+        <section class="group-card applications-group">
+          <button class="group-title" data-id="operational-optimization">Outputs and applications</button>
+          <div class="node-grid node-grid-apps">
+            <button class="node" data-id="operational-optimization">Operational<br>Optimization</button>
+            <button class="node" data-id="performance-assessment">Performance<br>Assessment</button>
+            <button class="node" data-id="design-analysis">Design and Model<br>Analysis</button>
+          </div>
+        </section>
+      </div>
+      <p class="hint">This version uses grouped blocks instead of arrows. It is drawn directly with HTML and CSS, with no embedded PDF or diagram image.</p>
+    </section>
+
+    <aside class="info-panel" id="infoPanel" aria-live="polite">
+      <p class="panel-kicker">Selected block</p>
+      <h2 id="panelTitle">AWETrim</h2>
+      <p id="panelText"></p>
+      <div id="panelBullets"></div>
+      <figure class="panel-figure" id="panelFigure">
+        <img id="panelImage" src="img/placeholder.svg" alt="Placeholder visual" />
+        <figcaption id="panelCaption">Replace this placeholder with your own plots or photos.</figcaption>
+      </figure>
+      <div class="panel-actions" id="panelLinks"></div>
+    </aside>
+  </main>
+
+  <section class="howto">
+    <h2>How to add your own photos or plots</h2>
+    <p>Place your image files inside the <code>img/</code> folder, then edit <code>content.js</code>. For each block, change the <code>image</code> value to your file path and update the <code>caption</code>.</p>
+    <pre><code>"ekf-awe": {
+  title: "EKF-AWE Experimental Reconstruction",
+  image: "img/ekf_reconstruction.png",
+  caption: "Example reconstructed wind speed and kite states."
+}</code></pre>
+  </section>
+
+  <script src="content.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
