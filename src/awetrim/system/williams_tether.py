@@ -179,6 +179,41 @@ class WilliamsTether(Tether):
         shape = self.tether_shape_symbolic_for(model)
         return ca.norm_2(shape["tether_force_ground"])
 
+    def _segment_aero_force(self, van, ej, rho, l_unstrained):
+        """Aerodynamic force on one tether segment, lumped at its node.
+
+        ``van`` is the apparent wind at the node and ``ej`` the unit segment
+        axis (both 3-vectors). The cross-flow normal drag (coefficient
+        ``drag_coefficient_tether``) and tangential skin friction (``cf``) are
+        resolved into a drag along the apparent wind and a lift perpendicular to
+        it. With unit direction vectors their sum is the full Hoerner cross-flow
+        + skin-friction force, which reduces to Williams Eq. (6) when ``cf = 0``.
+        Returns ``(drag, lift, theta)``; subclasses may override to swap the
+        force model.
+        """
+        cdt = self.drag_coefficient_tether
+        theta = _angle_between(van, ej)
+        cd_t = cdt * ca.sin(theta) ** 3 + ca.pi * self.cf * ca.cos(theta) ** 3
+        cl_t = (
+            cdt * ca.sin(theta) ** 2 * ca.cos(theta)
+            - ca.pi * self.cf * ca.sin(theta) * ca.cos(theta) ** 2
+        )
+        van_norm = ca.norm_2(van) + 1e-9
+        dir_D = van / van_norm
+        # Lift is perpendicular to the apparent wind, in the plane spanned by the
+        # segment axis and the flow. The rejection of ``ej`` from ``dir_D`` has
+        # magnitude sin(theta); normalise it because ``cl_t`` is the coefficient
+        # for a UNIT lift direction (leaving it unnormalised scales lift by an
+        # extra sin(theta)).
+        lift_perp = ej - ca.dot(ej, dir_D) * dir_D
+        dir_L = -lift_perp / (ca.norm_2(lift_perp) + 1e-9)
+        dyn_pressure_area = (
+            0.5 * rho * van_norm**2 * l_unstrained * self.diameter_tether
+        )
+        drag = dyn_pressure_area * cd_t * dir_D
+        lift = dyn_pressure_area * cl_t * dir_L
+        return drag, lift, theta
+
     def tether_shape_symbolic(
         self,
         env,
@@ -224,7 +259,6 @@ class WilliamsTether(Tether):
         tether_length = self.tether_length if tether_length is None else tether_length
         diameter = self.diameter_tether
         density = self.density_tether
-        cdt = self.drag_coefficient_tether
 
         N = self.n_elements
         l_unstrained = tether_length / N
@@ -281,9 +315,9 @@ class WilliamsTether(Tether):
 
         velocities_apparent_wind = ca.MX.zeros((N + 1, 1))
         angle_va_tether = ca.MX.zeros((N + 1, 1))
-        # Per-node force decomposition (half-segment aero attributed to each
-        # node, full-segment gravity lumped onto the node). Rows 0 and N
-        # remain zero (boundary nodes — no force balance is solved there).
+        # Per-node force decomposition (full-segment aero and gravity lumped
+        # onto each node). Rows 0 and N remain zero (boundary nodes — no force
+        # balance is solved there).
         drag_per_node = ca.MX.zeros((N + 1, 3))
         lift_per_node = ca.MX.zeros((N + 1, 3))
         gravity_per_node = ca.MX.zeros((N + 1, 3))
@@ -315,35 +349,28 @@ class WilliamsTether(Tether):
             vwn = u_wind * ca.vertcat(1, 0, 0)
             van = vwn - v_n
 
-            theta = _angle_between(van, ej)
-            cd_t = cdt * ca.sin(theta) ** 3 + ca.pi * self.cf * ca.cos(theta) ** 3
-            cl_t = (
-                cdt * ca.sin(theta) ** 2 * ca.cos(theta)
-                - ca.pi * self.cf * ca.sin(theta) * ca.cos(theta) ** 2
+            drag_n, lift_n, theta = self._segment_aero_force(
+                van, ej, rho, l_unstrained
             )
-            van_norm = ca.norm_2(van) + 1e-9
-            dir_D = van / van_norm
-            dir_L = -(ej - ca.dot(ej, dir_D) * dir_D)
-            dyn_pressure_area = 0.5 * rho * van_norm**2 * l_unstrained * diameter
 
             velocities_apparent_wind[n, :] = ca.norm_2(van)
             angle_va_tether[n, :] = theta
 
-            lift_n = dyn_pressure_area * cl_t * dir_L
-            drag_n = dyn_pressure_area * cd_t * dir_D
-
-            # Half-segment aero attributed to this node (mirrors original).
-            fa_n = 0.5 * (drag_n + lift_n)
+            # Full segment aero lumped at this node, matching the full segment
+            # mass used for gravity below and Williams Eq. (17). (An earlier
+            # 0.5 factor applied only half of one adjacent segment, which
+            # underestimated the total tether drag by roughly a factor of two.)
+            fa_n = drag_n + lift_n
 
             fg_n = ca.vertcat(0, 0, -m_s * g)
 
             # Record per-node force contributions for diagnostics / plotting.
-            drag_per_node[n, 0] = 0.5 * drag_n[0]
-            drag_per_node[n, 1] = 0.5 * drag_n[1]
-            drag_per_node[n, 2] = 0.5 * drag_n[2]
-            lift_per_node[n, 0] = 0.5 * lift_n[0]
-            lift_per_node[n, 1] = 0.5 * lift_n[1]
-            lift_per_node[n, 2] = 0.5 * lift_n[2]
+            drag_per_node[n, 0] = drag_n[0]
+            drag_per_node[n, 1] = drag_n[1]
+            drag_per_node[n, 2] = drag_n[2]
+            lift_per_node[n, 0] = lift_n[0]
+            lift_per_node[n, 1] = lift_n[1]
+            lift_per_node[n, 2] = lift_n[2]
             gravity_per_node[n, 0] = fg_n[0]
             gravity_per_node[n, 1] = fg_n[1]
             gravity_per_node[n, 2] = fg_n[2]
