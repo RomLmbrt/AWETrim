@@ -236,14 +236,15 @@ The methods implemented in this repository are described in the following papers
 
 ## License
 
-This package is licensed under the GNU Lesser General Public License v3.0 or later.
+Copyright © 2023–2026 Oriol Cayon, Delft University of Technology.
 
-You may use this package in academic, private, commercial, and closed-source systems. You may also use it internally to develop, operate, or control commercial products.
+Licensed under the **European Union Public Licence v1.2 (EUPL-1.2)**.
 
-Your own software does not need to be open-sourced merely because it imports, links to, or uses this package.
+The EUPL is a copyleft (reciprocal) licence approved by the European Commission and published in all official languages of the European Union, each version being equally valid. In short:
 
-If you modify this package itself and distribute the modified version outside your organization, you must make the source code of the modified package available to the recipients under the same LGPL license.
+- You may use, study, modify, and redistribute this package, including for commercial purposes.
+- If you distribute this package or a work derived from it — including by making it available to users over a network — you must do so under the EUPL (or one of its listed compatible licences, e.g. GPL, AGPL, LGPL, MPL; see the *Appendix* of the licence) and make the corresponding source code available.
 
-We encourage users who improve this package to contribute their changes back to the upstream repository, although the LGPL does not require upstream contribution.
+We encourage users who improve this package to contribute their changes back to the upstream repository.
 
-See the `LICENSE` file for the full license text.
+See the [`LICENSE`](LICENSE) file for the full, legally binding text.
