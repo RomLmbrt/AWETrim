@@ -406,7 +406,7 @@ h1 {
 
 .references-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 32px;
 }
 
@@ -576,7 +576,7 @@ h1 {
   }
   .layout { grid-template-columns: 1fr; }
   .info-panel { position: static; }
-  .references-grid { grid-template-columns: 1fr; gap: 24px; }
+  .references-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
 }
 
 @media (max-width: 800px) {
@@ -586,6 +586,7 @@ h1 {
   .node-grid-inputs, .node-grid-apps, .support-row, .model-row, .node-grid-reconstruction {
     grid-template-columns: 1fr;
   }
+  .references-grid { grid-template-columns: 1fr; }
   .framework-shell { border-radius: 34px; padding: 18px; }
   .bridge-arrow { min-height: 42px; padding: 8px 4px; }
   .bridge-arrow-line { width: 38px; transform: rotate(90deg); }

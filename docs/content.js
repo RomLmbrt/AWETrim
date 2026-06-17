@@ -30,6 +30,13 @@ const REPO_FEM = { label: "kite_fem (FEM structure)", url: "https://github.com/a
 const REPO_EKF = { label: "EKF-AWE repository", url: "https://github.com/ocayon/EKF-AWE" };
 const REPO_KITE = { label: "TU Delft LEI-V3 kite", url: "https://github.com/awegroup/TUDELFT_V3_KITE" };
 
+// Open flight-data sets (newest first).
+const DATA_20251009 = { label: "Dataset · Flight test 9 Oct 2025", url: "https://github.com/awegroup/Flightdata09102025" };
+const DATA_20240605 = { label: "Dataset · Flight test 5 Jun 2024", url: "https://github.com/awegroup/Flightdata05062024" };
+const DATA_20231127 = { label: "Dataset · Flight test 27 Nov 2023", url: "https://github.com/awegroup/Flightdata27112023" };
+const DATA_20230512 = { label: "Dataset · Flight test 12 May 2023", url: "https://github.com/awegroup/Flightdata12052023" };
+const DATA_20191008 = { label: "Dataset · Flight test 8 Oct 2019", url: "https://github.com/awegroup/Flightdata08102019" };
+
 const CONTENT = {
   "awetrim": {
     title: "AWETrim",
@@ -49,7 +56,7 @@ const CONTENT = {
     bullets: ["Raw CSV logs and pre-processed HDF5 files", "Position, velocity, tether force, reel-out speed", "Onboard IMU / sensor measurements"],
     image: "img/placeholder.svg",
     caption: "Add a photo of the experimental setup or a raw-data time series.",
-    links: [REPO_KITE]
+    links: [REPO_KITE, DATA_20251009, DATA_20240605, DATA_20231127, DATA_20230512, DATA_20191008]
   },
   "ekf-awe": {
     title: "EKF-AWE Experimental Reconstruction",
