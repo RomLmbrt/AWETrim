@@ -29,6 +29,7 @@ const REPO_PSS = { label: "Particle System Simulator", url: "https://github.com/
 const REPO_FEM = { label: "kite_fem (FEM structure)", url: "https://github.com/awegroup/kite_fem" };
 const REPO_EKF = { label: "EKF-AWE repository", url: "https://github.com/ocayon/EKF-AWE" };
 const REPO_KITE = { label: "TU Delft LEI-V3 kite", url: "https://github.com/awegroup/TUDELFT_V3_KITE" };
+const REPO_ML = { label: "LEI airfoil ML models (Zenodo)", url: "https://doi.org/10.5281/zenodo.16925759" };
 
 // Open flight-data sets (newest first).
 const DATA_20251009 = { label: "Dataset · Flight test 9 Oct 2025", url: "https://github.com/awegroup/Flightdata09102025" };
@@ -52,11 +53,11 @@ const CONTENT = {
   },
   "experimental-flight-data": {
     title: "Experimental Flight Data",
-    text: "Measured flight-test data is the starting point for reconstruction. For wind and state reconstruction with the EKF, at least the kite position, velocity, tether force and tether length must be provided. The reference kite is the TU Delft V3; the open data sets include three Kitepower V9 flights with lidar wind measurements, and the most recent of the V3 flights also has lidar.",
+    text: "Measured flight-test data is the starting point for reconstruction. For wind and state reconstruction with the EKF, at least the kite position, velocity, tether force and tether length must be provided. The reference kite is the TU Delft V3; the open data sets include two Kitepower V9 flights with lidar wind measurements, and the most recent of the V3 flights also has lidar.",
     bullets: [
       "Minimum EKF inputs: position, velocity, tether force, tether length",
       "Reference system: TU Delft V3 kite",
-      "Three Kitepower V9 flights with lidar; latest V3 flight also has lidar"
+      "Two Kitepower V9 flights with lidar; latest V3 flight also has lidar"
     ],
     image: "img/flight-setup.JPG",
     caption: "Pre-flight ground setup: the kite, bridle lines and control unit laid out before a flight test.",
@@ -116,7 +117,7 @@ const CONTENT = {
     bullets: ["VSM aerodynamic loads (enhanced lifting line)", "Structural solver: PSS particle-spring or kite_fem FEM", "Aitken-relaxed fixed-point coupling to convergence"],
     image: "img/placeholder.svg",
     caption: "Add a loaded wing shape or pressure / load distribution plot.",
-    links: [PAPER_AERO, PAPER_VSM, REPO_VSM, REPO_PSS, REPO_FEM]
+    links: [PAPER_AERO, PAPER_VSM, REPO_VSM, REPO_ML, REPO_PSS, REPO_FEM]
   },
   "model-reduction": {
     title: "Model Reduction & Aero Identification",
