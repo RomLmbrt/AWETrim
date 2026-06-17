@@ -514,15 +514,24 @@ h1 {
   line-height: 0;
 }
 
-.license-badge img {
-  width: 76px;
-  height: auto;
-  transition: transform 0.2s ease;
+.license-pill {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
-.license-badge:hover img,
-.license-badge:focus-visible img {
+.license-badge:hover .license-pill,
+.license-badge:focus-visible .license-pill {
   transform: scale(1.04);
+  background: var(--accent);
+  color: #fff;
   outline: none;
 }
 

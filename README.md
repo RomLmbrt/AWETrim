@@ -245,12 +245,13 @@ Prof. H.G.C. (Henri) Werij, Dean of Aerospace Engineering
 
 Copyright © 2023–2026 Oriol Cayon, Delft University of Technology.
 
-Licensed under the **European Union Public Licence v1.2 (EUPL-1.2)**.
+Licensed under the **Apache License, Version 2.0 (Apache-2.0)**.
 
-The EUPL is a copyleft (reciprocal) licence approved by the European Commission and published in all official languages of the European Union, each version being equally valid. In short:
+The Apache License 2.0 is a permissive open-source licence approved by the Open Source Initiative. In short:
 
-- You may use, study, modify, and redistribute this package, including for commercial purposes.
-- If you distribute this package or a work derived from it — including by making it available to users over a network — you must do so under the EUPL (or one of its listed compatible licences, e.g. GPL, AGPL, LGPL, MPL; see the *Appendix* of the licence) and make the corresponding source code available.
+- You may use, study, modify, and redistribute this package, including for commercial purposes and in proprietary derivative works.
+- If you redistribute the package or a derivative work, you must retain the copyright, patent, trademark, and attribution notices, include a copy of the licence, and state any significant changes you made. If a `NOTICE` file is present, its attribution notices must be preserved.
+- The licence includes an express grant of patent rights from contributors and provides the software "as is", without warranty.
 
 We encourage users who improve this package to contribute their changes back to the upstream repository.
 

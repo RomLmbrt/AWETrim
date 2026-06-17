@@ -15,7 +15,7 @@ keywords:
   - Particle System Simulator
   - Reduced-Order Modelling
 version: 0.1.0
-license: EUPL-1.2
+license: Apache-2.0
 url: "https://github.com/awegroup/AWETrim"
 date-released: "2026-05-08"
 doi: ""  # TODO: add Zenodo or equivalent DOI after first release
