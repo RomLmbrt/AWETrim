@@ -125,7 +125,8 @@ DEFAULT_WINCH_CONFIG = {
 # defaults.py (This is your file containing the limits)
 DEFAULT_OPTI_LIMITS = {
     "tension_tether_ground": (300, 1e9),  # Range for tension_tether_ground: 0 to 1e9
-    "input_steering": (-1, 1),  # Range for input_steering: -pi/2 to pi/2
+    # u_s = -kcu_actual_steering/100; 2019 V3 flight max deflection was kcu +-35.
+    "input_steering": (-0.35, 0.35),
     "s_dot": (0.0, 40),  # Range for s_dot: 0 to 30
     "s_ddot": (-100, 100),  # Range for s_ddot: -100 to 100
     "s": (0, 300),  # Range for s: 0 to 10
@@ -158,8 +159,11 @@ DEFAULT_OPTI_LIMITS = {
     "elevation_start_riro": (np.radians(30), np.radians(110)),
     "height": (50, 400),
     "r0": (180, 300),
-    "steering_rate": (-0.5, 0.5),
-    "input_depower": (-1, 1.0),
+    # d(u_s)/dt [1/s]; 2019 V3 flight max slew was ~0.29 (~29 kcu/s).
+    "steering_rate": (-0.29, 0.29),
+    # input_depower is the absolute power-tape length l_dp [m] (new convention).
+    # Spans the physical depower range (legacy u_p in [-1, 1] ~ l_dp [1.20, 2.13] m).
+    "input_depower": (1.1, 2.3),
     "speed_tangential": (10, 400),
     "angle_of_attack": (np.radians(0), np.radians(14)),
     "C_phi": (-0.8, 0.8),  # Range for C_phi in Fourier pattern

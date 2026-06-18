@@ -1,13 +1,26 @@
 metadata:
   description: "ROM aerodynamic coefficients and tether settings for the LEI-V3 kite."
+  control_convention: >-
+    u_p is the absolute power-tape length l_dp [m] (2019 powered ~= 1.7 m,
+    depowered ~= 2.1 m); u_s is steering normalized so that full steering = +/-1
+    (= -kcu_actual_steering/100). Matches awetrim.identification.controls and the
+    rom_config_aero/EKF identified configs.
 
 aerodynamics:
   model: "coeffs"
   params:
     CD0: 0.1130532
     CL0: 0.04671295
-    angle_pitch_depower_0: -0.12
-    delta_pitch_depower: -0.13
+    # angle_pitch_depower = angle_pitch_depower_0 + u_p * delta_pitch_depower,
+    # with u_p = l_dp [m]. EXACT reparametrization of the legacy model
+    # (-0.12 - 0.13*up), using the measured 2019-flight relation between the old
+    # normalized depower signal and the new physical tape length:
+    #   up = -3.56587 + 2.13990 * l_dp   (R^2 = 1.0; both linear in kcu_depower)
+    # => angle_pitch_depower_0 = -0.12 - 0.13*(-3.56587) = 0.343563
+    #    delta_pitch_depower   = -0.13 * 2.13990        = -0.278187
+    # Reproduces the legacy apd bit-for-bit (powered l_dp=1.7 -> -7.41 deg).
+    angle_pitch_depower_0: 0.343563
+    delta_pitch_depower: -0.278187
   coefficients:
     CL:
       - var: alpha
@@ -29,16 +42,22 @@ aerodynamics:
       - var: alpha
         power: 2
         coef: 1.56422478
+      # u_s terms rescaled for the new convention u_s = -kcu/100 (full = +/-1).
+      # Legacy validation used u_s = -kcu/max|kcu| (~ -kcu/35), so same physical
+      # steering now gives a 0.35x smaller u_s; coefficients divided by 0.35
+      # (x 100/35 ~= 2.857). In the solved QS trim only the CD_us/CS ratio
+      # (0.1875) matters, so this is physics-neutral; it also matches the
+      # -kcu/100 guess scale and improves IPOPT conditioning.
       - var: u_s
         power: 1
-        coef: 0.0225
+        coef: 0.0642857   # = 0.0225 / 0.35
       - var: u_p
         power: 1
         coef: -0.00
     CS:
       - var: u_s
         power: 1
-        coef: 0.12
+        coef: 0.342857    # = 0.12 / 0.35
 
 tether:
   model: "williams"
