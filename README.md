@@ -1,5 +1,7 @@
 # AWETrim
 
+![Documentation](https://awegroup.github.io/AWETrim/)
+
 AWETrim is a Python library for the modelling, trim analysis, aerostructural simulation, and trajectory optimisation of soft-kite Airborne Wind Energy Systems (AWES). It ties together three external solvers — a vortex aerodynamic method, a particle structural model, and a flight-data Kalman filter — with a CasADi-based system model into a single coherent workflow:
 
 ```
