@@ -498,6 +498,9 @@ def simulate_cycle(
         else:
             sim_params["input_depower"] = ROM_POWERED_INPUT_DEPOWER
 
+        # Loosen the per-node accept tolerance so the reel-out trim can advance
+        # past marginal (near-singular) nodes instead of truncating mid-cycle.
+        sim_params["solver_accept_residual_norm"] = 1e-3
         # sim_params["debug_solver"] = True
 
         phase_config = {
