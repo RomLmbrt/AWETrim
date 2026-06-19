@@ -182,5 +182,9 @@ src/awetrim/kinematics/winch_force_curve.py
 # Personal scripts (own private repo: ocayon/AWETrim-personal)
 scripts/personal/
 
+# Claude Code agent config (not version-controlled)
+/CLAUDE.md
+.claude/
+
 #MAC OS
 .DS_Store
