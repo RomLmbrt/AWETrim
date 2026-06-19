@@ -1,6 +1,7 @@
 const panelTitle = document.getElementById("panelTitle");
 const panelText = document.getElementById("panelText");
 const panelBullets = document.getElementById("panelBullets");
+const panelFigure = document.getElementById("panelFigure");
 const panelImage = document.getElementById("panelImage");
 const panelCaption = document.getElementById("panelCaption");
 const panelLinks = document.getElementById("panelLinks");
@@ -13,9 +14,14 @@ function renderPanel(id) {
   panelBullets.innerHTML = item.bullets?.length
     ? `<ul>${item.bullets.map(point => `<li>${point}</li>`).join("")}</ul>`
     : "";
-  panelImage.src = item.image || "img/placeholder.svg";
-  panelImage.alt = item.title;
-  panelCaption.textContent = item.caption || "";
+  if (item.image) {
+    panelImage.src = item.image;
+    panelImage.alt = item.title;
+    panelCaption.textContent = item.caption || "";
+    panelFigure.style.display = "";
+  } else {
+    panelFigure.style.display = "none";
+  }
   panelLinks.innerHTML = item.links?.length
     ? item.links.map(link => `<a href="${link.url}" target="_blank" rel="noopener">${link.label}</a>`).join("")
     : "";

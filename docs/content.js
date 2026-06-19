@@ -35,6 +35,7 @@ const REPO_EKF = { label: "EKF-AWE repository", url: "https://github.com/ocayon/
 const REPO_KITE = { label: "TU Delft LEI-V3 kite", url: "https://github.com/awegroup/TUDELFT_V3_KITE" };
 const REPO_ML = { label: "LEI airfoil ML models (Zenodo)", url: "https://doi.org/10.5281/zenodo.16925759" };
 const REPO_AWESIO = { label: "awesIO standard", url: "https://github.com/awegroup/awesIO" };
+const REPO_AWERA = { label: "AWERA · wind-resource analysis", url: "https://github.com/awegroup/AWERA" };
 
 // Open flight-data sets (newest first).
 const DATA_20251009 = { label: "Dataset · Flight test 9 Oct 2025", url: "https://github.com/awegroup/Flightdata09102025" };
@@ -94,26 +95,24 @@ const CONTENT = {
   },
   "environmental-conditions": {
     title: "Environmental Conditions",
-    text: "Environmental inputs define the wind field and atmosphere used by the simulations. AWETrim ships uniform, logarithmic-shear and tabulated wind models, and can also use wind profiles reconstructed from flight data.",
-    bullets: ["Uniform wind", "Logarithmic shear", "Tabulated or reconstructed inflow"],
-    image: "img/placeholder.svg",
-    caption: "Add a wind profile or turbulence plot.",
-    links: [PAPER_EKF]
+    text: "Environmental inputs define the wind field and atmosphere used by the simulations. You choose the wind profile: a uniform or logarithmic-shear model, or a tabulated profile (height–speed samples) — which can come from flight-data reconstruction or from external wind-resource analysis. A direct coupling with AWERA, which clusters reanalysis data into representative vertical wind profiles, is planned to feed site-specific tabulated inflow.",
+    bullets: ["Choose uniform, logarithmic-shear or tabulated profile", "Tabulated inflow from flight data or wind-resource analysis", "Planned coupling with AWERA for site-specific profiles"],
+    image: "img/wind-profiles-input.png",
+    caption: "Clustered, normalised vertical wind profiles at Bangor Erris with a power-law fit (α = 0.189) — representative inflow of the kind AWERA produces, usable directly as tabulated input.",
+    links: [PAPER_EKF, REPO_AWERA]
   },
   "operational-constraints": {
     title: "Operational Constraints",
-    text: "Operational limits define the feasible flight envelope during simulation and optimisation: tether-force limits, reel-speed bounds, steering and depower limits, and path constraints. Default bounds live in utils/defaults.py (DEFAULT_OPTI_LIMITS).",
-    bullets: ["Tether force and reel-speed limits", "Steering and depower control bounds", "Flight-envelope and path constraints"],
-    image: "img/placeholder.svg",
-    caption: "Add a constraint envelope or optimisation-bound figure.",
+    text: "Operational constraints bound the feasible flight envelope during simulation and optimisation, and come from two sources. Hardware limits live in the system configuration (system.yaml): maximum tether force, operational tether length, and the winch drum/gearbox properties. Site- and trajectory-related limits constrain the path itself — minimum flight height above ground, elevation and azimuth bounds, and other geometric path constraints. Default optimisation-variable bounds (including reel-speed limits) live in utils/defaults.py (DEFAULT_OPTI_LIMITS).",
+    bullets: ["Hardware limits in system.yaml: max tether force, tether length, winch/drum properties", "Site/trajectory limits: minimum flight height, elevation/azimuth and path bounds", "Default optimisation bounds (incl. reel speed) in utils/defaults.py (DEFAULT_OPTI_LIMITS)"],
     links: [PAPER_OPT]
   },
   "shared-kinematics": {
     title: "Shared Kinematics",
-    text: "The kinematic layer provides the common course/wind reference frame and state definitions so every fidelity level uses consistent motion variables. The kite is modelled as a point mass in a course-aligned spherical frame, following the translational-dynamics reduced-order model.",
-    bullets: ["Course-frame (course-aligned spherical) kinematics", "Shared reference-frame transforms", "Consistent state definitions across fidelities"],
-    image: "img/placeholder.svg",
-    caption: "Add a coordinate-frame diagram.",
+    text: "The kinematic layer defines the shared course reference frame and the state variables — position and velocity in a course-aligned spherical frame — used at every fidelity level, so the aero-structural model and the ROM describe motion in a consistent way. It provides the course-aligned spherical frame and the transforms between the course, wind and ground frames introduced by Cayon, van Deursen & Schmehl (WES 2026), independently of any mass or force model.",
+    bullets: ["Course reference frame (course-aligned spherical) kinematics", "Shared reference-frame transforms", "Consistent state definitions across fidelities"],
+    image: "img/shared-kinematics.png",
+    caption: "The course reference frame: the kite position on the sphere is set by radial distance, elevation β and azimuth φ, with the course-aligned unit vectors (e_χ, e_β, e_φ) oriented by the flight-path direction χ.",
     links: [PAPER_ROM, REPO_AWETRIM]
   },
   "aero-structural": {
@@ -138,10 +137,10 @@ const CONTENT = {
   },
   "rom": {
     title: "Reduced-Order Kite Model",
-    text: "The reduced-order model is fitted from aerostructural sweep results. It gives quasi-steady aerodynamic coefficients as functions of flight variables and control inputs (rom_config.yaml), enabling efficient trajectory simulation and optimisation inside the CasADi system model.",
-    bullets: ["Coefficient fitting from aerostructural sweeps", "CasADi quasi-steady SystemModel", "Fast trajectory simulation and optimisation"],
-    image: "img/placeholder.svg",
-    caption: "Add fitted CL/CD/CS surfaces or ROM validation plots.",
+    text: "The reduced-order kite model is the point-mass translational-dynamics model in the course reference frame (Cayon, van Deursen & Schmehl, WES 2026): the kite is reduced to a point mass whose motion follows from the aerodynamic, tether and gravity forces, using quasi-steady aerodynamic coefficients fitted from the aerostructural sweeps (rom_config.yaml). This is the fast CasADi model used for power-cycle simulation and trajectory optimisation.",
+    bullets: ["Point-mass translational dynamics in the course reference frame", "Quasi-steady aero coefficients fitted from aerostructural sweeps (rom_config.yaml)", "Fast CasADi model for power-cycle simulation and optimisation"],
+    image: "img/rom-kite.png",
+    caption: "Quasi-steady force balance of the point-mass kite at two depower angles (θ_d = 0° and 10°): lift L, drag D and aerodynamic force F_a balanced against the bridle/tether force F_b.",
     links: [PAPER_ROM, REPO_AWETRIM]
   },
   "tether-models": {
@@ -162,19 +161,19 @@ const CONTENT = {
   },
   "wind-models": {
     title: "Wind Models",
-    text: "Wind models provide the inflow used for simulation, validation and optimisation. AWETrim can use idealised uniform or logarithmic profiles, tabulated fields, or wind estimates reconstructed from experimental data.",
-    bullets: ["Uniform profiles", "Logarithmic-shear profiles", "Tabulated / reconstructed wind fields"],
-    image: "img/placeholder.svg",
-    caption: "Add a wind field or vertical wind-profile image.",
-    links: [PAPER_EKF]
+    text: "Wind models provide the inflow used for simulation, validation and optimisation. A single Wind model selects between an idealised uniform or logarithmic-shear profile and a tabulated profile interpolated from height–speed samples — the latter taking wind estimates reconstructed from experimental data or, in the planned AWERA coupling, representative profiles from wind-resource analysis.",
+    bullets: ["Uniform profiles", "Logarithmic-shear profiles", "Tabulated profiles (flight data or AWERA wind-resource analysis)"],
+    image: "img/wind-profiles-input.png",
+    caption: "Vertical wind profiles interpolated by the tabulated model: clustered, normalised profiles at Bangor Erris with a power-law fit (α = 0.189).",
+    links: [PAPER_EKF, REPO_AWERA]
   },
   "trajectory-parametrization": {
     title: "Trajectory Parametrization",
-    text: "Trajectory parametrisation defines path patterns — B-spline curves, uploops, downloops and helices. Their parameters become the optimisation variables for power-cycle analysis, expressed in the shared course frame.",
-    bullets: ["B-spline path patterns", "Uploop, downloop and helix trajectories", "Path and control parameters as optimisation variables"],
-    image: "img/placeholder.svg",
-    caption: "Add a 3D trajectory or path-parameter figure.",
-    links: [PAPER_ROM, PAPER_OPT]
+    text: "Trajectory parametrisation defines the flight path in the shared course frame using B-spline path patterns, whose control points and parameters become the optimisation variables for power-cycle analysis (Cayon, van Deursen & Schmehl, WES 2026; Cayon & Schmehl, Torque 2026). A full pumping cycle can be represented in two ways: as a single periodic B-spline closing the whole cycle, or by splitting it into a parametrised reel-out production phase — downloop, uploop or helix — followed by a simplified reel-in phase. Only the split reel-out / simplified reel-in representation is currently implemented.",
+    bullets: ["B-spline path patterns in the course frame as optimisation variables", "Whole cycle as a single periodic B-spline", "Or split into a parametrised reel-out (downloop/uploop/helix) + simplified reel-in — the only one currently implemented"],
+    image: "img/b-spline.png",
+    caption: "B-spline parametrisation of a crosswind figure-of-eight in the azimuth–elevation (φ, β) plane: a periodic B-spline (orange) with its control points (blue) reproduces the baseline Lissajous pattern (black).",
+    links: [PAPER_ROM, PAPER_OPT, REPO_AWETRIM]
   },
   "operational-optimization": {
     title: "Operational Optimization",
