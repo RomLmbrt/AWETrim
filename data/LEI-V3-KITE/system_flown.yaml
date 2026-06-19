@@ -39,7 +39,7 @@ components:
       version: 3.0
       structure:
         # Populated by populate_system_yml.py
-        projected_surface_area: 17.2119 # m²
+        projected_surface_area: 19.75 # m²
         span: 8.282                    # m
         mass: 10.9926                  # kg
         center_of_mass:                         # m

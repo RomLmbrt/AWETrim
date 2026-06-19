@@ -9,18 +9,23 @@ metadata:
 aerodynamics:
   model: "coeffs"
   params:
-    CD0: 0.1130532
+    # CD0: 0.1130532
     CL0: 0.04671295
-    # angle_pitch_depower = angle_pitch_depower_0 + u_p * delta_pitch_depower,
-    # with u_p = l_dp [m]. EXACT reparametrization of the legacy model
-    # (-0.12 - 0.13*up), using the measured 2019-flight relation between the old
-    # normalized depower signal and the new physical tape length:
-    #   up = -3.56587 + 2.13990 * l_dp   (R^2 = 1.0; both linear in kcu_depower)
-    # => angle_pitch_depower_0 = -0.12 - 0.13*(-3.56587) = 0.343563
-    #    delta_pitch_depower   = -0.13 * 2.13990        = -0.278187
-    # Reproduces the legacy apd bit-for-bit (powered l_dp=1.7 -> -7.41 deg).
-    angle_pitch_depower_0: 0.343563
-    delta_pitch_depower: -0.278187
+    # angle_pitch_depower = angle_pitch_depower_0 + u_p * delta_pitch_depower
+    # (kite.py: angle_pitch_depower_for), with u_p = l_dp [m].
+    #
+    # Anchored to the PHYSICAL depower states (length-based, not the flight's
+    # normalized up signal):
+    #   powered    l_dp = 1.7 m -> apd = -0.12 rad  (legacy powered pitch)
+    #   depowered  l_dp = 2.1 m -> apd = -0.25 rad
+    # The powered->depowered angle swing is 0.13 rad (the legacy -0.13). Because
+    # the model multiplies by l_dp in METRES, delta is that swing PER METRE of
+    # tape, not the swing itself:
+    #   delta_pitch_depower   = -0.13 / (2.1 - 1.7) = -0.325   [rad/m]
+    #   angle_pitch_depower_0 = -0.12 - 1.7*(-0.325) = 0.4325  [rad]
+    CD0: 0.113142
+    angle_pitch_depower_0: 0.638999
+    delta_pitch_depower: -0.456901
   coefficients:
     CL:
       - var: alpha
@@ -57,7 +62,7 @@ aerodynamics:
     CS:
       - var: u_s
         power: 1
-        coef: 0.342857    # = 0.12 / 0.35
+        coef: 0.344410   # = 0.12 / 0.35
 
 tether:
   model: "williams"
