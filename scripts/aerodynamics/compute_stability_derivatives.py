@@ -52,9 +52,9 @@ from awetrim.identification.rigid_body_axes import (
 # --course-deg, --wind-speed, --radial-speed, --distance-radial) still
 # override them when provided.
 OPERATING_CONDITION = {
-    "elevation_deg": 35.0,
+    "elevation_deg": 0.0,
     "azimuth_deg": 0.0,
-    "course_deg": 45.0,
+    "course_deg": 90.0,
     "wind_speed": 8.0,
     "radial_speed": 1.5,
     "distance_radial": 200.0,
@@ -956,8 +956,9 @@ def main() -> None:
     parser.add_argument(
         "--animation-format",
         choices=["gif", "mp4"],
-        default="mp4",
-        help="Animation output format (default: mp4; mp4 requires ffmpeg).",
+        default="gif",
+        help="Animation output format (default: gif; mp4 requires ffmpeg or, "
+        "for the combined-clean animation only, OpenCV).",
     )
     parser.add_argument(
         "--animation-fps",
@@ -1645,9 +1646,7 @@ def main() -> None:
                 n_modes = len(eigvals)
                 for i in range(n_modes):
                     eig_i = eigvals[i]
-                    t_end = _physics_duration(
-                        eig_i, max_s=args.animation_max_physics_s
-                    )
+                    t_end = _physics_duration(eig_i, max_s=args.animation_max_physics_s)
                     print(
                         f"Rendering {block_title.lower()} mode {i}/{n_modes - 1} "
                         f"(λ={eig_i.real:+.3f}{eig_i.imag:+.3f}j  "
