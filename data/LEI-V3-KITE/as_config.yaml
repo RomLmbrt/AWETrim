@@ -21,7 +21,7 @@ timeder_speed_radial: !!float 0.0
 
 ## actuation settings
 power_tape_extension_step: !!float 0.05 
-power_tape_final_extension: !!float 0.48 #0.3 #0.05
+power_tape_final_extension: !!float 0.2 #0.3 #0.05
 steering_tape_extension_step: !!float 0.05
 steering_tape_final_extension: !!float 0.0
 

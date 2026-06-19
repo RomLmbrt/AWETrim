@@ -367,7 +367,7 @@ bridle_connections:
     - [br_5_equiv, 85, 86]
 
 bridle_lines:
-  headers: [name, rest_length, diameter, material, linktype]
+  headers: [name, l0, d, material, linktype]
   data:
     #front
     - [a1_b1, 0.330, 0.002, dyneema, 'pulley']
