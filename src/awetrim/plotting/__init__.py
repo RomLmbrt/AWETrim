@@ -25,6 +25,11 @@ from .plotting import (
     set_plot_style,
 )
 
+# NB: ``kite_tether`` is intentionally NOT re-exported here. It depends on
+# ``awetrim.aerodynamics`` (and thus casadi); importing it eagerly would add that
+# weight to every ``import awetrim.plotting``. Import it explicitly instead:
+# ``from awetrim.plotting.kite_tether import draw_kite_tether``.
+
 __all__ = [
     "PALETTE",
     "main",

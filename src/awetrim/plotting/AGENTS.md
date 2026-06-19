@@ -13,7 +13,16 @@ Module-specific plots should remain in their owning module unless they are reuse
 src/awetrim/plotting/
   __init__.py
   plotting.py
+  kite_tether.py
 ```
+
+`kite_tether.py` holds the shared 3D kite + Williams-tether drawing
+(`draw_kite_tether`, `draw_wind_axes`, `tether_info_str`), reused by
+`scripts/aerodynamics/solve_single_state.py` and the personal kite/tether state
+scripts. It depends on `awetrim.aerodynamics` (lazy import inside the draw call,
+to keep `import awetrim.plotting` free of casadi/aerodynamics), so it is **not**
+re-exported from `__init__.py` — import it directly:
+`from awetrim.plotting.kite_tether import draw_kite_tether`.
 
 ## Frame and Label Conventions
 

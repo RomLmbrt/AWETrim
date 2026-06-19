@@ -26,7 +26,7 @@ from common import (
     save_figure,
     write_json,
 )
-from kite_tether_plot import draw_kite_tether, tether_info_str
+from awetrim.plotting.kite_tether import draw_kite_tether, tether_info_str
 
 from awetrim.aerodynamics.vsm_quasi_steady import (
     solve_vsm_qs_trim_with_williams_tether,
