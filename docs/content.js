@@ -22,6 +22,10 @@ const PAPER_OPT = {
   label: "Paper · Optimal reel-out trajectories (Torque 2026)",
   url: "https://www.researchgate.net/publication/403912785_Optimal_Reel-Out_Trajectories_for_Soft_Kites_under_Varying_Wind_Conditions"
 };
+const PAPER_WILLIAMS = {
+  label: "Paper · Lumped-element tether dynamics (Williams, JGCD 2017)",
+  url: "https://doi.org/10.2514/1.G002354"
+};
 
 const REPO_AWETRIM = { label: "AWETrim repository", url: "https://github.com/awegroup/AWETrim" };
 const REPO_VSM = { label: "Vortex Step Method", url: "https://github.com/awegroup/Vortex-Step-Method" };
@@ -113,10 +117,10 @@ const CONTENT = {
   },
   "aero-structural": {
     title: "Aero-Structural Kite Model",
-    text: "The high-fidelity model couples VSM aerodynamics with a flexible structural model. An Aitken-relaxed fixed-point loop iterates the aerodynamic loads against the deformed wing shape until the nodal forces converge, giving the loaded geometry and force coefficients across flight conditions — the fast aero-structural model of an LEI kite. Two interchangeable structural solvers are supported: the Particle System Simulator (PSS, particle-spring) and a finite-element model (kite_fem).",
-    bullets: ["VSM aerodynamic loads (enhanced lifting line)", "Structural solver: PSS particle-spring or kite_fem FEM", "Aitken-relaxed fixed-point coupling to convergence"],
-    image: "img/placeholder.svg",
-    caption: "Add a loaded wing shape or pressure / load distribution plot.",
+    text: "The high-fidelity model couples two external solvers: aerodynamic loads and the deformed wing shape are iterated against each other until consistent, giving the loaded geometry and force coefficients across flight conditions. Aerodynamics use the Vortex Step Method (VSM); the structure is solved with either the Particle System Simulator (PSS, particle–spring) or a finite-element model (kite_fem) — both are interchangeable and linked below. This is the fast aero-structural model of an LEI kite (Cayon, Gaunaa & Schmehl, Energies 2023), built on the computational-aerodynamics approach for soft-wing kite design (WES 2026).",
+    bullets: ["Aerodynamics: Vortex Step Method (VSM)", "Structure: PSS particle–spring or kite_fem FEM (interchangeable)", "Coupled to the loaded geometry and force coefficients"],
+    image: "img/aerostructural-deformed-shape.png",
+    caption: "Converged LEI-V3 structure from the VSM ↔ PSS coupled solver: initial (blue) versus loaded shape, with bridle/tape rest-length change (colour) and the external aerodynamic loads (red). Default depower trim, ≈14 coupling iterations.",
     links: [PAPER_AERO, PAPER_VSM, REPO_VSM, REPO_ML, REPO_PSS, REPO_FEM]
   },
   "model-reduction": {
@@ -141,19 +145,19 @@ const CONTENT = {
   },
   "tether-models": {
     title: "Tether Models",
-    text: "Tether models represent the force and drag contribution of the tether and its coupling to the kite dynamics. They follow the course-frame formulation of the translational-dynamics model and are part of the CasADi system model.",
-    bullets: ["Tether tension at the ground station", "Distributed tether drag", "Coupling to point-mass kite dynamics"],
-    image: "img/placeholder.svg",
-    caption: "Add a tether-force or tether-drag illustration.",
-    links: [PAPER_ROM]
+    text: "Tether models represent the force and drag contribution of the tether and its coupling to the kite dynamics, all within the course-frame CasADi system model. AWETrim offers three quasi-static fidelity levels: a rigid link (massless, dragless straight line, pure radial tension on the kite), a rigid lumped model that keeps the straight geometry but transfers the tether weight and a lumped cross-flow drag to the kite (the translational-dynamics formulation), and a discretised lumped-element model (Williams) whose mass, gravity and per-segment aerodynamics let the tether actually sag and bow.",
+    bullets: ["Rigid link: straight, massless/dragless, radial tension only", "Rigid lumped: straight geometry, tether weight and drag lumped onto the kite", "Discretised (Williams): distributed mass and drag — sagging shape, force balance per segment"],
+    image: "img/tether-models-comparison.png",
+    caption: "Quasi-static tether models compared: (a) the discretised Williams tether bows several metres off the straight rigid line, and (b) that mass and drag tilt the kite-end force off the radial direction — captured closely by the cheaper rigid lumped model and ignored by the rigid link.",
+    links: [PAPER_ROM, PAPER_WILLIAMS, REPO_AWETRIM]
   },
   "winch-models": {
     title: "Winch Models",
-    text: "Winch models describe reel-in and reel-out operation, coupling the flight trajectory to ground-station power production and to operational limits such as maximum reel speed and tether force.",
-    bullets: ["Reel-in / reel-out speed", "Tether-length evolution", "Ground-station power-cycle coupling"],
-    image: "img/placeholder.svg",
-    caption: "Add a reel-out speed or power-cycle plot.",
-    links: [PAPER_OPT]
+    text: "The winch couples the flight trajectory to ground-station power and to operational limits (maximum reel speed and tether force). It is modelled as an ideal actuator that follows its control command exactly, with no drivetrain dynamics. Three command types are available: a force–speed curve that sets the ground tether force as a saturated function of reeling speed (the law used in the LEI-V3 cycle configs), constant speed, and constant force. The reel-out / reel-in power follows directly as P = T·v_r.",
+    bullets: ["Force–speed curve: tether force as a saturated function of reeling speed", "Constant-speed and constant-force commands", "Reel-out generation / reel-in recovery and reel-speed & force limits"],
+    image: "img/winch-models-comparison.png",
+    caption: "Idealised winch control laws: (a) the force–speed curve, constant-force and constant-speed commands in the reeling-speed / tether-force plane within the winch limits, and (b) the resulting mechanical power P = T·v_r — generation on reel-out, small recovery on reel-in.",
+    links: [PAPER_OPT, REPO_AWETRIM]
   },
   "wind-models": {
     title: "Wind Models",
