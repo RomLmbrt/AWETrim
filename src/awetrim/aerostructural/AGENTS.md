@@ -132,6 +132,8 @@ aerodynamic:
   allowed_error: 2.0e-6
   relaxation_factor: 0.05
   reference_point: [0.0, 0.0, 0.0]
+  is_with_artificial_viscosity: false  # opt-in Li/Gaunaa spanwise artificial
+  artificial_viscosity_factor: 0.035   #   viscosity (TORQUE 2026) in gamma_loop
 
 structural_pss:
   dt: 0.005

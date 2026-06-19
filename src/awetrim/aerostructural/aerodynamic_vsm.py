@@ -178,13 +178,23 @@ def initialize(
         bridle_path=bridle_path,
     )
 
+    aero_cfg = config["aerodynamic"]
     vsm_solver = Solver(
-        max_iterations=config["aerodynamic"]["max_iterations"],
-        allowed_error=config["aerodynamic"]["allowed_error"],
-        relaxation_factor=config["aerodynamic"]["relaxation_factor"],
-        reference_point=config["aerodynamic"]["reference_point"],
+        max_iterations=aero_cfg["max_iterations"],
+        allowed_error=aero_cfg["allowed_error"],
+        relaxation_factor=aero_cfg["relaxation_factor"],
+        reference_point=aero_cfg["reference_point"],
         mu=config["mu"],
         rho=config["rho"],
+        # Optional post-stall stabilization: the parameter-free Li/Gaunaa
+        # spanwise artificial viscosity (TORQUE 2026), applied in the base
+        # gamma loop. Off by default to preserve historical behaviour.
+        is_with_artificial_viscosity=aero_cfg.get(
+            "is_with_artificial_viscosity", False
+        ),
+        artificial_viscosity_factor=aero_cfg.get(
+            "artificial_viscosity_factor", 0.035
+        ),
     )
 
     # For QSM, wind speed comes from system model configuration (wind_speed_wind_ref).
@@ -354,6 +364,80 @@ def run_vsm_package(
         results["stall_mask"] = None
 
     return np.array(results["F_distribution"]), body_aero, results
+
+
+def run_frozen_geometry_alpha_sweep(
+    body_aero,
+    solver,
+    *,
+    va_magnitude: float,
+    alpha_values_deg,
+) -> list[dict]:
+    """Direct VSM alpha sweep at a fixed (frozen) deformed geometry.
+
+    For each requested angle of attack the apparent wind is imposed in the VSM
+    body frame as ``va = |va| * (cos alpha, 0, sin alpha)`` — so that
+    ``atan2(va_z, va_x) == alpha`` and ``|va| == va_magnitude`` — and a single
+    ``solver.solve(body_aero)`` is run on the unchanged mesh.  The geometry is
+    *not* re-trimmed, so this isolates the aerodynamic ``C_L(alpha)``,
+    ``C_D(alpha)`` and ``phi_a(alpha)`` response of the deformed shape (used to
+    build the AS identification dataset).
+
+    Args:
+        body_aero: VSM ``BodyAerodynamics`` (already updated to the deformed
+            leading/trailing-edge points); its ``va`` is overwritten per sample.
+        solver: VSM ``Solver`` whose ``solve(body_aero)`` returns a results dict
+            with wing ``"cl"``/``"cd"`` and a per-panel ``"F_distribution"``.
+        va_magnitude: apparent-wind speed magnitude [m/s] held constant over the
+            sweep.
+        alpha_values_deg: iterable of angles of attack [deg].
+
+    Returns:
+        One dict per requested alpha with keys ``alpha`` [rad], ``cl``, ``cd``,
+        ``phi_a`` [rad], ``v_a`` [m/s] and ``success``.  A failed solve yields a
+        row with ``success=False`` and ``nan`` coefficients rather than raising,
+        so one bad angle never aborts the sweep.
+    """
+    # phi_a uses the same force-vector definition as the identification dataset;
+    # imported locally to avoid a module-load cycle (mirrors the local import in
+    # ``plot_aero_forces_with_frames``).
+    from awetrim.identification.aero_dataset import aerodynamic_roll
+
+    # In the VSM body frame the radial/lift reference axis is +z (see the alpha
+    # convention above): a force purely along +z then has zero aerodynamic roll.
+    radial_axis = np.array([0.0, 0.0, 1.0])
+
+    rows: list[dict] = []
+    for alpha_deg in np.asarray(alpha_values_deg, dtype=float).ravel():
+        alpha_rad = float(np.radians(alpha_deg))
+        va_vec = float(va_magnitude) * np.array(
+            [np.cos(alpha_rad), 0.0, np.sin(alpha_rad)]
+        )
+        body_aero.va = va_vec
+        try:
+            results = solver.solve(body_aero)
+            cl = float(np.mean(np.asarray(results["cl"], dtype=float)))
+            cd = float(np.mean(np.asarray(results["cd"], dtype=float)))
+            total_force = np.asarray(results["F_distribution"], dtype=float).sum(axis=0)
+            phi_a = float(aerodynamic_roll(total_force, va_vec, radial_axis))
+            success = True
+        except Exception:
+            logging.exception(
+                "Frozen alpha sweep: VSM solve failed at alpha=%.2f deg.", alpha_deg
+            )
+            cl = cd = phi_a = float("nan")
+            success = False
+        rows.append(
+            {
+                "alpha": alpha_rad,
+                "cl": cl,
+                "cd": cd,
+                "phi_a": phi_a,
+                "v_a": float(va_magnitude),
+                "success": success,
+            }
+        )
+    return rows
 
 
 def plot_aero_forces_with_frames(

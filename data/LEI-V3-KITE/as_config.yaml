@@ -30,8 +30,8 @@ is_with_initial_structure_plot: !!bool false
 is_with_coupling_plot_per_iteration: !!bool false
 is_with_struc_plot_per_iteration: !!bool false
 is_with_aero_plot_per_iteration: !!bool false
-is_with_final_plot: !!bool true
-is_with_aero_frame_final_plot: !!bool true
+is_with_final_plot: !!bool false
+is_with_aero_frame_final_plot: !!bool false
 is_save_geometry_snapshots: !!bool true
 
 ## aerodynamic
@@ -42,6 +42,10 @@ aerodynamic:
   allowed_error: !!float 2e-6
   relaxation_factor: !!float 0.025
   reference_point: !!seq [0.0, 0.0, 0.0]
+  # Optional post-stall stabilization in the VSM gamma loop: parameter-free
+  # Li/Gaunaa spanwise artificial viscosity (TORQUE 2026). Off by default.
+  is_with_artificial_viscosity: !!bool false
+  artificial_viscosity_factor: !!float 0.035
 
 ## quasi-steady trim optimization (used by aero_structural_solver with aero_solve_type='qsm')
 # Controls the convergence and search criteria for finding trim equilibrium
