@@ -124,7 +124,10 @@ DEFAULT_WINCH_CONFIG = {
 
 # defaults.py (This is your file containing the limits)
 DEFAULT_OPTI_LIMITS = {
-    "tension_tether_ground": (300, 1e9),  # Range for tension_tether_ground: 0 to 1e9
+    "tension_tether_ground": (
+        300,
+        8.4e6,
+    ),  # Range for tension_tether_ground: 0 to 8.4e5 N (max tether force)
     # u_s = -kcu_actual_steering/100; 2019 V3 flight max deflection was kcu +-35.
     "input_steering": (-0.35, 0.35),
     "s_dot": (0.0, 40),  # Range for s_dot: 0 to 30

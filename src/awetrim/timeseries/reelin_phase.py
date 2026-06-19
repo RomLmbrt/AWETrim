@@ -518,35 +518,65 @@ class ReelinSimple:
         """
 
         opti.minimize(objective)
-        ipopt_options = {
+        base_options = {
             "bound_relax_factor": 1e-8,
             "tol": 1e-4,
-            "acceptable_iter": 3,
-            "acceptable_tol": 1e-4,
             "constr_viol_tol": 1e-4,
             "dual_inf_tol": 1e-4,
+            # Flat power objective: accept a plateaued, feasible point instead of
+            # grinding on dual infeasibility L-BFGS cannot reduce.
+            "acceptable_iter": 5,
+            "acceptable_tol": 1e-4,
+            "acceptable_obj_change_tol": 1e-3,
             "hessian_approximation": "limited-memory",
             "mu_strategy": "adaptive",
+            # Cap iterations so a stalled warm-start restoration fails fast and
+            # triggers the cold-start fallback below, rather than grinding toward
+            # the IPOPT default (3000).
+            "max_iter": 1000,
         }
-        if warm_start:
-            ipopt_options.update(
-                {
-                    "mu_init": 1e-4,
-                    "warm_start_init_point": "yes",
-                    "warm_start_bound_push": 1e-6,
-                    "warm_start_mult_bound_push": 1e-6,
-                    "warm_start_slack_bound_push": 1e-6,
-                    "bound_push": 1e-6,
-                    "bound_frac": 1e-6,
-                }
-            )
-        opti.solver(
-            "ipopt",
-            {"ipopt": ipopt_options},
-        )
+        warm_options = {
+            "mu_init": 1e-4,
+            "warm_start_init_point": "yes",
+            "warm_start_bound_push": 1e-6,
+            "warm_start_mult_bound_push": 1e-6,
+            "warm_start_slack_bound_push": 1e-6,
+            "bound_push": 1e-6,
+            "bound_frac": 1e-6,
+        }
+
+        # expand=True compiles the MX graph to scalar SX (large per-iteration
+        # speedup for the multi-variable ROM aero); falls back to MX if the graph
+        # has an interpolant/external (tabulated wind, custom_spline winch).
+        def _set_solver(expand_flag, warm_flag):
+            opts = dict(base_options)
+            if warm_flag:
+                opts.update(warm_options)
+            opti.solver("ipopt", {"expand": expand_flag, "ipopt": opts})
+
+        _set_solver(True, warm_start)
 
         try:
-            solution = opti.solve()
+            try:
+                solution = opti.solve()
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "expand" in msg or "interpolant" in msg or "sx" in msg:
+                    print(
+                        f"NLP expand=True unsupported ({exc}); retrying without expand."
+                    )
+                    _set_solver(False, warm_start)
+                    solution = opti.solve()
+                elif warm_start:
+                    # The tight-barrier warm start dove into restoration -- common
+                    # in the alternating scheme once the reel-out has shifted the
+                    # reel-in boundaries, so the rebuilt warm start is no longer
+                    # near-feasible. Retry from a cold start.
+                    print(f"Warm-start reel-in solve failed ({exc}); retrying cold.")
+                    _set_solver(True, False)
+                    solution = opti.solve()
+                else:
+                    raise
 
             print("\nOptimized Pattern Variables:")
             optimized_config = self.pattern_config.copy()

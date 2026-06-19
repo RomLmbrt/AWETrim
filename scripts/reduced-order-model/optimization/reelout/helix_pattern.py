@@ -55,7 +55,7 @@ INITIAL_GUESS = {
     "s_init": 0.0,
     "s_final": 2.0 * np.pi,
     "az_amp0": 0.1,
-    "beta0": 0.3,
+    "beta0": 0.35,
     "beta_amp0": 0.1,
     "downloops": True,
 }
@@ -81,7 +81,7 @@ if REGENERATE_INITIAL_GUESS:
 # REELOUT_CONFIG["path_parameters"]["az_amp0"] = 0.3536
 # # REELOUT_CONFIG["path_parameters"]["kappa"] = 1
 # REELOUT_CONFIG["path_parameters"]["kbeta"] = 0
-# REELOUT_CONFIG["sim_parameters"]["input_depower"] += 0.05
+REELOUT_CONFIG["sim_parameters"]["input_depower"] = 1.6
 WIND_CONFIG = {
     "speed_wind_at_100": 10,
     "z0": 0.03,

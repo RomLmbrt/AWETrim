@@ -36,14 +36,14 @@ WIND_CONFIG = {
 REELIN_CONFIG = {
     "path_parameters": {
         "elevation_start_ri": np.radians(30),
-        "elevation_start_riro": np.radians(60),
+        "elevation_start_riro": np.radians(70),
         "elevation_start_ro": np.radians(30),
         "distance_radial_start": 360,
         "distance_radial_end": 230,
     },
     "radial_parameters": {
         "reeling_strategy": "force",
-        "force_model": "quadratic",
+        "force_model": "linear",
         "reeling_speed": 1.0,
         "max_tether_force": 8400.0,
         "min_tether_force": 2000.0,
@@ -51,10 +51,10 @@ REELIN_CONFIG = {
         "softplus_beta": 1e-4,
         "softminus": True,
         "softminus_beta": 1e-3,
-        "slope_winch_ri": 562,
-        "offset_winch_ri": -5,
+        "slope_winch_ri": 1000,
+        "offset_winch_ri": -2,
     },
-    "sim_parameters": {"start_time": 0},
+    "sim_parameters": {"start_time": 0, "n_points_ri": 150, "n_points_riro": 100},
 }
 
 # Parameters optimized for the reel-in. Add e.g. "offset_winch_ri",
@@ -84,8 +84,8 @@ def main(run_plots: bool = False):
     reelin = ReelinSimple(
         system_model=system_model,
         pattern_config=REELIN_CONFIG,
-        depower_ri=1,
-        depower_riro=1,
+        depower_ri=1.9,
+        depower_riro=1.9,
     )
 
     # Baseline simulation with the initial configuration.

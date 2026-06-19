@@ -58,8 +58,8 @@ INITIAL_GUESS = {
     "s_init": 0.0,
     "s_final": 2.0 * np.pi,
     "az_amp0": 0.3,
-    "beta0": 0.3,
-    "beta_amp0": 0.1,
+    "beta0": 0.35,
+    "beta_amp0": 0.12,
     "downloops": True,  # downloop direction
 }
 
@@ -80,9 +80,9 @@ if REGENERATE_INITIAL_GUESS:
     REELOUT_CONFIG["sim_parameters"]["end_angle"] = INITIAL_GUESS["s_final"]
 
 REELOUT_CONFIG["sim_parameters"]["n_points"] = 100
-REELOUT_CONFIG["sim_parameters"]["input_depower"] = 1.5
+REELOUT_CONFIG["sim_parameters"]["input_depower"] = 1.6
 WIND_CONFIG = {
-    "speed_wind_at_100": 10,
+    "speed_wind_at_100": 8,
     "z0": 0.03,
     "model_type": "logarithmic",
 }

@@ -31,6 +31,7 @@ import argparse
 import numpy as np
 
 from awetrim.environment.Wind import Wind
+from awetrim.identification.controls import ROM_DEPOWERED_INPUT_DEPOWER
 from awetrim.system.factory import create_system_model_from_yaml
 from awetrim.timeseries.phase import Phase
 from awetrim.timeseries.reelin_phase import ReelinSimple
@@ -56,10 +57,10 @@ SHAPE_CONFIGS = {
     "helix": LEI_V3_HELIX_SPLINE_CONFIG,
 }
 DEFAULT_SHAPE = "downloop"
-DEFAULT_N_FIGURES = 3
+DEFAULT_N_FIGURES = 6
 
 WIND_CONFIG = {
-    "speed_wind_at_100": 14,
+    "speed_wind_at_100": 10,
     "z0": 0.03,
     "model_type": "logarithmic",
 }
@@ -72,7 +73,7 @@ CYCLE_OPTIMIZATION_PARAMS = [
     "slope_winch_ri",
     # "input_depower_ri",
     "slope_winch_ro",
-    "offset_winch_ro",
+    # "offset_winch_ro",
     "C_phi",
     "C_beta",
     "input_depower_ro",
@@ -144,17 +145,20 @@ def main(
         model_type=WIND_CONFIG["model_type"],
     )
 
+    # Reel-out runs powered (l_dp = 1.7 m), set via
+    # reelout_config["sim_parameters"]["input_depower"]; reel-in/transition are
+    # flown fully depowered (l_dp = ROM_DEPOWERED_INPUT_DEPOWER = 2.1 m).
+    # reelout_config["sim_parameters"]["expand_nlp"] = True
     reelout = Phase(
         system_model=system_model,
         pattern_config=reelout_config,
         start_state=build_reelout_start_state(reelout_config),
-        depower=0,
     )
     reelin = ReelinSimple(
         system_model=system_model,
         pattern_config=reelin_config,
-        depower_ri=1,
-        depower_riro=1,
+        depower_ri=ROM_DEPOWERED_INPUT_DEPOWER,
+        depower_riro=ROM_DEPOWERED_INPUT_DEPOWER,
     )
     cycle = CycleSimple(reelin=reelin, reelout=reelout)
 
@@ -200,7 +204,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--method",
         choices=["alternating", "monolithic"],
-        default="alternating",
+        default="monolithic",
         help="Cycle optimization strategy (with --optimize)",
     )
     args = parser.parse_args()

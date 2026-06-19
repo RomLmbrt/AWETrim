@@ -739,9 +739,7 @@ class PhaseParameterized(TimeSeries):
             seen, clipped = set(), []
             for guess in guesses[:max_retries]:
                 cg = _clip_guess_to_bounds(guess)
-                key = tuple(
-                    np.round(np.asarray(ca.DM(cg), dtype=float).reshape(-1), 9)
-                )
+                key = tuple(np.round(np.asarray(ca.DM(cg), dtype=float).reshape(-1), 9))
                 if key not in seen:
                     seen.add(key)
                     clipped.append(cg)
@@ -1337,13 +1335,28 @@ class PhaseParameterized(TimeSeries):
         self.km_param = km_copy
 
         # --- Decision variables per node (N nodes for intervals 0..N-1)
+        # Tension (~1e5-1e6 N) and radius (~1e2 m) dwarf every other decision
+        # (O(1)). Leaving them unscaled wrecks the conditioning of the NLP
+        # (oscillation, ||d|| ~1e3 steps, restoration, a dual-infeasibility floor).
+        # Carry both as O(1) decisions ``x_scaled = x / X_SCALE`` and expose the
+        # physical value through ``opti_vars`` so every downstream constraint /
+        # objective is untouched. The scales match the constraint scales S["T"] /
+        # S["r"] below (90th percentile of the warm start).
+        def _warm_scale(name):
+            vals = np.abs(np.asarray(self.return_variable(name)).ravel())
+            return float(max(np.percentile(vals, 90), 1.0)) if vals.size else 1.0
+
+        T_SCALE = _warm_scale("tension_tether_ground")
+        R_SCALE = _warm_scale("distance_radial")
+        tension_scaled = opti.variable(N)  # O(1) decision: T / T_SCALE
+        distance_scaled = opti.variable(N)  # O(1) decision: r / R_SCALE
         opti_vars = {
             "s": s_grid,
             "s_dot": opti.variable(N),  # tangential speed
             "input_steering": opti.variable(N),
             "speed_radial": opti.variable(N),  # reel speed v_r
-            "distance_radial": opti.variable(N),  # radius r
-            "tension_tether_ground": opti.variable(N),  # tether tension T
+            "distance_radial": distance_scaled * R_SCALE,  # physical radius r
+            "tension_tether_ground": tension_scaled * T_SCALE,  # physical tension T
         }
         # # expose design params too
         # for var in self.optimization_vars:
@@ -1378,16 +1391,26 @@ class PhaseParameterized(TimeSeries):
             "tension_tether_ground": self.return_variable("tension_tether_ground"),
         }
 
+        # set_initial needs the raw decision variable; tension and radius are
+        # exposed as scaled expressions, so seed the underlying scaled variables
+        # with the warm start divided by the matching scale.
+        raw_init_vars = dict(opti_vars)
+        raw_init_vars["tension_tether_ground"] = tension_scaled
+        raw_init_vars["distance_radial"] = distance_scaled
+        init_scales = {"tension_tether_ground": T_SCALE, "distance_radial": R_SCALE}
+
         print("\nChecking warm start values against bounds:")
         for var_name, values in warm_starts.items():
             # Check against optimization bounds if defined
             if var_name in DEFAULT_OPTI_LIMITS:
                 check_warm_start(var_name, values, DEFAULT_OPTI_LIMITS[var_name])
-            # Set the initial value regardless of violations
-            opti.set_initial(opti_vars[var_name], values)
+            # Set the initial value regardless of violations (scaled seeds for
+            # the scaled decisions).
+            init_values = np.asarray(values) / init_scales.get(var_name, 1.0)
+            opti.set_initial(raw_init_vars[var_name], init_values)
 
-        # # Fix initial radius
-        opti.subject_to(opti_vars["distance_radial"][0] == state_obj.distance_radial)
+        # # Fix initial radius (constrain the scaled decision so the row stays O(1))
+        opti.subject_to(distance_scaled[0] == state_obj.distance_radial / R_SCALE)
 
         # --- Build model functions
         km_copy.establish_residual()
@@ -1517,8 +1540,9 @@ class PhaseParameterized(TimeSeries):
             # the reel-out end -- which sits right at this bound when reel-out
             # maximizes production, leaving no feasible room otherwise.
             ub = ub + float(sim_params.get("distance_radial_ub_relax", 0.0))
-            opti.subject_to(opti_vars["distance_radial"] >= lb)
-            opti.subject_to(opti_vars["distance_radial"] <= ub)
+            # Bound the scaled decision so the bound rows' Jacobian stays O(1).
+            opti.subject_to(distance_scaled >= lb / R_SCALE)
+            opti.subject_to(distance_scaled <= ub / R_SCALE)
 
         # --- Objective assembly with SAME quadrature as simulation (left rule)
         energy = 0
@@ -1651,6 +1675,17 @@ class PhaseParameterized(TimeSeries):
                     # expand bounds outward even if bounds are negative
                     lb = lb - relax_tol * np.abs(lb)
                     ub = ub + relax_tol * np.abs(ub)
+                # Tension and radius are exposed as scaled expressions; bound the
+                # underlying O(1) scaled decision so the bound row's Jacobian stays
+                # O(1) instead of carrying a ~scale coefficient.
+                if var_name == "tension_tether_ground":
+                    opti.subject_to(lb / T_SCALE <= tension_scaled)
+                    opti.subject_to(tension_scaled <= ub / T_SCALE)
+                    continue
+                if var_name == "distance_radial":
+                    opti.subject_to(lb / R_SCALE <= distance_scaled)
+                    opti.subject_to(distance_scaled <= ub / R_SCALE)
+                    continue
                 if mx.shape[0] == N:
                     opti.subject_to(lb <= mx[:])
                     opti.subject_to(mx[:] <= ub)

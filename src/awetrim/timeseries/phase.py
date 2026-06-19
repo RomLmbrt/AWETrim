@@ -472,9 +472,18 @@ class Phase:
 
         ipopt_options = {
             # "bound_relax_factor": 1e-8,
-            "tol": 1e-6,
-            "acceptable_iter": 10,
+            # tol was tightened 1e-5 -> 1e-6 in d899511 (2026-06-16), which made the
+            # reel-out optimisation grind to max_iter: L-BFGS cannot drive dual
+            # infeasibility to 1e-6 on the flat power objective. Restored to 1e-5
+            # (acceptable_tol=2e-4 still provides the early-out).
+            "tol": 1e-5,
+            # The power objective is flat near the optimum and L-BFGS floors dual
+            # infeasibility ~1e-2 there, so tol/acceptable_tol are never met and the
+            # solve runs to max_iter. Also accept a plateaued, feasible point: stop
+            # once the relative objective stops changing for acceptable_iter steps.
+            "acceptable_iter": 5,
             "acceptable_tol": 2e-4,
+            "acceptable_obj_change_tol": 1e-3,
             # "constr_viol_tol": 1e-6,
             "dual_inf_tol": 1e-4,
             "hessian_approximation": "limited-memory",
@@ -487,7 +496,7 @@ class Phase:
             # "warm_start_bound_push": 1e-6,
             # "warm_start_mult_bound_push": 1e-6,
             # "warm_start_slack_bound_push": 1e-6,
-            "max_iter": max_iter if max_iter is not None else 200,
+            "max_iter": max_iter if max_iter is not None else 1000,
         }
         if warm_start:
             # Tight-barrier warm solve: start near the (near-optimal) guess
@@ -507,13 +516,34 @@ class Phase:
         elif warm_start_init_point is not None:
             ipopt_options["warm_start_init_point"] = warm_start_init_point
 
-        opti.solver(
-            "ipopt",
-            {"ipopt": ipopt_options},
-        )
+        # SX expansion (expand=True) compiles the MX graph to scalar SX, a large
+        # per-evaluation speedup for the multi-variable ROM aero Jacobian (the
+        # bulk of the wall-time). It is unsupported when the NLP graph contains an
+        # interpolant/external (tabulated wind, custom_spline winch), so fall back
+        # to MX in that case. Toggle via sim_parameters["expand_nlp"].
+        expand_nlp = bool(sim_parameters.get("expand_nlp", True))
+
+        def _set_solver(expand_flag):
+            opti.solver("ipopt", {"expand": expand_flag, "ipopt": ipopt_options})
+
+        _set_solver(expand_nlp)
 
         try:
-            solution = opti.solve()
+            try:
+                solution = opti.solve()
+            except Exception as expand_exc:
+                msg = str(expand_exc).lower()
+                if expand_nlp and (
+                    "expand" in msg or "interpolant" in msg or "sx" in msg
+                ):
+                    print(
+                        f"NLP expand=True unsupported for this model ({expand_exc}); "
+                        "retrying without expand."
+                    )
+                    _set_solver(False)
+                    solution = opti.solve()
+                else:
+                    raise
 
             print("\nOptimized Pattern Variables:")
             optimized_config = self.pattern_config.copy()

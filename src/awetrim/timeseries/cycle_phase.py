@@ -238,24 +238,45 @@ class CycleSimple:
 
         # Minimize and solve
         opti.minimize(total_objective)
-        opti.solver(
-            "ipopt",
-            {
-                "ipopt": {
-                    "bound_relax_factor": 1e-8,
-                    "tol": 1e-6,
-                    # "acceptable_iter": 3,
-                    "acceptable_tol": 1e-5,
-                    "constr_viol_tol": 1e-5,
-                    "dual_inf_tol": 1e-5,
-                    "hessian_approximation": "limited-memory",
-                    "mu_strategy": "adaptive",
-                }
-            },
-        )
+        ipopt_options = {
+            "bound_relax_factor": 1e-8,
+            "tol": 1e-5,
+            "constr_viol_tol": 1e-5,
+            "dual_inf_tol": 1e-5,
+            # Power objective is flat near the optimum and L-BFGS floors dual
+            # infeasibility there, so tol is never met and the solve runs to
+            # max_iter. Also accept a plateaued, feasible point.
+            "acceptable_iter": 5,
+            "acceptable_tol": 2e-4,
+            "acceptable_obj_change_tol": 1e-3,
+            "hessian_approximation": "limited-memory",
+            "limited_memory_max_history": 25,
+            "mu_strategy": "monotone",
+        }
+
+        # expand=True compiles the MX graph to scalar SX (~10x faster per-iteration
+        # Jacobian for the multi-variable ROM aero). Unsupported when the NLP graph
+        # has an interpolant/external (tabulated wind, custom_spline winch), so fall
+        # back to MX in that case.
+        def _set_solver(expand_flag):
+            opti.solver("ipopt", {"expand": expand_flag, "ipopt": ipopt_options})
+
+        _set_solver(True)
 
         try:
-            solution = opti.solve()
+            try:
+                solution = opti.solve()
+            except Exception as expand_exc:
+                msg = str(expand_exc).lower()
+                if "expand" in msg or "interpolant" in msg or "sx" in msg:
+                    print(
+                        f"NLP expand=True unsupported for this model ({expand_exc}); "
+                        "retrying without expand."
+                    )
+                    _set_solver(False)
+                    solution = opti.solve()
+                else:
+                    raise
             # After successful optimization, print optimized parameter values
             print("\nOptimized cycle parameters:")
             # Update parameter values in the appropriate phase configuration
@@ -388,7 +409,6 @@ class CycleSimple:
                 time_offset=T_ri,
                 warm_start=warm,
                 trust_region_weight=tr_weight,
-                max_iter=400,
             )
             if reelout_result is None:
                 print(
