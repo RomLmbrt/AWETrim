@@ -25,6 +25,7 @@ from awetrim.system.kite import Kite
 from awetrim.system.system_model import SystemModel
 from awetrim.system.tether import RigidLumpedTether
 from awetrim.system.williams_tether import WilliamsTether
+from awetrim.utils.system_config import get_kite, get_tether
 
 
 def create_tether_from_config(
@@ -143,7 +144,7 @@ def load_aero_input(
         return aero_cfg.get("aerodynamics", aero_cfg)
 
     if "components" in cfg:
-        kite = cfg["components"].get("kite", cfg["components"])
+        kite = get_kite(cfg)
         return kite["wing"]["structure"].get("aerodynamics", {})
     return cfg.get("wing", {}).get("aerodynamics", {})
 
@@ -158,11 +159,10 @@ def _extract_params_awesio(cfg: dict) -> tuple:
     if validate is not None:
         validate(cfg, restrictive=False)
 
-    components = cfg["components"]
-    kite = components.get("kite", components)  # support both nested and flat layouts
+    kite = get_kite(cfg)
     wing_struct = kite["wing"]["structure"]
     cs_struct = kite.get("control_system", {}).get("structure", {})
-    tether_struct = components.get("tether", {}).get("structure", {})
+    tether_struct = get_tether(cfg).get("structure", {})
 
     mass_wing = wing_struct.get("mass", 20.0)
     area_wing = wing_struct.get("projected_surface_area", 20.0)
@@ -211,9 +211,12 @@ def create_system_model_from_yaml(
     ``components`` key) or the legacy ``lei_v3_system_config.yaml`` format.
 
     awesIO format (preferred):
-        metadata / assembly / components.wing.structure.{projected_surface_area, mass} /
-        components.control_system.structure.mass / components.tether.structure.{diameter,
-        density}. ROM aerodynamics are loaded from ``aero_yaml_path`` or from a sibling
+        metadata / assembly / components.kites[0].wing.structure.{projected_surface_area,
+        mass} / components.kites[0].control_system.structure.mass /
+        components.tethers[0].structure.{diameter, density}. The kite and tether are
+        resolved via ``awetrim.utils.system_config.get_kite`` / ``get_tether``, which
+        also accept the legacy singular ``components.kite`` / ``components.tether``
+        layout. ROM aerodynamics are loaded from ``aero_yaml_path`` or from a sibling
         ``rom_config.yaml`` file (legacy: ``aero_coeffs_rom.yaml``).
 
     Legacy format:

@@ -48,6 +48,7 @@ from awetrim.identification.controls import (
     flight_dataframe_steering_to_us,
 )
 from awetrim.utils.config_paths import LEI_V3_SYSTEM_FLOWN_CONFIG
+from awetrim.utils.system_config import get_kite, get_tether
 
 import yaml
 
@@ -266,9 +267,10 @@ def build_kite_model(cd0, apd0, delta, cd_us, k_steer):
         if term.get("var") == "u_s":
             term["coef"] = float(-k_steer)
 
-    wing = cfg["components"]["kite"]["wing"]["structure"]
-    cs = cfg["components"]["kite"].get("control_system", {}).get("structure", {})
-    tether_struct = cfg["components"].get("tether", {}).get("structure", {})
+    kite = get_kite(cfg)
+    wing = kite["wing"]["structure"]
+    cs = kite.get("control_system", {}).get("structure", {})
+    tether_struct = get_tether(cfg).get("structure", {})
 
     kite = Kite(
         mass_wing=wing.get("mass", 14),

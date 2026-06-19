@@ -1,35 +1,28 @@
 metadata:
   name: LEI-V3-KITE
-  description: LEI V3 soft kite pumping ground gen system (TU Delft / Kitepower 
+  description: LEI V3 soft kite pumping ground gen system (TU Delft / Kitepower
     research kite)
   note: None
   awesIO_version: 0.1.0
   schema: system_schema.yml
 
+assembly:
+  # Joint-id topology: kite KCU (K1) -> tether top (T1); tether bottom (T2) -> drum (G1)
+  connectivity_matrix:
+  - [K1, T1]
+  - [T2, G1]
 
 components:
-  kite:
-    name: LEI-V3 Kite
-    type: LEI_soft_kite_system
+  kites:
+  - name: LEI-V3 Kite
+    type: soft_kite_kcu
     version: 1.0
-    structure:
-    # Aggregate (wing + bridle + KCU); populated by populate_system_yml.py
-      mass: 21.2395                                                    # kg
-      center_of_mass:                                                 # m
-      - -0.0618
-      - 0.0006
-      - 5.88
-      inertia_tensor:                                                      # kg·m²
-
-      - - 619.8677
-        - -0.0041
-        - 7.9389
-      - - -0.0041
-        - 531.8946
-        - 0.0594
-      - - 7.9389
-        - 0.0594
-        - 111.3129
+    joints:
+      kcu_joint:
+        id: K1
+    # Kite aggregate (wing + bridle + KCU) mass/CG/inertia is derived on demand
+    # from the structural geometry via
+    # awetrim.aerostructural.utils.compute_kite_aggregate — it is not stored here.
     wing:
       name: LEI-V3
       type: LEI_soft_kite
@@ -67,10 +60,9 @@ components:
         material:
           type: dyneema
           density: 724.0           # kg/m³
-          youngs_modulus: 20.0e9   # Pa
+          youngs_modulus: 20.0e+9   # Pa
           damping_per_stiffness: 0.0
         mass: 2.5999                         # kg, lines + pulleys
-
     control_system:
       name: LEI-V3 KCU
       type: kite_control_unit
@@ -80,26 +72,15 @@ components:
         diameter: 0.48   # m
         mass: 8.4        # kg
         center_of_mass: [0.0, 0.0, 0.0]  # m, same as bridle_point_node
-
-    mass: 21.9925
-    center_of_mass:
-    - -0.0171
-    - 0.0007
-    - 5.9536
-    inertia_tensor:
-    - - 654.838
-      - -0.0035
-      - 2.9247
-    - - -0.0035
-      - 581.0353
-      - 0.0715
-    - - 2.9247
-      - 0.0715
-      - 98.785
-  tether:
-    name: LEI-V3 Tether
+  tethers:
+  - name: LEI-V3 Tether
     type: non_conductive_tether
     version: 1.0
+    joints:
+      upper_tether_joint:
+        id: T1
+      lower_tether_joint:
+        id: T2
     structure:
       length: 350.0        # m  (max operational reference length)
       diameter: 0.010      # m  (10 mm)
@@ -108,38 +89,21 @@ components:
       conductive: false
       material:
         type: Dyneema-SK78
-        youngs_modulus: 850.0e6  # Pa (0.85 GPa)
-
+        youngs_modulus: 850.0e+6  # Pa (0.85 GPa)
   ground_station:
     name: LEI-V3 Ground Station
     type: pumping_ground_gen_station
     version: 1.0
+    joints:
+      drum_joint:
+        id: G1
     structure:
       mass: 0.0
-
-    assembly:
-
-    drum:
-      name: LEI-V3 Drum
-      type: drum
-      joints:
-        tether_attachment_point:
-          id: T1
-        shaft:
-          id: S1
-
-    mechanical2electrical:
-      name: LEI-V3 Mechanical-to-Electrical
-      type: mechanical_to_electrical
-      components:
-        electric_machine/generator:
-
-        
-
-        power_converter:
-        storage:
-
-        gearbox:
-          name: LEI-V3 Gearbox
-          type: gearbox
-          gear_ratio: 1.0
+    drums:
+    - name: LEI-V3 Drum
+      type: electric_winch
+      max_tether_force: 8400.0  # N
+    gearboxes:
+    - name: LEI-V3 Gearbox
+      type: planetary
+      gear_ratio: 1.0

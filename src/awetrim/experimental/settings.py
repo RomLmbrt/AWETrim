@@ -41,6 +41,8 @@ from awes_ekf.setup.settings import (  # re-export unchanged classes
     validate_config,
 )
 
+from awetrim.utils.system_config import get_kite, get_tether
+
 _EKF_REQUIRED_KEYS = {"simulation_parameters", "tuning_parameters"}
 _KITE_NAME_KEY = "_awetrim_kite_name"
 
@@ -101,14 +103,13 @@ def load_config(project_dir: Path | None = None) -> dict:
     with system_yaml_path.open("r", encoding="utf-8") as fh:
         system_config = yaml.safe_load(fh)
 
-    # Extract from components.kite hierarchy
-    kite_node = system_config.get("components", {}).get("kite", {})
+    # Extract from the kite hierarchy (awesIO components.kites[0] / legacy kite)
+    kite_node = get_kite(system_config)
     wing_struct = kite_node.get("wing", {}).get("structure", {})
     bridle_struct = kite_node.get("bridle", {}).get("structure", {})
     control_sys_struct = kite_node.get("control_system", {}).get("structure", {})
 
-    tether_node = system_config.get("components", {}).get("tether", {})
-    tether_struct = tether_node.get("structure", {})
+    tether_struct = get_tether(system_config).get("structure", {})
 
     # Build kite config
     kite_config = {

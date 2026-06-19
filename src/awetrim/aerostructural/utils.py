@@ -373,6 +373,39 @@ def calculate_inertia(nodes, desired_point=(0.0, 0.0, 0.0)):
     return inertia_tensor
 
 
+def compute_kite_aggregate(struc_geometry, system_config) -> dict:
+    """Compute the aggregate kite mass, CG, and inertia from the full PSS system.
+
+    The kite aggregate (wing + bridle + KCU) is *derived*, not stored in
+    ``system.yaml``: the total mass is the sum of the nodal masses, while the CG
+    and inertia tensor require the structural node distribution and are therefore
+    computed from the PSS particle system rather than from the per-component
+    summaries. ``system_config`` is the awesIO system config (used for the KCU
+    mass); ``struc_geometry`` is the parsed structural-geometry dict.
+
+    Returns a dict with ``mass`` (kg), ``center_of_mass`` ([x, y, z] m), and
+    ``inertia_tensor`` (3x3, kg·m², about the CG).
+    """
+    # Imported lazily so this lightweight, widely-imported module does not pull in
+    # the PSS structural solver at import time.
+    from awetrim.aerostructural.pss.structural_geometry_io import main as pss_initialize
+
+    result = pss_initialize(struc_geometry, system_config=system_config)
+    struc_nodes, m_arr = result[0], result[1]
+
+    total_mass = float(np.sum(m_arr))
+    cg = calculate_cg(struc_nodes, m_arr)
+    inertia = calculate_inertia(
+        [(struc_nodes[i], m_arr[i]) for i in range(len(m_arr))],
+        desired_point=cg,
+    )
+    return {
+        "mass": round(total_mass, 4),
+        "center_of_mass": [round(float(v), 4) for v in cg],
+        "inertia_tensor": [[round(float(v), 4) for v in row] for row in inertia],
+    }
+
+
 def calculate_moments_of_inertia(
     struc_nodes,
     m_arr,

@@ -17,20 +17,21 @@
 import numpy as np
 import logging
 
+from awetrim.utils.system_config import get_kite
+
 
 def _resolve_kcu_mass(struc_geometry, config=None, system_config=None):
     """Resolve KCU mass.
 
     Single source of truth is the system config
-    (``components.kite.control_system.structure.mass``). ``struc_geometry`` must
-    NOT carry a ``kcu_mass`` — it is only honoured as a deprecated fallback.
+    (``components.kites[0].control_system.structure.mass``, resolved via
+    ``get_kite``). ``struc_geometry`` must NOT carry a ``kcu_mass`` — it is only
+    honoured as a deprecated fallback.
 
     Priority: system_config -> config (per-run override) -> struc_geometry.
     """
     if isinstance(system_config, dict):
-        kite = system_config.get("components", {}).get(
-            "kite", system_config.get("components", {})
-        )
+        kite = get_kite(system_config)
         cs_struct = kite.get("control_system", {}).get("structure", {})
         if "mass" in cs_struct:
             return float(cs_struct["mass"])

@@ -28,6 +28,7 @@ from awetrim.system.kite import Kite, Wing
 from awetrim.system.factory import load_aero_input_from_system_config
 from awetrim.environment.Wind import Wind
 from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
+from awetrim.utils.system_config import get_kite
 
 # ============================================================================
 # FIXTURES
@@ -51,7 +52,7 @@ def v3_kite(v3_config):
     """Fixture: V3 Kite with coefficient-based aerodynamic model."""
     cfg = v3_config
     if "components" in cfg:
-        kite = cfg["components"].get("kite", cfg["components"])
+        kite = get_kite(cfg)
         wing_struct = kite["wing"]["structure"]
         cs_struct = kite.get("control_system", {}).get("structure", {})
         aero_input = load_aero_input_from_system_config(

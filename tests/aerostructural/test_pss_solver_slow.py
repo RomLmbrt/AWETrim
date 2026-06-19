@@ -42,6 +42,7 @@ from awetrim.aerostructural.pss import (
 from awetrim.aerostructural.pss.actuation import update_steering_tape_actuation
 from awetrim.aerostructural.utils import load_yaml, rotate_geometry
 from awetrim.system.tether import RigidLumpedTether
+from awetrim.utils.system_config import get_tether
 
 pytestmark = pytest.mark.slow
 
@@ -218,7 +219,7 @@ def solver_results():
         )
     )
 
-    tether_struct = system_config["components"]["tether"]["structure"]
+    tether_struct = get_tether(system_config)["structure"]
     tether = RigidLumpedTether(
         diameter=tether_struct["diameter"],
         density=tether_struct.get("density", 970.0),

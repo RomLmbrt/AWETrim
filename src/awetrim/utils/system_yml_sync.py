@@ -18,16 +18,15 @@
 
 from pathlib import Path
 
-import numpy as np
 import yaml
 from ruamel.yaml import YAML
 
 from awetrim.aerostructural.pss.structural_geometry_io import (
     compute_bridle_stats_from_pss,
     compute_wing_stats_from_pss,
-    main as pss_initialize,
 )
-from awetrim.aerostructural.utils import calculate_cg, calculate_inertia
+from awetrim.aerostructural.utils import compute_kite_aggregate
+from awetrim.utils.system_config import get_kite
 
 # Only physically meaningful fields belong in system.yml — PSS counts stay out.
 _BRIDLE_COMPUTED_FIELDS = ("total_nominal_line_length", "avg_line_diameter", "mass")
@@ -40,25 +39,6 @@ _WING_COMPUTED_FIELDS = (
     "planform_surface_area",
     "side_projected_area",
 )
-_KITE_AGGREGATE_FIELDS = ("mass", "center_of_mass", "inertia_tensor")
-
-
-def _compute_kite_aggregate(struc_geometry, system_config) -> dict:
-    """Compute aggregate kite mass, CG, and inertia from the full PSS system."""
-    result = pss_initialize(struc_geometry, system_config=system_config)
-    struc_nodes, m_arr = result[0], result[1]
-
-    total_mass = float(np.sum(m_arr))
-    cg = calculate_cg(struc_nodes, m_arr)
-    I = calculate_inertia(
-        [(struc_nodes[i], m_arr[i]) for i in range(len(m_arr))],
-        desired_point=cg,
-    )
-    return {
-        "mass": round(total_mass, 4),
-        "center_of_mass": [round(float(v), 4) for v in cg],
-        "inertia_tensor": [[round(float(v), 4) for v in row] for row in I],
-    }
 
 
 def update_from_geometry(
@@ -90,12 +70,11 @@ def update_from_geometry(
 
     bridle_stats = compute_bridle_stats_from_pss(struc_geometry)
     wing_stats = compute_wing_stats_from_pss(struc_geometry)
-    kite_stats = _compute_kite_aggregate(struc_geometry, system_config)
+    # The kite aggregate is derived, not stored in system.yml (the awesIO schema
+    # has no slot for it); computed here only for the return value / logging.
+    kite_stats = compute_kite_aggregate(struc_geometry, system_config)
 
-    kite_node = system_config["components"]["kite"]
-
-    for key in _KITE_AGGREGATE_FIELDS:
-        kite_node[key] = kite_stats[key]
+    kite_node = get_kite(system_config)
 
     wing_struct = kite_node["wing"]["structure"]
     for key in _WING_COMPUTED_FIELDS:

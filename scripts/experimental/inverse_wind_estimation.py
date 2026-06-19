@@ -16,6 +16,7 @@ import time
 import yaml
 
 from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
+from awetrim.utils.system_config import get_kite, get_tether
 import time
 from awetrim.utils.defaults import DEFAULT_BOUNDS
 
@@ -202,10 +203,10 @@ def run_inverse_validation(cycle_num=65):
     # Setup system from system.yml (awesIO format)
     with open(LEI_V3_SYSTEM_CONFIG, "r") as file:
         system_cfg = yaml.safe_load(file)
-    kite_cfg = system_cfg["components"]["kite"]
+    kite_cfg = get_kite(system_cfg)
     wing_struct = kite_cfg["wing"]["structure"]
     cs_struct = kite_cfg.get("control_system", {}).get("structure", {})
-    tether_struct = system_cfg["components"].get("tether", {}).get("structure", {})
+    tether_struct = get_tether(system_cfg).get("structure", {})
 
     aero_input = load_aero_input_from_system_config(
         kite_cfg, config_path=LEI_V3_SYSTEM_CONFIG

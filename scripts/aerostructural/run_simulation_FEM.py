@@ -33,6 +33,7 @@ from awetrim.aerostructural.fem import (
     structural_kite_fem,
 )
 from awetrim.system.tether import RigidLumpedTether
+from awetrim.utils.system_config import get_tether
 from common import (
     CONFIG_DEFAULTS,
     DEFAULT_KITE_NAME,
@@ -173,7 +174,7 @@ def main():
     ########################################
     # AWETRIM SYSTEM MODEL
     ########################################
-    tether_struct = system_config["components"]["tether"]["structure"]
+    tether_struct = get_tether(system_config)["structure"]
     tether = RigidLumpedTether(
         diameter=tether_struct["diameter"],
         density=tether_struct.get("density", 970.0),

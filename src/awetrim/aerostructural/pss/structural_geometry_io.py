@@ -20,6 +20,7 @@ import numpy as np
 import logging
 
 from ..utils import calculate_cg, calculate_inertia
+from awetrim.utils.system_config import get_kite
 
 
 def compute_wing_stats_from_pss(struc_geometry):
@@ -162,8 +163,9 @@ def _resolve_kcu_mass(struc_geometry, config=None, system_config=None):
     """Resolve KCU mass.
 
     The single source of truth is the system config
-    (``components.kite.control_system.structure.mass``). ``struc_geometry`` must
-    NOT carry a ``kcu_mass`` — it is only honoured as a deprecated fallback.
+    (``components.kites[0].control_system.structure.mass``, resolved via
+    ``get_kite``). ``struc_geometry`` must NOT carry a ``kcu_mass`` — it is only
+    honoured as a deprecated fallback.
 
     Priority:
       1. system_config (awesIO): control_system.structure.mass
@@ -171,9 +173,7 @@ def _resolve_kcu_mass(struc_geometry, config=None, system_config=None):
       3. struc_geometry.kcu_mass (deprecated fallback; emits a warning)
     """
     if isinstance(system_config, dict):
-        kite = system_config.get("components", {}).get(
-            "kite", system_config.get("components", {})
-        )
+        kite = get_kite(system_config)
         cs_struct = kite.get("control_system", {}).get("structure", {})
         if "mass" in cs_struct:
             if "kcu_mass" in struc_geometry:

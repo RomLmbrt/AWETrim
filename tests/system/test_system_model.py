@@ -28,6 +28,7 @@ from awetrim.system.tether import RigidLumpedTether, FlexibleLinkTether
 from awetrim.system.factory import load_aero_input_from_system_config
 from awetrim.environment.Wind import Wind
 from awetrim.utils.config_paths import LEI_V3_SYSTEM_CONFIG
+from awetrim.utils.system_config import get_kite
 
 # ============================================================================
 # FIXTURES
@@ -49,7 +50,7 @@ def v3_config():
 def _extract_kite_params(cfg: dict) -> tuple:
     """Extract kite parameters from awesIO or legacy system config format."""
     if "components" in cfg:
-        kite = cfg["components"].get("kite", cfg["components"])
+        kite = get_kite(cfg)
         wing_struct = kite["wing"]["structure"]
         cs_struct = kite.get("control_system", {}).get("structure", {})
         return (

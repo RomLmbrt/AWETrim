@@ -226,8 +226,11 @@ def load_config_from_folder(
     - struc_geometry.yaml (optional) — structural geometry (LE/TE nodes, bridles)
 
     Property source selection:
-    - If struc_geometry.yaml EXISTS: extract from components.kite (aggregate: wing+bridle+KCU)
-    - If struc_geometry.yaml NOT FOUND: extract from components.kite.structure (wing only)
+    - If struc_geometry.yaml EXISTS: aggregate (wing+bridle+KCU) mass/CG/inertia is
+      derived from the structural node distribution via
+      ``awetrim.aerostructural.utils.compute_kite_aggregate``.
+    - If struc_geometry.yaml NOT FOUND: read wing-only properties from
+      ``components.kites[0].wing.structure``.
 
     If ``deformed_from`` is given, aero_geometry.yaml and struc_geometry.yaml are
     read from that directory instead (e.g. an aerostructural results case dir).
@@ -243,6 +246,9 @@ def load_config_from_folder(
     - 'struc_geometry_path': path to struc_geometry.yaml (or None if not found)
     """
     import yaml
+
+    from awetrim.aerostructural.utils import compute_kite_aggregate
+    from awetrim.utils.system_config import get_kite
 
     config_folder = Path(config_folder).expanduser().resolve()
     geom_folder = (
@@ -276,20 +282,22 @@ def load_config_from_folder(
     if not use_struc_geometry or not struc_geometry_path.exists():
         struc_geometry_path = None
 
-    # Select property source based on whether struc_geometry exists
-    kite_node = system_config.get("components", {}).get("kite", {}).get("structure", {})
+    # Select property source based on whether struc_geometry exists.
+    kite_node = get_kite(system_config)
 
     if struc_geometry_path is not None:
-        # Using bridles/KCU: extract aggregate properties from kite root
+        # Full kite (wing + bridle + KCU): the aggregate mass/CG/inertia is derived
+        # from the structural node distribution, not stored in system.yaml.
+        with open(struc_geometry_path, "r") as f:
+            struc_geometry = yaml.safe_load(f)
+        aggregate = compute_kite_aggregate(struc_geometry, system_config)
         properties = {
-            "mass": float(kite_node.get("mass", 0.0)),
-            "inertia": kite_node.get(
-                "inertia_tensor", [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-            ),
-            "center_of_mass": kite_node.get("center_of_mass", [0.0, 0.0, 0.0]),
+            "mass": float(aggregate["mass"]),
+            "inertia": aggregate["inertia_tensor"],
+            "center_of_mass": aggregate["center_of_mass"],
         }
     else:
-        # No bridles/KCU: extract wing structure properties only
+        # No bridles/KCU: wing-only structure properties.
         wing_struct = kite_node.get("wing", {}).get("structure", {})
         properties = {
             "mass": float(wing_struct.get("mass", 0.0)),
