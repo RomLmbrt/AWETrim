@@ -72,6 +72,16 @@ components:
         diameter: 0.48   # m
         mass: 8.4        # kg
         center_of_mass: [0.0, 0.0, 0.0]  # m, same as bridle_point_node
+        # Actuator operational limits used by the trajectory optimizer. The
+        # trim optimiser reads these as hardware bounds (range) and slew-rate
+        # limits (rate); they override the numerical fallbacks in
+        # awetrim.utils.defaults.DEFAULT_OPTI_LIMITS.
+        steering:
+          range: [-0.35, 0.35]   # u_s deflection [-] (u_s = -kcu_deflection/100)
+          rate: [-0.29, 0.29]    # d(u_s)/dt [1/s]
+        depower:
+          range: [1.1, 2.3]      # power-tape length l_dp [m]
+          rate: [-0.2, 0.2]      # d(l_dp)/dt [m/s]
   tethers:
   - name: LEI-V3 Tether
     type: non_conductive_tether
