@@ -48,7 +48,7 @@ dependencies = [
   "scipy",
   "PyYAML",
   "prompt_toolkit",
-  "VSM @ git+https://github.com/awegroup/Vortex-Step-Method.git@2a12f13388122eafa541041c11c13be5f020f1fb",
+  "VSM @ git+https://github.com/RomLmbrt/Vortex-Step-Method.git",
   "PSS @ git+https://github.com/awegroup/Particle_System_Simulator.git@v1.0.2",
   "awes-ekf @ git+https://github.com/ocayon/EKF-AWE.git@7ca4660e7bf5d6b9ec56193fb4e722027fbc3ee0",
   "kite_fem @ git+https://github.com/awegroup/kite_fem.git@mass_proportional_regularisation",
