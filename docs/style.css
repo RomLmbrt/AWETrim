@@ -71,7 +71,7 @@ body::after {
   padding-top: 6px;
 }
 
-.header-logo img { height: 58px; width: auto; transition: transform .2s ease; }
+.header-logo img { height: 72px; width: auto; transition: transform .2s ease; }
 .header-logo:hover img, .header-logo:focus-visible img { transform: scale(1.04); outline: none; }
 
 .site-header > div {
@@ -569,6 +569,17 @@ h1 {
   margin-top: 6px !important;
   font-size: 13px;
 }
+
+.footer-partner {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.footer-partner img { height: 64px; width: auto; transition: transform .2s ease; }
+.footer-partner:hover img, .footer-partner:focus-visible img { transform: scale(1.04); outline: none; }
 
 @media (max-width: 1060px) {
   body::after {
