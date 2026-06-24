@@ -46,6 +46,12 @@ mass (`LEI_V3_SYSTEM_FLOWN_CONFIG`).
 | [`validate_quasi_steady_state_v3.py`](validation/validate_quasi_steady_state_v3.py) | Take measured kinematics + wind as given and solve the quasi-steady force balance for tether force, steering input and tangential speed; compare predicted vs. measured. Can run rigid / flexible-lumped / `WilliamsTether` variants. |
 | [`validate_spline_v3.py`](validation/validate_spline_v3.py) | Fit B-spline patterns to measured trajectories cycle-by-cycle, simulate them with the ROM and compare against the flight data. |
 
+## Example outputs
+
+<img src="../../docs/img/pumping-cycle-trajectory.png" alt="Simulated pumping cycle" width="380"> <img src="../../docs/img/b-spline.png" alt="B-spline trajectory parametrisation" width="380">
+
+*Left: `optimization/cycle/run_cycle_simulation.py` — downloop reel-out (blue), reel-in (orange) and transition (green). Right: `optimization/reelout/generate_spline_config.py` — periodic B-spline pattern in the (φ, β) plane.*
+
 ## Notes
 
 - ROM aero parameters are calibrated/identified by the

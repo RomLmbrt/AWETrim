@@ -26,10 +26,13 @@ Design-study scripts that morph the baseline geometry and re-evaluate it with VS
 | [`parametric_shapes/generate_shape_variations.py`](parametric_shapes/generate_shape_variations.py) | Sweeps four planform degrees of freedom — aspect ratio, anhedral, taper, twist — from a baseline `aero_geometry.yaml` (quarter-chord anchored, area preserved). One-factor-at-a-time by default; `--factorial` for the full grid. Each variant is evaluated over an angle-of-attack sweep (`--no-run-vsm` to skip). | One morphed `aero_geometry.yaml` per variant, `summary.csv` of planform metrics, 3-D wing overlay and aero-comparison figures (lift curve, drag polar, glide ratio). |
 | [`parametric_shapes/optimize_lei_airfoil.py`](parametric_shapes/optimize_lei_airfoil.py) | Optimises an LEI airfoil shape (6 profile parameters) with the Masure ML regression model via differential evolution, maximising `max_α(CL³/CD²)` inside a conservative parameter box near the trained data. | Optimised airfoil parameters and comparison plots vs. the baseline. |
 
-## Notes
+## Example outputs
 
-- All trim physics traces to Cayon, Gaunaa & Schmehl (2023) *Energies* and the VSM
-  papers; see the project `AGENTS.md` and `src/awetrim/aerodynamics/AGENTS.md`
-  before modifying the aerodynamics layer.
-- The ML airfoil model and polars are referenced from `data/`; the trained models
-  are published on Zenodo (see `src/awetrim/aerodynamics/AGENTS.md`).
+<img src="../../docs/img/kite_tether_states.png" alt="Single trim state: kite and tether" width="300"> <img src="../../docs/img/stability_eigenvalues.png" alt="VSM trim stability eigenvalues" width="300">
+
+*Left: `solve_single_state.py` — kite and tether at two trim states in the wind frame. Right: `compute_stability_derivatives.py` — longitudinal and lateral trim eigenvalues in the course frame.*
+
+<img src="../../docs/img/shape_comparison.png" alt="Parametric wing shape variations" width="320"> <img src="../../docs/img/aero_comparison.png" alt="Aero comparison of wing variants" width="520">
+
+*`parametric_shapes/generate_shape_variations.py` — swept planform variations (aspect ratio, anhedral, taper, twist) and the resulting lift curve, drag polar and glide ratio.*
+

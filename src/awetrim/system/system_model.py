@@ -41,6 +41,7 @@ class SystemModel(KiteKinematics):
         kite=None,
         acceleration_winch=2,
         depower_rate=0.2,
+        hardware_limits=None,
     ):
         """
         Initialize the kite system with its parameters.
@@ -50,6 +51,11 @@ class SystemModel(KiteKinematics):
         self.define_wind_model(wind_model)
         self.define_kite_model(kite)
         self.define_tether_model(tether)
+
+        # Hardware-derived optimizer limits sourced from system.yaml (KCU
+        # actuator ranges/rates, max tether length). Empty -> the optimizer
+        # uses DEFAULT_OPTI_LIMITS for everything. See factory._extract_hardware_limits.
+        self.hardware_limits = dict(hardware_limits) if hardware_limits else {}
 
         self._override_gravity = False
         self._override_centripetal = False
@@ -372,6 +378,7 @@ class SystemModel(KiteKinematics):
                 winch.radial_equation(
                     speed_radial=self.speed_radial,
                     tension_tether_ground=self.tension_tether_ground,
+                    input_depower=self.input_depower,
                 ),
             )
 

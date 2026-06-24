@@ -171,7 +171,46 @@ def _extract_params_awesio(cfg: dict) -> tuple:
     tether_density = tether_struct.get("density", 970.0)
     wind_cfg = cfg.get("wind", {})
 
-    return mass_wing, area_wing, mass_kcu, tether_diameter, tether_density, wind_cfg
+    hardware_limits = _extract_hardware_limits(cs_struct, tether_struct)
+
+    return (
+        mass_wing,
+        area_wing,
+        mass_kcu,
+        tether_diameter,
+        tether_density,
+        wind_cfg,
+        hardware_limits,
+    )
+
+
+def _extract_hardware_limits(cs_struct: dict, tether_struct: dict) -> dict:
+    """Build the optimizer's hardware-limit overrides from system.yaml.
+
+    Maps the KCU actuator limits (control_system.structure.steering /
+    .depower) onto the ``DEFAULT_OPTI_LIMITS`` keys the trajectory optimizer
+    reads, plus the max tether length used to cap the radial distance. Keys are
+    only present when the corresponding field exists in the config; missing
+    ones fall back to ``DEFAULT_OPTI_LIMITS``.
+    """
+    hw: dict = {}
+    steering = cs_struct.get("steering", {})
+    if "range" in steering:
+        hw["input_steering"] = tuple(steering["range"])
+    if "rate" in steering:
+        hw["steering_rate"] = tuple(steering["rate"])
+    depower = cs_struct.get("depower", {})
+    if "range" in depower:
+        hw["input_depower"] = tuple(depower["range"])
+    if "rate" in depower:
+        hw["depower_rate"] = tuple(depower["rate"])
+    # The radial distance (kite-to-ground chord) cannot exceed the tether, so
+    # its upper bound is the max tether length; the lower bound stays the
+    # numerical default. Carried as a sentinel resolved in opti_phase.
+    tether_length = tether_struct.get("length")
+    if tether_length is not None:
+        hw["_max_tether_length"] = float(tether_length)
+    return hw
 
 
 def _extract_params_legacy(cfg: dict) -> tuple:
@@ -226,9 +265,15 @@ def create_system_model_from_yaml(
     cfg = _load_yaml(config_path)
 
     if "components" in cfg:
-        mass_wing, area_wing, mass_kcu, tether_diameter, tether_density, wind_cfg = (
-            _extract_params_awesio(cfg)
-        )
+        (
+            mass_wing,
+            area_wing,
+            mass_kcu,
+            tether_diameter,
+            tether_density,
+            wind_cfg,
+            hardware_limits,
+        ) = _extract_params_awesio(cfg)
     else:
         (
             mass_wing,
@@ -239,6 +284,8 @@ def create_system_model_from_yaml(
             tether_density,
             wind_cfg,
         ) = _extract_params_legacy(cfg)
+        # Legacy format carries no actuator-limit block -> all-default limits.
+        hardware_limits = {}
 
     print(
         f"Creating SystemModel with mass_wing={mass_wing}, area_wing={area_wing}, mass_kcu={mass_kcu}, tether_diameter={tether_diameter}, tether_density={tether_density}"
@@ -268,6 +315,7 @@ def create_system_model_from_yaml(
         kite=kite,
         tether=tether,
         wind_model=create_wind_model_from_config(wind_cfg),
+        hardware_limits=hardware_limits,
     )
 
 
