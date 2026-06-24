@@ -17,6 +17,12 @@ come from each kite's `as_config.yaml`; geometry from `aero_geometry.yaml` and
 | [`run_simulation_PSM.py`](run_simulation_PSM.py) | PSS (particle-spring) | Couples VSM aerodynamics with the Particle System Simulator. Solves one actuation case (steering / depower), with the actuated KCU and bilinear aero→structure load mapping. |
 | [`run_simulation_FEM.py`](run_simulation_FEM.py) | kite_fem (FEM) | Same coupling against the finite-element solver. Reads the FEM full geometry (`struc_geometry_FEM_full.yaml`, with strut and leading-edge tubes); forces `structural_solver: kite_fem`. |
 
+## Example output
+
+<img src="../../docs/img/aerostructural-deformed-shape.png" alt="Converged deformed LEI-V3 shape" width="460">
+
+*`run_simulation_PSM.py` — converged VSM ↔ PSS deformed shape: initial vs. loaded geometry, bridle/tape rest-length change (colour) and external aerodynamic loads (red).*
+
 ## Outputs
 
 Each run writes a case folder under

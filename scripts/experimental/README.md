@@ -17,6 +17,12 @@ kite position, velocity, tether force and tether length.
 | [`plot_analysis_ekf.py`](plot_analysis_ekf.py) | Interactive plotting of a saved EKF result by category — aerodynamics, kinematics, tether, wind velocity, system performance, EKF performance, and turn-rate-law identification. |
 | [`inverse_wind_estimation.py`](inverse_wind_estimation.py) | Inverse solve: given a prescribed tether force, solve the system model for the wind speed (measured wind as the initial guess). |
 
+## Example outputs
+
+<img src="../../docs/img/kite-trajectory.png" alt="Reconstructed kite trajectory" width="380"> <img src="../../docs/img/identified-wind.png" alt="EKF-identified wind" width="380">
+
+*Left: `run_analysis_ekf.py` — reconstructed flight trajectory. Right: `plot_analysis_ekf.py` (wind category) — EKF-identified wind.*
+
 ## Outputs
 
 EKF results and diagnostics are written under `results/<kite_name>/ekf/`
