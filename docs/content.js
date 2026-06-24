@@ -47,7 +47,7 @@ const DATA_20191008 = { label: "Dataset · Flight test 8 Oct 2019", url: "https:
 const CONTENT = {
   "awetrim": {
     title: "AWETrim",
-    text: "AWETrim is a Python library for the modelling, trim analysis, aerostructural simulation and trajectory optimisation of soft-kite Airborne Wind Energy Systems (AWES). It ties external solvers — a vortex aerodynamic method (VSM), a structural model (PSS particle system or kite_fem FEM) and a flight-data Kalman filter (EKF-AWE) — to a CasADi-based system model in one quasi-steady, multi-fidelity workflow.",
+    text: "AWETrim is a Python library for the modelling, aerostructural simulation, trim analysis and trajectory optimisation of soft-kite Airborne Wind Energy Systems (AWES). It ties external solvers — a vortex aerodynamic method (VSM), a structural model (PSS particle system or kite_fem FEM) and a flight-data Kalman filter (EKF-AWE) — to a CasADi-based system model in one quasi-steady, multi-fidelity workflow.",
     bullets: [
       "CasADi symbolic system model (kite + tether + winch + wind)",
       "Couples VSM aerodynamics with a PSS/FEM structure, reduced to a fast ROM",
@@ -73,16 +73,16 @@ const CONTENT = {
     title: "EKF-AWE Experimental Reconstruction",
     text: "EKF-AWE processes flight logs with an Extended Kalman Filter to estimate kite states, aerodynamic coefficients and wind velocity. In AWETrim it is the bridge between real flight data and model validation or tuning, wrapped by the experimental/ module with the data layout used in data/.",
     bullets: ["State reconstruction from noisy logs", "Wind-vector estimation", "In-flight aerodynamic coefficient identification"],
-    image: "img/placeholder.svg",
-    caption: "Add a reconstructed trajectory, wind-speed estimate or EKF validation plot.",
+    image: "img/kite-trajectory.png",
+    caption: "Reconstructed kite flight trajectory from the EKF-AWE pipeline.",
     links: [REPO_EKF, PAPER_EKF]
   },
   "wind-state-estimation": {
     title: "Wind and State Estimation",
     text: "The reconstructed states and wind estimates describe the real flight conditions and let experimental behaviour be compared against model predictions. They feed model validation and tuning, and can drive the wind models used in simulation.",
     bullets: ["Estimated position and velocity", "Reconstructed wind vector", "Inputs for validation and tuning"],
-    image: "img/placeholder.svg",
-    caption: "Add a time series of estimated wind or kite states.",
+    image: "img/identified-wind.png",
+    caption: "Wind velocity identified from flight data by the EKF.",
     links: [PAPER_EKF, REPO_EKF]
   },
   "system-kite": {
@@ -125,9 +125,9 @@ const CONTENT = {
   },
   "model-reduction": {
     title: "Model Reduction & Aero Identification",
-    text: "The reduced-order model is not assumed — it is identified from the high-fidelity aero-structural model. AWETrim sweeps the coupled VSM–structural model across flight conditions and control inputs, then fits compact quasi-steady aerodynamic coefficient relations to those sweep results. This model-reduction / system-identification step is what turns the expensive aero-structural model (left) into the fast ROM (right) used for trajectory simulation and optimisation.",
+    text: "The reduced-order model is not assumed — it is identified from the high-fidelity aero-structural model. AWETrim sweeps the coupled VSM–structural model over angle of attack and control inputs, then fits compact quasi-steady aerodynamic coefficient relations to those sweep results. The same fit can be run on EKF flight-data reconstructions, so an aerostructural-identified ROM can be compared directly against an experiment-identified one. This model-reduction / system-identification step is what turns the expensive aero-structural model (left) into the fast ROM (right) used for trajectory simulation and optimisation.",
     bullets: [
-      "Aerostructural sweeps over angle of attack, sideslip and control inputs",
+      "Aerostructural (or EKF flight-data) sweeps over angle of attack, control inputs and airspeed",
       "Fits quasi-steady CL / CD / CS coefficient relations (rom_config.yaml)",
       "Bridges the high-fidelity model and the fast CasADi ROM"
     ],
