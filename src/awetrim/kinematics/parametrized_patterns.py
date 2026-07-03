@@ -348,6 +348,50 @@ class PeriodicBSpline(ParametrizedPatterns):
         return self._eval_spline_vec(self.C_beta, u)
 
 
+def reelin_control_point_mask(
+    path_parameters,
+    elevation_fraction=0.75,
+    support=2.0,
+    n_samples=720,
+):
+    """Boolean mask over the M control points of a periodic full-cycle spline
+    flagging those that shape the reel-in arc.
+
+    The arc is identified as the samples in the top ``elevation_fraction`` of
+    the pattern's elevation range (the "parked high" part of a single-phase
+    pumping cycle). A control point is flagged when its cubic B-spline support
+    (|x - i| < ``support`` in knot coordinates x = u*M, wrapped) overlaps any
+    such sample. Used to build per-point trust-region step bounds: the
+    figure-eight control points keep the tight topology-protecting box while
+    the reel-in bow -- a single arc with no loops to destroy -- gets a wider
+    one.
+    """
+    M = int(path_parameters["M"])
+    pattern = PeriodicBSpline(
+        M=M,
+        C_phi=np.asarray(path_parameters["C_phi"], dtype=float).reshape((M, 1)),
+        C_beta=np.asarray(path_parameters["C_beta"], dtype=float).reshape((M, 1)),
+        s_init=float(path_parameters.get("s_init", 0.0)),
+        s_final=float(path_parameters.get("s_final", 1.0)),
+        downloops=bool(path_parameters.get("downloops", True)),
+    )
+    s_span = pattern.s_final - pattern.s_init
+    s = pattern.s_init + s_span * np.linspace(0.0, 1.0, n_samples, endpoint=False)
+    elevation = np.asarray(
+        [float(pattern.elevation(1.0, si)) for si in s], dtype=float
+    )
+    threshold = elevation.min() + float(elevation_fraction) * (
+        elevation.max() - elevation.min()
+    )
+    x = pattern._u(s) * M  # knot coordinate of each sample, wrapped to [0, M)
+    x_marked = x[elevation >= threshold]
+    mask = np.zeros(M, dtype=bool)
+    for i in range(M):
+        wrapped = np.abs((x_marked - i + M / 2.0) % M - M / 2.0)
+        mask[i] = bool(np.any(wrapped < float(support)))
+    return mask
+
+
 class OpenBSpline(ParametrizedPatterns):
     def __init__(self, M, C_phi, C_beta, s_init, s_final, downloops=True, r0=None):
         super().__init__(
@@ -576,5 +620,182 @@ def make_bspline_path_parameters_from_named_curve(
         # the curve onto u with this same omega, so PeriodicBSpline/OpenBSpline
         # must rebuild with it (create_pattern_from_dict forwards it) or an
         # uploop fit (downloops=False) is evaluated in the downloop sense.
+        "downloops": bool(downloops),
+    }
+
+
+def _smoothstep(edge0, edge1, x):
+    """Hermite smoothstep in [0, 1], clamped outside [edge0, edge1]."""
+    t = np.clip((np.asarray(x, dtype=float) - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def reelin_bump(s, reelout_fraction=0.7, ramp_fraction=0.25):
+    """Smooth 0->1->0 indicator for the reel-in window, centred at ``s = 0.5``.
+
+    Returns ~1 inside the reel-in band ``[0.5 - h, 0.5 + h]`` (``h = (1 - f)/2``)
+    and 0 in the reel-out, with smoothstep edges. Centring the reel-in at
+    mid-period keeps ``s = 0`` (and ``s = 1``) in steady, full-amplitude reel-out
+    so a forward trim started there is well posed. Shared by the path generator
+    and the synthetic depower profile so both switch at the same place.
+    """
+    s = np.asarray(s, dtype=float).ravel()
+    f = float(reelout_fraction)
+    h = 0.5 * (1.0 - f)
+    r = max(ramp_fraction * (1.0 - f), 1e-6)
+    lo, hi = 0.5 - h, 0.5 + h
+    return _smoothstep(lo, lo + r, s) * (1.0 - _smoothstep(hi - r, hi, s))
+
+
+def full_cycle_angles(
+    s,
+    n_loops=5,
+    reelout_fraction=0.7,
+    beta0=0.35,
+    beta_amp0=0.12,
+    az_amp0=0.3,
+    beta_reelin_peak=1.1,
+    az_reelin_amp=0.25,
+    ramp_fraction=0.4,
+    psi0=0.0,
+    downloops=True,
+):
+    """Azimuth/elevation samples for a *synthetic full pumping cycle*.
+
+    One period ``s in [0, 1)`` is a whole cycle. The figure-eight phase advances
+    *continuously* over the entire period (``psi = 2*pi*n_loops*s``) so the curve
+    is exactly periodic and smooth (C1) at the ``s = 0`` boundary, with full path
+    speed there. The reel-in is a window centred at ``s = 0.5``: inside it the
+    figure amplitude is faded to zero and the elevation is lifted along a smooth
+    arc to ``beta_reelin_peak``. To avoid a cusp at the top of the climb (the kite
+    going straight up and back down the same azimuth line), the reel-in also bows
+    in azimuth -- to one side on the way up and the other on the way down
+    (``az_reelin_amp * sin(2*pi*xi)``) -- tracing a smooth open loop instead of
+    retracing. Outside the window the kite flies figure-eights at base elevation
+    ``beta0``. Centring the reel-in at mid-period leaves ``s = 0`` in steady
+    reel-out, a far more trim-feasible start than a fit to noisy flight data.
+
+    Unlike :func:`named_curve_angles` (reel-out-only figure-eights), this spans
+    the full cycle, so the fitted periodic spline is flown *once* per cycle.
+
+    Parameters
+    ----------
+    s : array-like
+        Path parameter samples in ``[0, 1)``.
+    n_loops : int
+        Figure-eights over the whole period (roughly ``reelout_fraction * n_loops``
+        are visible; the rest fall inside the suppressed reel-in window).
+    reelout_fraction : float
+        Fraction of the period spent reeling out (the rest is reel-in).
+    beta0, beta_amp0, az_amp0 : float
+        Base elevation, figure-eight elevation amplitude and azimuth amplitude
+        (rad) during reel-out.
+    beta_reelin_peak : float
+        Peak elevation (rad) reached during reel-in.
+    az_reelin_amp : float
+        Azimuth excursion (rad) of the reel-in bow that breaks the up/down
+        retrace. 0 reproduces the straight-up (cusped) reel-in.
+    ramp_fraction : float
+        Smoothstep edge width of the reel-in window (fraction of its span).
+        Larger -> gentler reel-in (a single smooth hump, no flat top); ``>= 0.5``
+        removes the plateau entirely.
+    psi0 : float
+        Constant figure-phase offset (rad). Shifts where in a figure-eight the
+        reel-in window fades the oscillation out: the phase at the window edges
+        sets how sharp the reel-out/reel-in handover is (a fade near a lobe
+        extremum can leave a near-cusp), so ``psi0`` is the lever that keeps
+        the handover smooth for ANY ``n_loops``. A constant offset preserves
+        exact periodicity and C1 continuity at ``s = 0``.
+    downloops : bool
+        Traversal sense (flips the azimuth direction).
+    """
+    s = np.asarray(s, dtype=float).ravel()
+    omega = 1.0 if downloops else -1.0
+    f = float(reelout_fraction)
+
+    ri = reelin_bump(s, reelout_fraction=f, ramp_fraction=ramp_fraction)
+    window = 1.0 - ri  # figure amplitude: full in reel-out, 0 in reel-in
+
+    # Continuous over the period -> periodic & C1 (psi0 shifts the phase only).
+    psi = 2.0 * np.pi * n_loops * s + float(psi0)
+
+    # Position within the reel-in band [0.5 - h, 0.5 + h] (0 at entry, 1 at exit).
+    h = 0.5 * (1.0 - f)
+    lo, hi = 0.5 - h, 0.5 + h
+    xi = np.clip((s - lo) / max(hi - lo, 1e-9), 0.0, 1.0)
+    # Bow to +az while climbing (xi < 0.5), to -az while descending (xi > 0.5);
+    # gated by ``ri`` so it is zero (with zero slope) outside the reel-in.
+    az_bow = ri * az_reelin_amp * np.sin(omega * 2.0 * np.pi * xi)
+
+    azimuth = window * az_amp0 * np.sin(omega * psi) + az_bow
+    elevation = (
+        beta0
+        + (beta_reelin_peak - beta0) * ri
+        + window * beta_amp0 * np.sin(2.0 * psi)
+    )
+    return azimuth, elevation
+
+
+def make_full_cycle_bspline_path_parameters(
+    M,
+    r0,
+    n_fit=600,
+    n_loops=4,
+    reelout_fraction=0.7,
+    beta0=0.35,
+    beta_amp0=0.12,
+    az_amp0=0.3,
+    beta_reelin_peak=1.1,
+    az_reelin_amp=0.25,
+    ramp_fraction=0.4,
+    psi0=0.0,
+    downloops=True,
+    precision=6,
+):
+    """YAML-ready *periodic* path parameters for a synthetic full pumping cycle.
+
+    Fits a periodic cubic B-spline to :func:`full_cycle_angles` over ``s in
+    [0, 1]`` and returns the same dict shape as
+    :func:`make_bspline_path_parameters_from_named_curve`. Use as a clean,
+    trim-feasible initial guess for the single-phase full-cycle optimisation when
+    a fit to flight data is too rough to trim.
+    """
+    s_samples = np.linspace(0.0, 1.0, int(n_fit), endpoint=False)
+    az_target, el_target = full_cycle_angles(
+        s_samples,
+        n_loops=n_loops,
+        reelout_fraction=reelout_fraction,
+        beta0=beta0,
+        beta_amp0=beta_amp0,
+        az_amp0=az_amp0,
+        beta_reelin_peak=beta_reelin_peak,
+        az_reelin_amp=az_reelin_amp,
+        ramp_fraction=ramp_fraction,
+        psi0=psi0,
+        downloops=downloops,
+    )
+    _, C_phi, C_beta = fit_bspline_pattern_to_trajectory(
+        spline_type="periodic",
+        M=M,
+        s_init=0.0,
+        s_final=1.0,
+        az_target=az_target,
+        el_target=el_target,
+        s_samples=s_samples,
+        downloops=downloops,
+    )
+
+    def _rounded_coefficients(coefficients):
+        values = np.round(coefficients.full().flatten(), precision)
+        values[np.isclose(values, 0.0)] = 0.0
+        return values.tolist()
+
+    return {
+        "r0": float(r0),
+        "M": int(M),
+        "C_phi": _rounded_coefficients(C_phi),
+        "C_beta": _rounded_coefficients(C_beta),
+        "s_init": 0.0,
+        "s_final": 1.0,
         "downloops": bool(downloops),
     }

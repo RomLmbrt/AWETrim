@@ -80,7 +80,7 @@ components:
           range: [-0.35, 0.35]   # u_s deflection [-] (u_s = -kcu_deflection/100)
           rate: [-0.29, 0.29]    # d(u_s)/dt [1/s]
         depower:
-          range: [1.1, 2.3]      # power-tape length l_dp [m]
+          range: [1.1, 2.1]      # power-tape length l_dp [m]
           rate: [-0.2, 0.2]      # d(l_dp)/dt [m/s]
   tethers:
   - name: LEI-V3 Tether

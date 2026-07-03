@@ -275,6 +275,12 @@ class Phase:
             pattern_config=self.pattern_config,
             pattern_config_opti=pattern_config_opti,
         )
+        # Previous NLP optimum, if any: exact pass-to-pass warm start for
+        # staged solves. opti_phase validates the grid per variable and falls
+        # back to the forward simulation where absent or mismatched.
+        self._phase.warm_start_trajectory = getattr(
+            self, "_warm_start_trajectory", None
+        )
         self._opti, self._opti_vars, self._objective = self._phase.opti_phase(
             start_state=start_state,
             opti=self._opti if hasattr(self, "_opti") else None,
@@ -380,6 +386,10 @@ class Phase:
         opti, opti_vars, objective_dict, self._opti_params = self.get_opti_components(
             optimization_params=optimization_params
         )
+        # Stash the constraint-report spec so run_opti can print it from
+        # opti.debug when the solve fails; on success it prints from the
+        # solution below.
+        self._constraint_report = objective_dict.get("constraint_report")
 
         # Maximize average power (optionally the full cycle power via offsets)
         if target == "power":
@@ -391,7 +401,17 @@ class Phase:
         elif target == "energy":
             total_objective = -objective_dict["energy"]
         elif target == "zero":
-            total_objective = 0.0
+            # Pure-feasibility round. A literal 0.0 objective is degenerate:
+            # the multipliers are undefined, so IPOPT's dual infeasibility
+            # never converges (it floors at ~1e3-1e5 with mu pinned at
+            # mu_init) and NO stopping test fires even once primal-feasible
+            # -- the solve then wanders until a bad step throws it into
+            # restoration for the remaining iterations. Anchor the problem
+            # with the control-smoothness regularizer at a tiny weight: its
+            # gradient is negligible next to the constraints, but the NLP has
+            # a well-defined optimum and terminates cleanly at feasibility.
+            reg_term = objective_dict.get("reg")
+            total_objective = 1e-2 * reg_term if reg_term is not None else 0.0
 
         # Control-smoothness regularization (off by default). On the flat power
         # ridge the bare optimum is non-unique, so any solver-path change moves
@@ -403,6 +423,20 @@ class Phase:
         if reg_weight and objective_dict.get("reg") is not None:
             total_objective = total_objective + reg_weight * objective_dict["reg"]
 
+        # Soft radial-cycle closure penalty (alternative to the hard
+        # ``close_radial_cycle`` equality). Ramp this weight up across staged
+        # solves to tighten the cycle closure without the hard constraint's
+        # conditioning hit; 0 leaves the objective unchanged.
+        closure_weight = float(
+            self.pattern_config.get("sim_parameters", {}).get(
+                "radial_closure_weight", 0.0
+            )
+        )
+        if closure_weight and objective_dict.get("radial_closure") is not None:
+            total_objective = (
+                total_objective + closure_weight * objective_dict["radial_closure"]
+            )
+
         if trust_region_weight:
             total_objective = total_objective + self._trust_region_penalty(
                 self._opti_params, trust_region_weight
@@ -413,6 +447,8 @@ class Phase:
         )
         if solution is None:
             return None
+
+        self._print_constraint_report(solution.value, self._constraint_report)
 
         # When the depower input is optimized as a per-node profile, persist the
         # optimized l_dp(s) into sim_parameters["input_depower_profile"] (length
@@ -437,6 +473,11 @@ class Phase:
         self._update_start_state_from_solution(solution, opti_vars)
 
         optimized_trajectory = self._extract_optimized_trajectory(solution, opti_vars)
+        if optimized_trajectory:
+            # Seed the next staged solve from this optimum (see
+            # initialize_phase): exact warm start, and no force-law
+            # re-simulation failure between passes in free_speed winch mode.
+            self._warm_start_trajectory = optimized_trajectory
 
         return SimulationResult(
             solution=solution,
@@ -510,6 +551,65 @@ class Phase:
                 continue
         self.start_state = new_state
 
+    @staticmethod
+    def _print_constraint_report(value_fn, report) -> None:
+        """Print each constrained NLP expression's range against its bounds.
+
+        ``value_fn`` maps an MX expression to numbers: ``solution.value`` after
+        a successful solve, ``opti.debug.value`` for the last iterate of a
+        failed one. ``report`` is ``opti_phase``'s ``constraint_report`` -- the
+        NLP's own expressions, so the margins are exactly what IPOPT saw.
+        Inequality rows flag ``binding`` within 1% of the bound width;
+        equality rows print max |scaled residual| and flag values above 1e-4.
+        Best-effort: rows that fail to evaluate are skipped and the report
+        never raises, so it cannot mask the solve outcome it annotates.
+        """
+        if not report:
+            return
+        try:
+            print("\nConstraint report (NLP expressions vs applied bounds):")
+            print(
+                f"  {'group':<30} {'lb':>11} {'min':>11} {'max':>11} {'ub':>11}  status"
+            )
+            for name, spec in report.items():
+                try:
+                    values = np.asarray(value_fn(spec["expr"]), dtype=float).ravel()
+                except Exception:
+                    continue
+                if values.size == 0:
+                    continue
+                if spec.get("equality"):
+                    worst = float(np.max(np.abs(values)))
+                    status = "ok" if worst <= 1e-4 else "** INFEASIBLE"
+                    print(
+                        f"  {name:<30} {'max|residual| =':>24} {worst:>11.2e}"
+                        f" {'':>11}  {status}"
+                    )
+                    continue
+                scale = spec.get("scale", 1.0)
+                lb, ub = spec["lb"] * scale, spec["ub"] * scale
+                vmin = float(values.min()) * scale
+                vmax = float(values.max()) * scale
+                tol = 1e-2 * (ub - lb)
+                binding = [
+                    tag
+                    for tag, hit in (("lb", vmin <= lb + tol), ("ub", vmax >= ub - tol))
+                    if hit
+                ]
+                violated = vmin < lb - tol or vmax > ub + tol
+                label = f"{name} [{spec['unit']}]" if spec.get("unit") else name
+                status = (
+                    "** VIOLATED"
+                    if violated
+                    else (f"binding ({', '.join(binding)})" if binding else "")
+                )
+                print(
+                    f"  {label:<30} {lb:>11.4g} {vmin:>11.4g} {vmax:>11.4g}"
+                    f" {ub:>11.4g}  {status}"
+                )
+        except Exception as exc:
+            print(f"(constraint report unavailable: {exc})")
+
     def _extract_optimized_trajectory(
         self, solution: Any, opti_vars: Dict[str, Any]
     ) -> Dict[str, np.ndarray]:
@@ -581,15 +681,21 @@ class Phase:
             # tol was tightened 1e-5 -> 1e-6 in d899511 (2026-06-16), which made the
             # reel-out optimisation grind to max_iter: L-BFGS cannot drive dual
             # infeasibility to 1e-6 on the flat power objective. Restored to 1e-5
-            # (acceptable_tol=2e-4 still provides the early-out).
+            # (the acceptable_* block below provides the practical early-out).
             "tol": 1e-5,
-            # The power objective is flat near the optimum and L-BFGS floors dual
-            # infeasibility ~1e-2 there, so tol/acceptable_tol are never met and the
-            # solve runs to max_iter. Also accept a plateaued, feasible point: stop
-            # once the relative objective stops changing for acceptable_iter steps.
+            # Acceptable-point early stop, tuned so it is actually REACHABLE
+            # with L-BFGS. The overall error checked against acceptable_tol
+            # INCLUDES the dual infeasibility, which L-BFGS floors at ~1e-2..1
+            # on these problems -- with acceptable_tol at 2e-4 no stopping test
+            # could ever fire, so IPOPT iterated straight past converged points
+            # (inf_pr 6.6e-7 at iter 20) until a bad barrier/L-BFGS step threw
+            # them into restoration. Now "acceptable" means: genuinely feasible
+            # (constraint violation < 1e-4 on the hand-scaled rows) with a flat
+            # objective for acceptable_iter iterations, dual floor ignored.
             "acceptable_iter": 5,
-            "acceptable_tol": 2e-4,
-            "acceptable_obj_change_tol": 1e-3,
+            "acceptable_tol": 1.0,
+            "acceptable_constr_viol_tol": 1e-4,
+            "acceptable_obj_change_tol": 1e-4,
             # "constr_viol_tol": 1e-6,
             "dual_inf_tol": 1e-4,
             "hessian_approximation": "limited-memory",
@@ -604,6 +710,32 @@ class Phase:
             # "warm_start_slack_bound_push": 1e-6,
             "max_iter": max_iter if max_iter is not None else 1000,
         }
+        # Robust profile for stiff problems (e.g. the full-cycle NLP with a hard
+        # radial-closure equality the power objective constantly presses on:
+        # adaptive mu thrashes, dual infeasibility spikes ~1e12, micro-steps).
+        # Switch to a monotone barrier with a Mehrotra predictor, a longer L-BFGS
+        # memory, and more line-search robustness so the solve advances steadily
+        # instead of stalling at an infeasible point. Opt in via
+        # ``sim_parameters["ipopt_robust"]``.
+        if bool(sim_parameters.get("ipopt_robust", False)):
+            ipopt_options.update(
+                {
+                    "mu_strategy": "monotone",
+                    "mu_init": 1e-1,
+                    "limited_memory_max_history": 50,
+                    "max_soc": 8,
+                    "watchdog_shortened_iter_trigger": 10,
+                    "accept_every_trial_step": "no",
+                    # Scale the objective so its gradient does not dwarf the
+                    # constraint Jacobian (a driver of the dual-infeasibility
+                    # blow-up on the flat power ridge).
+                    "nlp_scaling_method": "gradient-based",
+                    "obj_scaling_factor": float(
+                        sim_parameters.get("obj_scaling_factor", 1.0)
+                    ),
+                }
+            )
+
         if warm_start:
             # Tight-barrier warm solve: start near the (near-optimal) guess
             # instead of the analytic center, suppressing the explore-out-and-
@@ -692,7 +824,139 @@ class Phase:
                 except Exception:
                     pass
             print("Optimization failed:", exc)
+            self._plot_failed_iterate(opti)
+            # WHERE the failed iterate is infeasible, constraint group by group.
+            self._print_constraint_report(
+                opti.debug.value, getattr(self, "_constraint_report", None)
+            )
             return None
+
+    def _plot_failed_iterate(self, opti) -> None:
+        """Save a plot of WHERE the optimizer went when a solve failed.
+
+        Reads the per-node trajectory of IPOPT's last iterate from
+        ``opti.debug`` and draws it against the warm start, plus the
+        (azimuth, elevation) path at the debug shape coefficients. Saved to
+        ``opti_failed_iterate.png`` in the working directory (non-blocking,
+        overwritten on each failure). Best-effort: never raises, so it cannot
+        mask the original solver error.
+        """
+        try:
+            import matplotlib.pyplot as plt
+
+            opti_vars = getattr(self, "_opti_vars", None)
+            if not opti_vars:
+                return
+            try:
+                n_points = int(self.pattern_config["sim_parameters"]["n_points"])
+            except (KeyError, TypeError, ValueError):
+                n_points = None
+
+            keys = (
+                "distance_radial",
+                "speed_radial",
+                "tension_tether_ground",
+                "input_steering",
+                "input_depower",
+            )
+            dbg = {}
+            for key in ("s",) + keys:
+                var = opti_vars.get(key)
+                if var is None:
+                    continue
+                try:
+                    values = np.asarray(opti.debug.value(var), dtype=float).ravel()
+                except Exception:
+                    continue
+                if n_points is not None:
+                    values = values[:n_points]
+                dbg[key] = values
+            if "s" not in dbg or "distance_radial" not in dbg:
+                return
+            s_dbg = dbg["s"]
+
+            # Warm-start trajectory (the forward sim the NLP was seeded from).
+            warm = {}
+            phase = getattr(self, "_phase", None)
+            if phase is not None:
+                for key in ("s",) + keys:
+                    try:
+                        warm[key] = np.asarray(
+                            phase.return_variable(key), dtype=float
+                        ).ravel()
+                    except Exception:
+                        continue
+
+            fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+            panels = list(zip(axes.ravel(), keys))
+            for ax, key in panels:
+                if key in warm and "s" in warm:
+                    n = min(len(warm["s"]), len(warm[key]))
+                    ax.plot(
+                        warm["s"][:n], warm[key][:n], "k--", lw=1, label="warm start"
+                    )
+                if key in dbg:
+                    n = min(len(s_dbg), len(dbg[key]))
+                    ax.plot(
+                        s_dbg[:n], dbg[key][:n], "r-", lw=1.2, label="failed iterate"
+                    )
+                ax.set_xlabel("s")
+                ax.set_title(key)
+                ax.grid(True)
+            axes.ravel()[0].legend(fontsize=8)
+
+            # Path panel: (azimuth, elevation) at the DEBUG shape coefficients.
+            try:
+                from awetrim.kinematics.parametrized_patterns import (
+                    create_pattern_from_dict,
+                )
+
+                path_params = copy.deepcopy(
+                    self.pattern_config.get("path_parameters", {})
+                )
+                for name, mx in (self._opti_params or {}).items():
+                    if name in path_params:
+                        try:
+                            path_params[name] = (
+                                np.asarray(opti.debug.value(mx), dtype=float)
+                                .ravel()
+                                .tolist()
+                            )
+                        except Exception:
+                            pass
+                pattern = create_pattern_from_dict(
+                    self.pattern_config["pattern_type"], path_params
+                )
+                r_dbg = dbg["distance_radial"]
+                az = np.array(
+                    [
+                        float(pattern.azimuth(r_dbg[j], s_dbg[j]))
+                        for j in range(min(len(s_dbg), len(r_dbg)))
+                    ]
+                )
+                el = np.array(
+                    [
+                        float(pattern.elevation(r_dbg[j], s_dbg[j]))
+                        for j in range(min(len(s_dbg), len(r_dbg)))
+                    ]
+                )
+                ax_path = axes.ravel()[-1]
+                ax_path.plot(np.degrees(az), np.degrees(el), "r-", lw=1.2)
+                ax_path.set_xlabel("azimuth (deg)")
+                ax_path.set_ylabel("elevation (deg)")
+                ax_path.set_title("path @ failed shape coeffs")
+                ax_path.grid(True)
+            except Exception:
+                pass
+
+            fig.suptitle("Failed NLP solve: last iterate (opti.debug) vs warm start")
+            fig.tight_layout()
+            out = Path("opti_failed_iterate.png").resolve()
+            fig.savefig(out, dpi=130)
+            plt.close(fig)
+            print(f"Failed-iterate plot saved to {out}")
+        except Exception as plot_exc:
+            print(f"(failed-iterate plot unavailable: {plot_exc})")
 
     def run_simulation(
         self,

@@ -25,6 +25,7 @@ from awetrim.utils.defaults import (
     DEFAULT_BOUNDS,
     DEFAULT_PATTERN_CONFIG,
     DEFAULT_OPTI_LIMITS,
+    DEFAULT_WINCH_CONFIG,
 )
 import copy
 from awetrim.system.tether import RigidLinkTether
@@ -432,8 +433,18 @@ class PhaseParameterized(TimeSeries):
             N + 1,
         )
 
-        # Allow optional per-node depower profile; fallback to scalar
         sim_params = self.pattern_config.get("sim_parameters", {})
+
+        # A node that fails to trim truncates the march with a warning by
+        # default (``allow_failure=True``). ``require_full_trajectory`` makes
+        # truncation fatal instead: pipelines that seed an NLP from this
+        # trajectory (the ``opti_phase`` warm start) are better off aborting,
+        # since a constant-padded seed violates the propagation and closure
+        # constraints far more than an honest failure.
+        if bool(sim_params.get("require_full_trajectory", False)):
+            allow_failure = False
+
+        # Allow optional per-node depower profile; fallback to scalar
         u_dep_profile = sim_params.get("input_depower_profile")
         if u_dep_profile is not None:
             u_dep_profile = np.asarray(u_dep_profile, dtype=float).ravel()
@@ -1343,15 +1354,43 @@ class PhaseParameterized(TimeSeries):
 
         if not opti:
             opti = ca.Opti()
-        self.run_simulation_phase(start_state)
-        chi_start = self.return_variable("angle_course")[
-            0
-        ]  # initial course angle from simulation
-        chi_end = self.return_variable("angle_course")[
-            -1
-        ]  # final course angle from simulation
-        print(f"Initial course angle (chi) from simulation: {chi_start:.2f} rad")
-        print(f"Final course angle (chi) from simulation: {chi_end:.2f} rad")
+
+        # Previous NLP optimum, injected by ``Phase.initialize_phase`` between
+        # staged solves. When a variable matches this grid it seeds the NLP
+        # instead of the forward simulation: pass-to-pass warm starts are then
+        # exact, and -- crucially for ``winch_mode: free_speed`` -- the
+        # force-law march is no longer a failure point between passes. The
+        # march always closes v_r with the winch tension curve, so it can fail
+        # to trim a shape that was optimized under free reel speed even though
+        # the NLP is perfectly solvable from the previous optimum.
+        n_grid = int(self.pattern_config["sim_parameters"]["n_points"])
+        warm_traj = {
+            key: np.asarray(values, dtype=float).ravel()
+            for key, values in (
+                getattr(self, "warm_start_trajectory", None) or {}
+            ).items()
+            if np.asarray(values).size == n_grid
+        }
+
+        def _warm_hist(name):
+            """Warm-start history: previous NLP optimum, else the forward sim."""
+            if name in warm_traj:
+                return warm_traj[name]
+            return np.asarray(self.return_variable(name), dtype=float).ravel()
+
+        try:
+            self.run_simulation_phase(start_state)
+        except RuntimeError as exc:
+            if not warm_traj:
+                raise
+            print(
+                f"Warm-start forward simulation failed mid-cycle ({exc}); "
+                "seeding the NLP from the previous optimum's trajectory instead."
+            )
+        chi_hist = self.return_variable("angle_course")
+        if len(chi_hist):
+            print(f"Initial course angle (chi) from simulation: {chi_hist[0]:.2f} rad")
+            print(f"Final course angle (chi) from simulation: {chi_hist[-1]:.2f} rad")
         self.kite_model.reset_solver()
 
         if start_state_opti:
@@ -1392,6 +1431,37 @@ class PhaseParameterized(TimeSeries):
         # optimization is unchanged.
         optimize_depower_profile = bool(sim_params.get("optimize_depower_profile", False))
 
+        # Winch mode. "force_law" (default): the winch enforces its tension
+        # curve T = f(v_r, l_dp) as a per-node equality -- v_r follows from the
+        # force balance. "free_speed": the reel speed is a DIRECT rate-limited
+        # control (like steering/depower) and the winch only bounds the tension
+        # it can hold, [min_tether_force, max_tether_force]. Free speed removes
+        # the tension-curve equality whose soft-clamp plateau (dT/dv_r ~ 0 when
+        # riding the force limit) destroys the Jacobian rank, and makes radial
+        # closure nearly linear in a direct control. The optimal T(v_r, l_dp)
+        # law is then an OUTPUT to regress a controller from, not an input.
+        # NLP-only: the forward warm-start simulation still marches with the
+        # force law, which simply seeds v_r with a feasible trajectory.
+        free_speed = sim_params.get("winch_mode", "force_law") == "free_speed"
+        winch_acc = tuple(
+            sim_params.get(
+                "winch_acceleration",
+                (
+                    DEFAULT_WINCH_CONFIG["min_acceleration"],
+                    DEFAULT_WINCH_CONFIG["max_acceleration"],
+                ),
+            )
+        )
+        if free_speed:
+            print(
+                "NLP winch mode: free_speed -- v_r is a rate-limited control "
+                f"(accel {winch_acc[0]:+.1f}..{winch_acc[1]:+.1f} m/s^2), tension "
+                f"bounded to [{float(radial_params.get('min_tether_force', 0.0)):.0f}, "
+                f"{float(radial_params['max_tether_force']):.0f}] N"
+            )
+        else:
+            print("NLP winch mode: force_law (tension-curve equality per node)")
+
         tau = ca.DM(np.linspace(0, 1, N + 1))  # numeric grid (DM column vector)
 
         s0 = sim_params["start_angle"]  # can be float or MX
@@ -1412,7 +1482,7 @@ class PhaseParameterized(TimeSeries):
         # objective is untouched. The scales match the constraint scales S["T"] /
         # S["r"] below (90th percentile of the warm start).
         def _warm_scale(name):
-            vals = np.abs(np.asarray(self.return_variable(name)).ravel())
+            vals = np.abs(_warm_hist(name))
             return float(max(np.percentile(vals, 90), 1.0)) if vals.size else 1.0
 
         T_SCALE = _warm_scale("tension_tether_ground")
@@ -1451,6 +1521,12 @@ class PhaseParameterized(TimeSeries):
                         sim_params.get("depower_rate", limits["depower_rate"])
                     ),
                 )
+            )
+        if free_speed:
+            # Reel speed as a control: slew-rate limited by the winch drive's
+            # acceleration capability, smoothness-regularized like the others.
+            node_controls.append(
+                NodeControl(name="speed_radial", rate_limit=winch_acc)
             )
         # # expose design params too
         # for var in self.optimization_vars:
@@ -1495,19 +1571,38 @@ class PhaseParameterized(TimeSeries):
             return np.concatenate([arr, np.full(n - arr.size, arr[-1])])
 
         warm_starts = {
-            "s_dot": _fit_len(self.return_variable("s_dot"), N),
-            "input_steering": _fit_len(self.return_variable("input_steering"), N),
-            "speed_radial": _fit_len(self.return_variable("speed_radial"), N),
-            "distance_radial": _fit_len(self.return_variable("distance_radial"), N),
+            "s_dot": _fit_len(_warm_hist("s_dot"), N),
+            "input_steering": _fit_len(_warm_hist("input_steering"), N),
+            "speed_radial": _fit_len(_warm_hist("speed_radial"), N),
+            "distance_radial": _fit_len(_warm_hist("distance_radial"), N),
             "tension_tether_ground": _fit_len(
-                self.return_variable("tension_tether_ground"), N
+                _warm_hist("tension_tether_ground"), N
             ),
         }
         if optimize_depower_profile:
             # Seed from the (constant) depower used in the warm-start simulation.
-            warm_starts["input_depower"] = _fit_len(
-                self.return_variable("input_depower"), N
-            )
+            warm_starts["input_depower"] = _fit_len(_warm_hist("input_depower"), N)
+        if free_speed and "speed_radial" not in warm_traj:
+            # The force-law seed steps v_r sharply at the force-clamp corners,
+            # violating the new winch-acceleration constraints from iteration 0
+            # (a needless ~1-2 of initial primal infeasibility). Rate-limit the
+            # seed with a forward-backward clip so those rows start feasible.
+            # (A previous-optimum seed already satisfies the acceleration rows,
+            # so it is used as-is.)
+            vr = np.asarray(warm_starts["speed_radial"], dtype=float).copy()
+            dt = _fit_len(np.diff(self.return_variable("t")), max(N - 1, 1))
+            dt = np.clip(dt, 1e-3, None)
+            for i in range(N - 1):
+                vr[i + 1] = min(
+                    max(vr[i + 1], vr[i] + winch_acc[0] * dt[i]),
+                    vr[i] + winch_acc[1] * dt[i],
+                )
+            for i in range(N - 2, -1, -1):
+                vr[i] = min(
+                    max(vr[i], vr[i + 1] - winch_acc[1] * dt[i]),
+                    vr[i + 1] - winch_acc[0] * dt[i],
+                )
+            warm_starts["speed_radial"] = vr
 
         # set_initial needs the raw decision variable; tension and radius are
         # exposed as scaled expressions, so seed the underlying scaled variables
@@ -1527,8 +1622,20 @@ class PhaseParameterized(TimeSeries):
             init_values = np.asarray(values) / init_scales.get(var_name, 1.0)
             opti.set_initial(raw_init_vars[var_name], init_values)
 
-        # # Fix initial radius (constrain the scaled decision so the row stays O(1))
-        opti.subject_to(distance_scaled[0] == state_obj.distance_radial / R_SCALE)
+        # Fix initial radius (constrain the scaled decision so the row stays
+        # O(1)). With ``r0`` as a named optimization parameter the pin follows
+        # the symbol instead of the numeric start state: the operating radius
+        # becomes a design variable -- seeded from ``path_parameters["r0"]``
+        # and bounded by ``limits["r0"]`` like every named parameter -- and the
+        # radial closure ``r[-1] == r[0]`` tracks it, so the whole radius band
+        # floats with r0 (each node still inside the ``distance_radial`` band).
+        r0_opti = (opti_params or {}).get("r0")
+        if r0_opti is not None:
+            opti.subject_to(distance_scaled[0] == r0_opti / R_SCALE)
+        else:
+            opti.subject_to(
+                distance_scaled[0] == state_obj.distance_radial / R_SCALE
+            )
 
         # Optional radial-cycle closure: tie the final radius back to the initial
         # one so a single periodic phase represents a *closed* pumping cycle (net
@@ -1595,10 +1702,28 @@ class PhaseParameterized(TimeSeries):
             + flat_syms,
             [km_copy.angle_course],
         )
+        # Constrained NLP expressions collected for the post-solve constraint
+        # report (``Phase._print_constraint_report``). Each row carries the
+        # NLP's OWN expression plus the bounds actually applied, so the
+        # reported margins are exactly what IPOPT saw -- inequality rows as
+        # {expr, lb, ub, unit, scale}, equality rows as {expr, equality: True}
+        # reporting max |scaled residual|.
+        constraint_report = {}
+
+        def _report_ineq(name, expr, bounds, unit="", scale=1.0):
+            constraint_report[name] = {
+                "expr": expr,
+                "lb": float(bounds[0]),
+                "ub": float(bounds[1]),
+                "unit": unit,
+                "scale": float(scale),
+            }
+
         # --- Safety / geometry constraint
         height = pattern.z(opti_vars["distance_radial"], s_grid[:-1])  # N entries
         opti.subject_to(height >= limits["height"][0])
         opti.subject_to(height <= limits["height"][1])
+        _report_ineq("height", height, limits["height"], "m")
 
         # Constraint init and end azimuth
         # azimuth = pattern.azimuth(opti_vars["distance_radial"], s_grid[:-1])
@@ -1619,10 +1744,16 @@ class PhaseParameterized(TimeSeries):
         # )
         # opti.subject_to(chi_final == np.pi)  # end flying straight upwind
 
-        # --- Power scale based on the simulated trajectory (LEFT RULE, consistent)
-        t_hist = self.return_variable("t")  # length N (QS) or N+1
-        P_hist = self.return_variable("mechanical_power")  # same length
-        dt_hist = np.diff(t_hist)  # length N-1
+        # --- Power scale based on the warm-start trajectory (LEFT RULE,
+        # consistent). Prefer the previous optimum (P = T * v_r, dt = ds/s_dot,
+        # the NLP's own quadrature); else the forward simulation's history.
+        if {"s", "s_dot", "tension_tether_ground", "speed_radial"} <= set(warm_traj):
+            dt_hist = np.diff(warm_traj["s"]) / warm_traj["s_dot"][:-1]
+            P_hist = warm_traj["tension_tether_ground"] * warm_traj["speed_radial"]
+        else:
+            t_hist = self.return_variable("t")  # length N (QS) or N+1
+            P_hist = self.return_variable("mechanical_power")  # same length
+            dt_hist = np.diff(t_hist)  # length N-1
         E0 = float(np.sum(P_hist[:-1] * dt_hist))  # left Riemann sum
         T0 = float(np.sum(dt_hist))
         P0 = E0 / (T0 + 1e-12)
@@ -1636,11 +1767,11 @@ class PhaseParameterized(TimeSeries):
             s = np.percentile(np.abs(x), 90)  # “typical large” value
             return float(max(s, floor))
 
-        r_hist = self.return_variable("distance_radial")
-        vr_hist = self.return_variable("speed_radial")
-        sd_hist = self.return_variable("s_dot")
-        T_hist = self.return_variable("tension_tether_ground")
-        u_hist = self.return_variable("input_steering")
+        r_hist = _warm_hist("distance_radial")
+        vr_hist = _warm_hist("speed_radial")
+        sd_hist = _warm_hist("s_dot")
+        T_hist = _warm_hist("tension_tether_ground")
+        u_hist = _warm_hist("input_steering")
 
         S = {
             "r": _scale(r_hist, floor=1.0),
@@ -1660,6 +1791,7 @@ class PhaseParameterized(TimeSeries):
             print(f"Applying speed_radial limits: lb={lb}, ub={ub}")
             opti.subject_to(opti_vars["speed_radial"] >= lb)
             opti.subject_to(opti_vars["speed_radial"] <= ub)
+            _report_ineq("speed_radial", opti_vars["speed_radial"], (lb, ub), "m/s")
         if "distance_radial" in limits:
             lb, ub = limits["distance_radial"]
             # Optional upper-bound relaxation: lets a phase reel a bit past the
@@ -1670,6 +1802,7 @@ class PhaseParameterized(TimeSeries):
             # Bound the scaled decision so the bound rows' Jacobian stays O(1).
             opti.subject_to(distance_scaled >= lb / R_SCALE)
             opti.subject_to(distance_scaled <= ub / R_SCALE)
+            _report_ineq("distance_radial", opti_vars["distance_radial"], (lb, ub), "m")
 
         # --- Objective assembly with SAME quadrature as simulation (left rule)
         energy = 0
@@ -1680,6 +1813,18 @@ class PhaseParameterized(TimeSeries):
             # to the numeric value. In profile mode the trailing flat_sym stays
             # symbolic and is filled per node from opti_vars["input_depower"].
             flat_syms[-1] = sim_params["input_depower"]
+
+        if free_speed:
+            # Winch force capability band for the free-speed inequalities.
+            _free_tf_hi = float(radial_params["max_tether_force"])
+            _free_tf_lo = float(radial_params.get("min_tether_force", 0.0))
+
+        # Per-node expressions accumulated in the loop for the constraint report.
+        _rep_aoa = []
+        _rep_rates = {ctrl.name: [] for ctrl in node_controls}
+        _rep_trim = []
+        _rep_continuity = []
+        _rep_tension = []  # force_law: scaled residuals; free_speed: model T_i
 
         for i in range(N):
 
@@ -1710,12 +1855,22 @@ class PhaseParameterized(TimeSeries):
                 opti_vars["tension_tether_ground"][i],
                 *node_syms,
             )
-            T_model = winch_model.tension_curve(
-                opti_vars["speed_radial"][i], input_depower=node_depower
-            )
+            if free_speed:
+                # v_r is a direct (rate-limited) control; the winch imposes no
+                # tension curve, only the force band it can physically hold.
+                # Inequalities instead of the curve equality: no soft-clamp
+                # plateau, no rank loss when riding the force limit.
+                opti.subject_to(T_i / S["T"] >= _free_tf_lo / S["T"])
+                opti.subject_to(T_i / S["T"] <= _free_tf_hi / S["T"])
+                _rep_tension.append(T_i)
+            else:
+                T_model = winch_model.tension_curve(
+                    opti_vars["speed_radial"][i], input_depower=node_depower
+                )
 
-            # Scale the tether law residual
-            opti.subject_to((T_i - T_model) / S["T"] == 0)
+                # Scale the tether law residual
+                opti.subject_to((T_i - T_model) / S["T"] == 0)
+                _rep_tension.append((T_i - T_model) / S["T"])
 
             # Residual equations (scaled)
             res_i = residual(
@@ -1730,6 +1885,7 @@ class PhaseParameterized(TimeSeries):
             opti.subject_to(res_i[0] / S_res[0] == 0)
             opti.subject_to(res_i[1] / S_res[1] == 0)
             opti.subject_to(res_i[2] / S_res[2] == 0)
+            _rep_trim += [res_i[j] / S_res[j] for j in range(3)]
 
             # Left-rule dt_i = Δs_i / s_dot[i], guarded to avoid blow-up
             if i < N - 1:
@@ -1739,15 +1895,13 @@ class PhaseParameterized(TimeSeries):
                 dt_i = ds_i / sd_safe
 
                 # r_{i+1} propagation (scaled residual)
-                opti.subject_to(
-                    (
-                        opti_vars["distance_radial"][i + 1]
-                        - opti_vars["distance_radial"][i]
-                        - opti_vars["speed_radial"][i] * dt_i
-                    )
-                    / S["r"]
-                    == 0
-                )
+                r_cont_i = (
+                    opti_vars["distance_radial"][i + 1]
+                    - opti_vars["distance_radial"][i]
+                    - opti_vars["speed_radial"][i] * dt_i
+                ) / S["r"]
+                opti.subject_to(r_cont_i == 0)
+                _rep_continuity.append(r_cont_i)
                 # Per-node control slew-rate limits, so the optimized profiles
                 # stay physically actuatable. Data-driven over node_controls;
                 # emits the same constraints in the same order (steering, then
@@ -1757,6 +1911,7 @@ class PhaseParameterized(TimeSeries):
                     ctrl_rate = (u_ctrl[i + 1] - u_ctrl[i]) / dt_i
                     opti.subject_to(ctrl_rate <= ctrl.rate_limit[1])
                     opti.subject_to(ctrl_rate >= ctrl.rate_limit[0])
+                    _rep_rates[ctrl.name].append(ctrl_rate)
                 # Accumulate energy and time: power_i = T_i * v_r_i
                 energy += T_i * opti_vars["speed_radial"][i] * dt_i
                 t_eff += dt_i
@@ -1773,6 +1928,7 @@ class PhaseParameterized(TimeSeries):
                 )
                 opti.subject_to(aoa_i <= limits["angle_of_attack"][1])
                 opti.subject_to(aoa_i >= limits["angle_of_attack"][0])
+                _rep_aoa.append(aoa_i)
 
         power = energy / (t_eff + 1e-12)
 
@@ -1831,6 +1987,52 @@ class PhaseParameterized(TimeSeries):
             else:
                 continue
 
+        # Hard per-solve trust region on the optimized parameters:
+        # ``sim_parameters["param_step_bound"]`` maps parameter name -> max
+        # |change| from its warm-start (current config) value in THIS solve.
+        # The power objective is a flat ridge and the periodic spline has
+        # near-null reparametrization directions, so once the barrier drops
+        # the solver takes huge steps (||d|| ~ 1e2) in the shape coefficients
+        # that re-topologize the path (figure-eight loops merge or vanish) and
+        # strand the iterate outside the trim-feasible region. Capping the
+        # per-solve move keeps every iterate where the warm start's
+        # linearization holds; staged solves re-center the box on the previous
+        # optimum, so the shape can still travel far ACROSS stages.
+        step_bounds = sim_params.get("param_step_bound") or {}
+        for var, mx in opti_params.items():
+            delta = step_bounds.get(var)
+            if delta is None:
+                continue
+            for section in ("path_parameters", "radial_parameters", "sim_parameters"):
+                if var in self.pattern_config.get(section, {}):
+                    ref = ca.DM(self.pattern_config[section][var])
+                    # Scalar delta: one box for the whole parameter. Vector
+                    # delta: a per-element box (e.g. wider over the reel-in
+                    # arc of a full-cycle spline); an element with delta 0 is
+                    # frozen at its warm-start value.
+                    delta_arr = np.asarray(delta, dtype=float).ravel()
+                    if delta_arr.size == 1:
+                        delta_box = float(delta_arr[0])
+                        desc = f"+/-{delta_box:g}"
+                    elif delta_arr.size == ref.numel():
+                        delta_box = ca.DM(delta_arr)
+                        desc = (
+                            f"per-element +/-[{delta_arr.min():g}"
+                            f"..{delta_arr.max():g}]"
+                        )
+                    else:
+                        raise ValueError(
+                            f"param_step_bound[{var!r}] has {delta_arr.size} "
+                            f"entries; expected a scalar or {ref.numel()}"
+                        )
+                    opti.subject_to(mx >= ref - delta_box)
+                    opti.subject_to(mx <= ref + delta_box)
+                    print(
+                        f"Trust region: {var} bounded to {desc} "
+                        "around its warm-start value"
+                    )
+                    break
+
         # --- Default limits for vector vars (if provided)
         for var_name, mx in opti_vars.items():
             if isinstance(mx, ca.MX) and var_name in limits:
@@ -1840,6 +2042,8 @@ class PhaseParameterized(TimeSeries):
                     # expand bounds outward even if bounds are negative
                     lb = lb - relax_tol * np.abs(lb)
                     ub = ub + relax_tol * np.abs(ub)
+                if var_name not in constraint_report:
+                    _report_ineq(var_name, mx, (lb, ub))
                 # Tension and radius are exposed as scaled expressions; bound the
                 # underlying O(1) scaled decision so the bound row's Jacobian stays
                 # O(1) instead of carrying a ~scale coefficient.
@@ -1859,13 +2063,70 @@ class PhaseParameterized(TimeSeries):
                     opti.subject_to(mx <= ub)
 
         angle_elevation = pattern.elevation(opti_vars["distance_radial"], s_grid[:-1])
+        # Soft radial-cycle closure: squared mismatch between the final and initial
+        # radius, on the O(1) scaled decisions so the penalty is well conditioned.
+        # Weighted into the objective by ``sim_parameters["radial_closure_weight"]``
+        # in ``Phase.run_simulation_opti`` (0 -> off). A gentler alternative to the
+        # hard ``close_radial_cycle`` equality for stiff full-cycle solves: ramp the
+        # weight up across staged solves to tighten closure without the hard row's
+        # conditioning hit. ``node N-1`` is the last decision; node 0 is pinned to r0.
+        # Remaining constraint-report rows: actuation/geometry expressions
+        # accumulated in the node loop, then the equality groups (feasibility
+        # diagnostics -- max |scaled residual| should sit at solver tolerance).
+        if _rep_aoa:
+            _report_ineq(
+                "angle_of_attack",
+                ca.vertcat(*_rep_aoa),
+                limits["angle_of_attack"],
+                "deg",
+                180.0 / np.pi,
+            )
+        _rate_units = {
+            "input_steering": "1/s",
+            "input_depower": "m/s",
+            "speed_radial": "m/s^2",
+        }
+        for ctrl in node_controls:
+            if _rep_rates[ctrl.name]:
+                _report_ineq(
+                    f"{ctrl.name}_rate",
+                    ca.vertcat(*_rep_rates[ctrl.name]),
+                    ctrl.rate_limit,
+                    _rate_units.get(ctrl.name, "/s"),
+                )
+        if _rep_tension and free_speed:
+            _report_ineq(
+                "winch_tension_band",
+                ca.vertcat(*_rep_tension),
+                (_free_tf_lo, _free_tf_hi),
+                "N",
+            )
+        elif _rep_tension:
+            constraint_report["winch_tension_law (scaled)"] = {
+                "expr": ca.vertcat(*_rep_tension),
+                "equality": True,
+            }
+        if _rep_trim:
+            constraint_report["trim_residual (scaled)"] = {
+                "expr": ca.vertcat(*_rep_trim),
+                "equality": True,
+            }
+        if _rep_continuity:
+            constraint_report["radial_continuity (scaled)"] = {
+                "expr": ca.vertcat(*_rep_continuity),
+                "equality": True,
+            }
+
+        radial_closure = (distance_scaled[-1] - distance_scaled[0]) ** 2
         objective_dict = {
             "energy": energy,
             "total_time": t_eff,
             "power_scale": P_scale,
             "reg": reg,
+            "radial_closure": radial_closure,
             "angle_elevation_start": angle_elevation[0],
             "angle_elevation_end": angle_elevation[-1],
+            "constraint_report": constraint_report,
         }
         return (
             opti,

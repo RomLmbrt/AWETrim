@@ -201,3 +201,201 @@ def test_depower_profile_builds_per_node_decision():
         start_state=start_state, opti_params={}
     )
     assert "input_depower" not in opti_vars_scalar
+
+
+# --- slow: r0 as a named optimization parameter -----------------------------
+
+
+@pytest.mark.slow
+def test_r0_opti_param_pins_initial_radius_symbolically():
+    """With ``r0`` in ``opti_params``, the node-0 radius pin follows the r0
+    symbol instead of the numeric start state, so the operating radius is a
+    design variable. Asserts constraint structure, not solver values."""
+    import casadi as ca
+
+    from awetrim.timeseries.phase_parametrized import PhaseParameterized
+
+    n_points = 20
+    config = _reelout_config("lissajous", n_points=n_points)
+    system_model = _v3_system_model()
+
+    start_state = {
+        "t": 0.0,
+        "s": _S_INIT,
+        "s_dot": 3.0,
+        "input_steering": 0.0,
+        "tension_tether_ground": 8.4e4,
+        "speed_radial": 0.0,
+        "distance_radial": config["path_parameters"]["r0"],
+    }
+
+    opti = ca.Opti()
+    r0_var = opti.variable()
+    phase = PhaseParameterized(system_model, quasi_steady=True, pattern_config=config)
+    opti_out, _, _ = phase.opti_phase(
+        start_state=start_state, opti=opti, opti_params={"r0": r0_var}
+    )
+
+    # r0 enters the constraint set: its own bounds (2 rows) plus the node-0
+    # radius pin (a 3rd row). Bounds alone would only give 2 dependent rows,
+    # so >= 3 proves the pin is tied to the symbol.
+    assert ca.depends_on(opti_out.g, r0_var)
+    jac_rows = ca.jacobian(opti_out.g, r0_var)
+    assert jac_rows.nnz() >= 3
+
+
+# --- slow: per-element trust-region step bounds ------------------------------
+
+
+@pytest.mark.slow
+def test_vector_param_step_bound_builds_and_validates_length():
+    """``param_step_bound`` accepts a per-element delta vector (wider box for
+    the reel-in control points); a wrong-length vector fails loudly."""
+    import casadi as ca
+
+    from awetrim.timeseries.phase_parametrized import PhaseParameterized
+
+    n_points = 20
+    config = _reelout_config("lissajous", n_points=n_points)
+    system_model = _v3_system_model()
+
+    start_state = {
+        "t": 0.0,
+        "s": _S_INIT,
+        "s_dot": 3.0,
+        "input_steering": 0.0,
+        "tension_tether_ground": 8.4e4,
+        "speed_radial": 0.0,
+        "distance_radial": config["path_parameters"]["r0"],
+    }
+
+    # Per-element box (last two points wider) assembles and ties the symbol
+    # into the constraint set.
+    config["sim_parameters"]["param_step_bound"] = {
+        "C_beta": [0.1] * (_M - 2) + [0.5] * 2
+    }
+    opti = ca.Opti()
+    c_beta_var = opti.variable(_M)
+    phase = PhaseParameterized(system_model, quasi_steady=True, pattern_config=config)
+    opti_out, _, _ = phase.opti_phase(
+        start_state=start_state, opti=opti, opti_params={"C_beta": c_beta_var}
+    )
+    assert ca.depends_on(opti_out.g, c_beta_var)
+
+    # Wrong-length vector: refused up front, not silently broadcast.
+    config_bad = _reelout_config("lissajous", n_points=n_points)
+    config_bad["sim_parameters"]["param_step_bound"] = {"C_beta": [0.1, 0.2]}
+    opti_bad = ca.Opti()
+    c_beta_bad = opti_bad.variable(_M)
+    phase_bad = PhaseParameterized(
+        system_model, quasi_steady=True, pattern_config=config_bad
+    )
+    with pytest.raises(ValueError, match="param_step_bound"):
+        phase_bad.opti_phase(
+            start_state=start_state,
+            opti=opti_bad,
+            opti_params={"C_beta": c_beta_bad},
+        )
+
+
+# --- slow: previous-optimum warm start seeds the NLP decisions ---------------
+
+
+@pytest.mark.slow
+def test_warm_start_trajectory_seeds_decisions_over_forward_sim():
+    """A stored NLP optimum (``warm_start_trajectory``, injected between
+    staged solves) seeds the per-node decisions instead of the force-law
+    forward simulation; variables it lacks still fall back to the sim."""
+    import casadi as ca
+
+    from awetrim.timeseries.phase_parametrized import PhaseParameterized
+
+    n_points = 20
+    config = _reelout_config("lissajous", n_points=n_points)
+    system_model = _v3_system_model()
+
+    start_state = {
+        "t": 0.0,
+        "s": _S_INIT,
+        "s_dot": 3.0,
+        "input_steering": 0.0,
+        "tension_tether_ground": 8.4e4,
+        "speed_radial": 0.0,
+        "distance_radial": config["path_parameters"]["r0"],
+    }
+
+    phase = PhaseParameterized(system_model, quasi_steady=True, pattern_config=config)
+    marker_sdot, marker_vr = 7.7, 0.123
+    phase.warm_start_trajectory = {
+        "s_dot": np.full(n_points, marker_sdot),
+        "speed_radial": np.full(n_points, marker_vr),
+        "stale_wrong_size": np.zeros(3),  # grid mismatch: must be ignored
+    }
+    opti, opti_vars, _ = phase.opti_phase(start_state=start_state, opti_params={})
+
+    seeded_sdot = np.asarray(opti.value(opti_vars["s_dot"], opti.initial())).ravel()
+    seeded_vr = np.asarray(
+        opti.value(opti_vars["speed_radial"], opti.initial())
+    ).ravel()
+    assert np.allclose(seeded_sdot, marker_sdot)
+    assert np.allclose(seeded_vr, marker_vr)
+
+    # Variables not in the stored optimum keep the forward-sim seed (finite,
+    # non-constant physical trajectory -- not the marker).
+    seeded_steering = np.asarray(
+        opti.value(opti_vars["input_steering"], opti.initial())
+    ).ravel()
+    assert np.all(np.isfinite(seeded_steering))
+    assert not np.allclose(seeded_steering, marker_sdot)
+
+
+# --- slow: constraint report exposes the NLP's constrained expressions ------
+
+
+@pytest.mark.slow
+def test_constraint_report_exposes_nlp_expressions():
+    """``opti_phase`` exports every constrained quantity (height, AoA, rates,
+    per-node bounds, equality residuals) through the objective dict, so
+    ``Phase._print_constraint_report`` can show margins after each solve."""
+    import casadi as ca
+
+    from awetrim.timeseries.phase_parametrized import PhaseParameterized
+
+    n_points = 20
+    config = _reelout_config("lissajous", n_points=n_points)
+    config["sim_parameters"]["input_depower"] = 1.6
+    system_model = _v3_system_model()
+
+    start_state = {
+        "t": 0.0,
+        "s": _S_INIT,
+        "s_dot": 3.0,
+        "input_steering": 0.0,
+        "tension_tether_ground": 8.4e4,
+        "speed_radial": 0.0,
+        "distance_radial": config["path_parameters"]["r0"],
+    }
+
+    phase = PhaseParameterized(system_model, quasi_steady=True, pattern_config=config)
+    _, _, objective_dict = phase.opti_phase(start_state=start_state, opti_params={})
+
+    report = objective_dict["constraint_report"]
+
+    # Inequality rows carry the NLP expression plus the applied bounds.
+    for name, n_expected in {
+        "height": n_points,
+        "angle_of_attack": n_points - 1,
+        "distance_radial": n_points,
+        "input_steering_rate": n_points - 1,
+        "tension_tether_ground": n_points,
+    }.items():
+        spec = report[name]
+        assert isinstance(spec["expr"], ca.MX), name
+        assert spec["expr"].numel() == n_expected, name
+        assert spec["lb"] < spec["ub"], name
+
+    # Equality groups expose the NLP's own scaled residuals.
+    assert report["trim_residual (scaled)"]["equality"]
+    assert report["trim_residual (scaled)"]["expr"].numel() == 3 * n_points
+    assert report["radial_continuity (scaled)"]["expr"].numel() == n_points - 1
+    assert report["winch_tension_law (scaled)"]["expr"].numel() == n_points
