@@ -57,7 +57,7 @@ SHAPE_CONFIGS = {
     "helix": LEI_V3_HELIX_SPLINE_CONFIG,
 }
 DEFAULT_SHAPE = "downloop"
-DEFAULT_N_FIGURES = 6
+DEFAULT_N_FIGURES = 4
 
 WIND_CONFIG = {
     "speed_wind_at_100": 10,

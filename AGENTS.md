@@ -27,8 +27,13 @@ src/awetrim/
   experimental/      ✅  EKF flight-data analysis pipeline (+ data_preprocessors/)
   plotting/          ✅  shared plotting helpers — see src/awetrim/plotting/AGENTS.md
   utils/             ✅  fitting, defaults, reference frames
-  identification/    🟡  started — rigid_body_axes.py + an aero LUT guide
-                         (the guide is outdated and needs revising)
+  identification/    🟡  ROM aero-coefficient identification: tidy dataset
+                         (aero_dataset.py, AS + EKF sources, shared schema),
+                         BIC forward-stepwise polynomial fit with k-fold CV
+                         (aero_polynomial.py → rom_config "coeffs"), control
+                         conventions (controls.py), rigid_body_axes.py.
+                         Regressors: alpha, u_s, u_p, v_a; targets CL/CD/phi_a.
+                         (aero LUT guide is outdated and needs revising)
 ```
 
 ROM is **script-based**, not a `src/` module: see `scripts/reduced-order-model/`
