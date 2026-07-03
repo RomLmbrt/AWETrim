@@ -21,14 +21,14 @@ timeder_speed_radial: !!float 0.0
 
 ## actuation settings
 power_tape_extension_step: !!float 0.05 
-power_tape_final_extension: !!float 0.2 #0.3 #0.05
+power_tape_final_extension: !!float 0.0 #0.3 #0.05
 steering_tape_extension_step: !!float 0.05
 steering_tape_final_extension: !!float 0.0
 
 ## output settings
 is_with_initial_structure_plot: !!bool false
 is_with_coupling_plot_per_iteration: !!bool false
-is_with_struc_plot_per_iteration: !!bool false
+is_with_struc_plot_per_iteration: !!bool true
 is_with_aero_plot_per_iteration: !!bool false
 is_with_final_plot: !!bool false
 is_with_aero_frame_final_plot: !!bool false
@@ -134,7 +134,7 @@ tether:
 
 ## structural kite_fem
 structural_kite_fem:
-  max_iterations: !!int 2000 #used to be 2000
+  max_iterations: !!int 200 #used to be 2000
   tolerance: !!float 0.01
   step_limit: !!float 0.2       # kite_fem default
   relax_init: !!float 0.5       # kite_fem default
@@ -155,8 +155,8 @@ structural_kite_fem:
   # pull_down_force_z pulls the KCU node (node 0) downward to tension the bridles
   # from the unloaded YAML geometry to a realistic hanging position.
   # A too-small force leaves bridles slack; too large may cause FEM divergence.
-  relaxbridles_pull_down_force_z: !!float -500.0
-  relaxbridles_settle_force_z: !!float -100.0
+  relaxbridles_pull_down_force_z: !!float -1000.0
+  relaxbridles_settle_force_z: !!float -200.0
 
 
 # tether.diameter is now defined in system.yml (awesIO format)
