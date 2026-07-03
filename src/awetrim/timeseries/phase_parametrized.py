@@ -1667,19 +1667,6 @@ class PhaseParameterized(TimeSeries):
             + flat_syms,
             [km_copy.residual],
         )
-        tether_tension_eq = ca.Function(
-            "tether_tension_eq",
-            [
-                self.s,
-                self.s_dot,
-                km_copy.input_steering,
-                km_copy.speed_radial,
-                km_copy.distance_radial,
-                km_copy.tension_tether_ground,
-            ]
-            + flat_syms,
-            [km_copy.tension_tether_equation],
-        )
         aoa_eq = ca.Function(
             "speed_tangential_eq",
             [
@@ -1824,7 +1811,7 @@ class PhaseParameterized(TimeSeries):
         _rep_rates = {ctrl.name: [] for ctrl in node_controls}
         _rep_trim = []
         _rep_continuity = []
-        _rep_tension = []  # force_law: scaled residuals; free_speed: model T_i
+        _rep_tension = []  # force_law: scaled residuals; free_speed: node tension
 
         for i in range(N):
 
@@ -1845,16 +1832,15 @@ class PhaseParameterized(TimeSeries):
                     else sim_params["input_depower"]
                 )
 
-            # Model tension at node i
-            T_i = tether_tension_eq(
-                s_grid[i],
-                opti_vars["s_dot"][i],
-                opti_vars["input_steering"][i],
-                opti_vars["speed_radial"][i],
-                opti_vars["distance_radial"][i],
-                opti_vars["tension_tether_ground"][i],
-                *node_syms,
-            )
+            # The node tension is the decision variable itself, fed straight
+            # into the trim residual below -- the radial force balance is what
+            # determines it (same square per-node structure as the forward
+            # root-find: 3x3 in free_speed, 4x4 with the winch law). Do NOT
+            # route it through a tension_tether_equation substitution: that
+            # pins the variable only via the weak alpha(T) pendulum term,
+            # leaving a near-null direction free to wander tens of kN off the
+            # physical value.
+            T_i = opti_vars["tension_tether_ground"][i]
             if free_speed:
                 # v_r is a direct (rate-limited) control; the winch imposes no
                 # tension curve, only the force band it can physically hold.
@@ -1864,6 +1850,7 @@ class PhaseParameterized(TimeSeries):
                 opti.subject_to(T_i / S["T"] <= _free_tf_hi / S["T"])
                 _rep_tension.append(T_i)
             else:
+                # The winch force law ties the tension to the reel speed.
                 T_model = winch_model.tension_curve(
                     opti_vars["speed_radial"][i], input_depower=node_depower
                 )
