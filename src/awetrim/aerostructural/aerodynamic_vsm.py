@@ -156,6 +156,7 @@ def initialize(
     config,
     n_panels_aero: int,
     bridle_path=None,
+    ml_models_dir=None, 
 ) -> BodyAerodynamics:
     """
     Initialize aerodynamic model and VSM solver.
@@ -176,6 +177,7 @@ def initialize(
             "spanwise_panel_distribution"
         ],
         bridle_path=bridle_path,
+        ml_models_dir=ml_models_dir,
     )
 
     aero_cfg = config["aerodynamic"]
@@ -189,10 +191,10 @@ def initialize(
         # Optional post-stall stabilization: the parameter-free Li/Gaunaa
         # spanwise artificial viscosity (TORQUE 2026), applied in the base
         # gamma loop. Off by default to preserve historical behaviour.
-        is_with_artificial_viscosity=aero_cfg.get(
+        is_with_simonet_artificial_viscosity=aero_cfg.get(
             "is_with_artificial_viscosity", False
         ),
-        artificial_viscosity_factor=aero_cfg.get(
+        simonet_artificial_viscosity_fva=aero_cfg.get(
             "artificial_viscosity_factor", 0.035
         ),
     )
