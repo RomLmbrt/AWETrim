@@ -346,6 +346,7 @@ def initialize_bridle_line_system(
 
         # If there is third connections, this line is a pulley!
         # In here we will treat both ci-cj and cj-ck
+        power_tape_index, steering_tape_indices = None, None
         if len(conn_data[1:]) == 3:
             logging.debug(
                 f"-- linktype should be pulley, linktype: {bridle_lines_dict[conn_name]["linktype"]}"
