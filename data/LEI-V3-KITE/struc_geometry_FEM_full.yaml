@@ -337,16 +337,16 @@ bridle_connections:
     - [Br_II, 82, 81]
     - [Br_II, 116, 115]
 
-    - [Br_main_1, 81, 80]
-    - [Br_main_1, 115, 114]
-    - [Br_main_e, 80, 79]
-    - [Br_main_e, 114, 113]
+    - [Br_main_1, 81, 79]
+    - [Br_main_1, 115, 113]
+    # - [Br_main_e, 80, 79]
+    # - [Br_main_e, 114, 113]
     ##############################
     ### Additional ###################
     ##############################
     # front lines
-    - [AIII, 70, 71, 80] # pulley
-    - [AIII, 104, 105, 114] # pulley
+    - [AIII, 70, 71, 79] # pulley
+    - [AIII, 104, 105, 113] # pulley
     - [a5_equiv, 71, 53]
     - [a5_equiv, 105, 3]
     - [A_main, 70, 0]
@@ -356,8 +356,8 @@ bridle_connections:
     # - [A_main, 104, 0]
 
     # rear lines
-    - [Br_5, 114, 119, 126] # pulley
-    - [Br_5, 80, 85, 127] # pulley
+    - [Br_5, 113, 119, 126] # pulley
+    - [Br_5, 79, 85, 127] # pulley
     - [M, 125, 113, 126] # pulley
     - [M, 125, 79, 127] # pulley
     - [steering_tape, 126, 0]
@@ -404,7 +404,7 @@ bridle_lines:
     - [Br_I, 2.333, 0.002, dyneema, 'noncompressive']
     - [Br_II, 2.045, 0.002, dyneema, 'noncompressive']
     - [Br_main_1, 0.610, 0.003, dyneema, 'noncompressive']
-    - [Br_main_e, 0.07, 0.004, dyneema, 'noncompressive']
+    # - [Br_main_e, 0.07, 0.004, dyneema, 'noncompressive']
 
     ##############################
     ### Additional ###################

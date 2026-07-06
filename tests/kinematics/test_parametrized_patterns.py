@@ -3,9 +3,69 @@ import pytest
 
 from awetrim.kinematics.parametrized_patterns import (
     create_pattern_from_dict,
+    full_cycle_angles,
     make_bspline_path_parameters_from_named_curve,
     named_curve_angles,
+    reelin_control_point_mask,
 )
+
+
+def _bump_path_parameters(M, bump_indices, base=0.3, peak=1.0):
+    """Periodic-spline params with a flat elevation except a bump (reel-in arc)."""
+    C_beta = np.full(M, base)
+    C_beta[list(bump_indices)] = peak
+    return {
+        "M": M,
+        "C_phi": np.zeros(M),
+        "C_beta": C_beta,
+        "s_init": 0.0,
+        "s_final": 1.0,
+        "downloops": True,
+    }
+
+
+def test_reelin_control_point_mask_flags_elevation_peak_support():
+    """The mask flags the control points shaping the elevation peak (the
+    reel-in arc of a full-cycle spline) plus their B-spline support, and
+    leaves the far figure-eight points untouched."""
+    M = 12
+    mask = reelin_control_point_mask(_bump_path_parameters(M, [5, 6]))
+    assert mask.shape == (M,) and mask.dtype == bool
+    assert mask[5] and mask[6]  # the peak itself
+    assert not mask[0] and not mask[11]  # far from the arc
+    assert 0 < mask.sum() < M  # neither empty nor all-flagged
+
+
+def test_reelin_control_point_mask_wraps_at_the_periodic_seam():
+    """A peak at the s=0 seam flags neighbours on BOTH sides of the wrap."""
+    M = 12
+    mask = reelin_control_point_mask(_bump_path_parameters(M, [0]))
+    assert mask[0] and mask[1] and mask[11]
+    assert not mask[6]
+
+
+def test_full_cycle_angles_psi0_shifts_phase_and_preserves_periodicity():
+    """psi0 offsets the figure phase without breaking exact periodicity.
+
+    The curvature tuner in fit_periodic_cycle_config relies on psi0 to realign
+    the reel-in fade with a fast part of the figure-eight; a constant phase
+    offset must keep the curve 1-periodic (psi advances by 2*pi*n_loops over
+    the period regardless of psi0) and reduce to the psi0=0 curve when zero.
+    """
+    s = np.linspace(0.0, 1.0, 400, endpoint=False)
+    kwargs = dict(n_loops=3, reelout_fraction=0.65, beta0=0.35, beta_amp0=0.14,
+                  az_amp0=0.36, beta_reelin_peak=1.2, az_reelin_amp=-0.5,
+                  ramp_fraction=0.45, downloops=True)
+
+    az_default, el_default = full_cycle_angles(s, **kwargs)
+    az_zero, el_zero = full_cycle_angles(s, psi0=0.0, **kwargs)
+    assert np.allclose(az_default, az_zero) and np.allclose(el_default, el_zero)
+
+    az, el = full_cycle_angles(np.array([0.0, 1.0]), psi0=1.3, **kwargs)
+    assert np.isclose(az[0], az[1]) and np.isclose(el[0], el[1])
+
+    az_shift, _ = full_cycle_angles(s, psi0=1.3, **kwargs)
+    assert not np.allclose(az_shift, az_zero)
 
 
 def test_create_pattern_from_dict_rejects_unsupported_type():
