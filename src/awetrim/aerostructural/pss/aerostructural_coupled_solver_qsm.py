@@ -139,6 +139,7 @@ def main(
     ### AERO
     body_aero=None,
     vsm_solver=None,
+    reference_point=[0, 0, 0],
     vel_app=None,
     initial_polar_data=None,
     bridle_diameter_arr=None,
@@ -277,6 +278,7 @@ def main(
         # va_vector=vel_app,
         aero_input_type="reuse_initial_polar_data",
         initial_polar_data=initial_polar_data,
+        reference_point=reference_point,
         include_gravity=config["is_with_gravity"],
         is_with_plot=config["is_with_aero_plot_per_iteration"],
     )
@@ -445,6 +447,7 @@ def main(
                     # va_vector=vel_app,
                     aero_input_type="reuse_initial_polar_data",
                     initial_polar_data=initial_polar_data,
+                    reference_point=reference_point,
                     include_gravity=config["is_with_gravity"],
                     is_with_plot=config["is_with_aero_plot_per_iteration"],
                 )
