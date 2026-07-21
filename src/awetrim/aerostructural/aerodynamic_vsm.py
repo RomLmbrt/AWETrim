@@ -32,6 +32,7 @@ from VSM.plot_geometry_matplotlib import plot_geometry
 from awetrim.aerodynamics.vsm_quasi_steady import (
     solve_quasi_steady_state,
     DEFAULT_TRANSFORMATION_C_FROM_VSM,
+    _acceleration_course_body,
 )
 
 # Bounds and defaults (aoa, sideslip, course_rate_body)
@@ -122,8 +123,13 @@ def _run_vsm_direct_fallback(body_aero, solver, system_model, current_guess):
     mass_total = float(system_model.kite.mass_wing) + float(
         getattr(system_model.kite, "mass_kcu", 0.0)
     )
+    # acceleration_course_body is only cached on system_model by a successful
+    # QSM trim solve -- this fallback runs precisely when that failed, so it
+    # isn't guaranteed to be set. Use the same safe accessor vsm_quasi_steady
+    # itself uses (falls back to system_model.acceleration) instead of
+    # touching the possibly-missing attribute directly.
     inertial_force = -mass_total * np.asarray(
-        trans @ np.asarray(system_model.acceleration_course_body, dtype=float),
+        trans @ _acceleration_course_body(system_model),
         dtype=float,
     ).reshape(3)
     gravity_force = np.asarray(
